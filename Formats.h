@@ -914,6 +914,7 @@ struct Info {
     double dpi = 0;
     UINT bits = 0;              // bits por canal
     std::wstring color, app, pageSize, camera, note;
+    double pageWmm = 0, pageHmm = 0; // tamanho físico da página (INDD/AI), se conhecido
     UINT pages = 0;
     std::vector<std::wstring> fonts, fontFamilies;
 };
@@ -928,7 +929,7 @@ inline void XmpInfo(const Bytes& b, Info* in) {
         double w = atof(sw.c_str()), h = atof(sh.c_str()), k = 0;
         if (su == "Points") k = 25.4 / 72; else if (su == "Inches") k = 25.4; else if (su == "Millimeters") k = 1; else if (su == "Centimeters") k = 10;
         wchar_t t[64];
-        if (k > 0) swprintf(t, 64, L"%.0f × %.0f mm", w * k, h * k);
+        if (k > 0) { swprintf(t, 64, L"%.0f × %.0f mm", w * k, h * k); in->pageWmm = w * k; in->pageHmm = h * k; }
         else swprintf(t, 64, L"%.0f × %.0f %ls", w, h, Widen(su).c_str());
         in->pageSize = t;
     }

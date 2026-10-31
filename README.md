@@ -3,7 +3,9 @@
 Ferramentas leves para o Explorer do Windows 10/11 trabalhar com arquivos de design e fotografia.
 
 - **DesignThumbs.dll** — miniaturas no Explorer.
+- **Painel de visualização** do Explorer (`Alt+P`) para os mesmos formatos.
 - **DesignPeek.exe** — selecione um arquivo e aperte **Espaço** para um preview grande (estilo Quick Look do Mac).
+- **Converter com Shift** — selecione arquivos e segure **Shift**: botões para PNG, JPG ou PDF aparecem sobre o mouse.
 
 ## Formatos
 | Tipo | Extensões | Origem da imagem |
@@ -27,9 +29,23 @@ Ferramentas leves para o Explorer do Windows 10/11 trabalhar com arquivos de des
 | PgUp / PgDn | páginas (InDesign) |
 | Enter | abre no programa padrão |
 | Ctrl+C | copia a imagem (PNG com transparência) |
+| B | fundo claro/escuro |
+| ⚙ (canto superior esquerdo) | configurações e ajuda |
 
 A barra inferior mostra dimensões, DPI e tamanho de impressão, modo de cor, páginas, câmera, tamanho do arquivo, programa de origem
 e as **fontes** usadas em INDD/AI — as que não estão instaladas aparecem em vermelho com ⚠.
+
+## Converter com Shift
+Com um ou vários arquivos selecionados, segure **Shift** (sozinho, ~0,5 s) e clique em:
+- **PNG** / **JPG** — um arquivo por original (InDesign: um por página), salvo ao lado do original, na maior resolução disponível.
+- **PDF** — com um arquivo, um PDF; com vários, **um único PDF com todas as páginas na ordem da seleção**,
+  nomeado automaticamente como `primeiro arquivo (+N).pdf`. Um `.ai` sozinho é copiado como PDF (mantém o vetor).
+
+Um aviso no canto da tela mostra o progresso; clique nele para abrir a pasta com os arquivos gerados.
+
+## Configurações
+Clique na engrenagem do preview, rode `DesignPeek.exe` de novo ou use o atalho "DesignPeek" do menu Iniciar:
+preview com Espaço, botões do Shift (e tempo), qualidade do JPG/PDF, iniciar com o Windows.
 
 ## Instalar
 Extraia numa pasta fixa e rode `install.bat` (não precisa de administrador). `uninstall.bat` remove tudo.
@@ -39,6 +55,9 @@ Extraia numa pasta fixa e rode `install.bat` (não precisa de administrador). `u
 - Linux: `build.sh` (MinGW + headers Direct2D recentes do mingw-w64 em `$D2D_INC`).
 
 ## Versões
+- **v4** — painel de visualização (Alt+P), preview em segundo plano com cache e pré-carregamento dos vizinhos,
+  conversão para PNG/JPG/PDF segurando Shift (PDF multipáginas na ordem da seleção), configurações (engrenagem),
+  fundo claro/escuro.
 - **v3** — preview com zoom/arrastar, fundo xadrez, páginas do InDesign, barra de informações com fontes faltando,
   Enter/Ctrl+C, AI nítido via PDF, novos formatos (EPS completo, SVGZ, CDR, Affinity, XD, Sketch, Krita, Procreate, RAW de câmera),
   instalação sem administrador.
