@@ -7,6 +7,11 @@ Ferramentas leves para o Explorer do Windows 10/11 trabalhar com arquivos de des
 - **DesignPeek.exe** — selecione um arquivo e aperte **Espaço** para um preview grande (estilo Quick Look do Mac).
 - **Converter com Alt** — selecione arquivos e segure **Alt**: botões para PNG, JPG ou PDF aparecem sobre o mouse.
 
+## Visual
+Interface de vidro inspirada no visionOS: desfoque acrylic do Windows, cantos arredondados, cápsulas flutuantes e
+controles no estilo iOS, seguindo automaticamente o tema claro/escuro do Windows. Sem o efeito de vidro (Windows antigo),
+usa um fundo sólido com o mesmo visual.
+
 ## Formatos
 | Tipo | Extensões | Origem da imagem |
 |---|---|---|
@@ -29,7 +34,6 @@ Ferramentas leves para o Explorer do Windows 10/11 trabalhar com arquivos de des
 | PgUp / PgDn | páginas (InDesign) |
 | Enter | abre no programa padrão |
 | Ctrl+C | copia a imagem (PNG com transparência) |
-| B | fundo claro/escuro |
 | ⚙ (canto superior esquerdo) | configurações e ajuda |
 
 A barra inferior mostra dimensões, DPI e tamanho de impressão, modo de cor, páginas, câmera, tamanho do arquivo, programa de origem
@@ -60,6 +64,8 @@ Extraia numa pasta fixa e rode `install.bat` (não precisa de administrador). `u
 - Linux: `build.sh` (MinGW + headers Direct2D recentes do mingw-w64 em `$D2D_INC`).
 
 ## Versões
+- **v5** — nova interface de vidro (preview, botões do Alt, aviso e configurações), tema claro/escuro do Windows,
+  animação de abertura, `DesignPeek.exe /peek arquivo` para abrir um arquivo direto.
 - **v4.2** — botões de conversão no Alt; 72/300 dpi; PDF comprimido ou sem compressão; ordem do PDF = ordem dos cliques.
 - **v4.1** — botões de conversão passam do Shift para o Ctrl; Ctrl+clique reinicia a contagem.
 - **v4** — painel de visualização (Alt+P), preview em segundo plano com cache e pré-carregamento dos vizinhos,

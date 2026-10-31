@@ -1,7 +1,8 @@
 // DesignPeek - "Quick Look" para o Explorer: selecione um arquivo e aperte Espaço.
 //   Espaço/Esc: fecha         Setas/clique em outro arquivo: troca o preview
 //   Roda do mouse/+/-: zoom   Arrastar: mover        Z: 100%   0: ajustar   Duplo clique: alterna
-//   PgUp/PgDn: páginas        Enter: abre no programa padrão  Ctrl+C: copia a imagem   B: fundo claro/escuro
+//   PgUp/PgDn: páginas        Enter: abre no programa padrão  Ctrl+C: copia a imagem
+// Visual de vidro (acrylic) com cantos arredondados, seguindo o tema claro/escuro do Windows.
 // Segurar Alt com arquivos selecionados mostra botões para converter em PNG, JPG ou PDF.
 // Sem hook de teclado: o Espaço só vira atalho (RegisterHotKey) enquanto o foco está na lista de
 // arquivos, detectado por eventos de foco de acessibilidade (WinEvents).
@@ -20,6 +21,7 @@
 #include <dwmapi.h>
 #include "Convert.h" // antes do dwrite.h (ordem dos headers do MinGW)
 #include <dwrite.h>
+#include "Ui.h"
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -35,7 +37,7 @@ enum {
 
 // ---------- configurações (HKCU\Software\DesignThumbs) ----------
 
-struct Config { bool space = true, alt = true, lightBg = false, dpi300 = false, pdfRaw = false; DWORD altDelay = 500, quality = 92; };
+struct Config { bool space = true, alt = true, dpi300 = false, pdfRaw = false; DWORD altDelay = 500, quality = 92; };
 static Config g_cfg;
 static const wchar_t* kCfgKey = L"Software\\DesignThumbs";
 
@@ -48,14 +50,13 @@ static void WriteDword(const wchar_t* name, DWORD v) { RegSetKeyValueW(HKEY_CURR
 static void LoadConfig() {
     g_cfg.space = ReadDword(L"SpacePreview", 1) != 0;
     g_cfg.alt = ReadDword(L"AltButtons", 1) != 0;
-    g_cfg.lightBg = ReadDword(L"LightBackground", 0) != 0;
     g_cfg.altDelay = max(150ul, min(3000ul, (unsigned long)ReadDword(L"AltDelay", 500)));
     g_cfg.quality = max(50ul, min(100ul, (unsigned long)ReadDword(L"JpgQuality", 92)));
     g_cfg.dpi300 = ReadDword(L"ConvertDpi", 72) == 300;
     g_cfg.pdfRaw = ReadDword(L"PdfUncompressed", 0) != 0;
 }
 static void SaveConfig() {
-    WriteDword(L"SpacePreview", g_cfg.space); WriteDword(L"AltButtons", g_cfg.alt); WriteDword(L"LightBackground", g_cfg.lightBg);
+    WriteDword(L"SpacePreview", g_cfg.space); WriteDword(L"AltButtons", g_cfg.alt);
     WriteDword(L"AltDelay", g_cfg.altDelay); WriteDword(L"JpgQuality", g_cfg.quality);
     WriteDword(L"ConvertDpi", g_cfg.dpi300 ? 300 : 72); WriteDword(L"PdfUncompressed", g_cfg.pdfRaw);
 }
@@ -93,17 +94,17 @@ static IDWriteFactory* g_dw;
 static ID2D1HwndRenderTarget* g_rt;
 static ID2D1Bitmap* g_gpuBmp;
 static ID2D1BitmapBrush* g_checker;
-static IDWriteTextFormat *g_titleFmt, *g_infoFmt, *g_iconFmt;
-static float g_fmtScale;
 
-enum { kHotSpace = 1, kHotEsc, kHotEnter, kHotCopy, kHotZ, kHot0, kHotNum0, kHotPlus, kHotMinus, kHotAdd, kHotSub, kHotPgUp, kHotPgDn, kHotB };
+enum { kHotSpace = 1, kHotEsc, kHotEnter, kHotCopy, kHotZ, kHot0, kHotNum0, kHotPlus, kHotMinus, kHotAdd, kHotSub, kHotPgUp, kHotPgDn };
 static const struct { int id; UINT mod, vk; } kOpenKeys[] = {
     {kHotEsc, 0, VK_ESCAPE}, {kHotEnter, 0, VK_RETURN}, {kHotCopy, MOD_CONTROL, 'C'}, {kHotZ, 0, 'Z'},
     {kHot0, 0, '0'}, {kHotNum0, 0, VK_NUMPAD0}, {kHotPlus, 0, VK_OEM_PLUS}, {kHotMinus, 0, VK_OEM_MINUS},
-    {kHotAdd, 0, VK_ADD}, {kHotSub, 0, VK_SUBTRACT}, {kHotPgUp, 0, VK_PRIOR}, {kHotPgDn, 0, VK_NEXT}, {kHotB, 0, 'B'},
+    {kHotAdd, 0, VK_ADD}, {kHotSub, 0, VK_SUBTRACT}, {kHotPgUp, 0, VK_PRIOR}, {kHotPgDn, 0, VK_NEXT},
 };
-enum { kRefreshTimer = 1, kFlashTimer, kAltTimer, kToastTimer, kSelTimer };
-static const float kCaption = 40, kInfo = 52, kPad = 12;
+enum { kRefreshTimer = 1, kFlashTimer, kAltTimer, kToastTimer, kSelTimer, kAnimTimer };
+static const float kCaption = 56, kPad = 18;
+static ui::Theme g_theme = ui::MakeTheme(true, false);
+static DWORD g_animStart;
 
 static std::wstring ClassOf(HWND h) {
     wchar_t c[64] = {};
@@ -363,9 +364,12 @@ static bool FontInstalled(const std::wstring& family) {
 
 // ---------- layout ----------
 
+// Altura reservada embaixo: cápsula de informações e, se houver, a de fontes.
+static float BottomH() { return 66 + (g_hasInfo && !g_info.fonts.empty() ? 38 : 0); }
+
 static D2D1_RECT_F ImageArea() {
     RECT rc; GetClientRect(g_wnd, &rc);
-    return D2D1::RectF(kPad * g_ui, kCaption * g_ui, rc.right - kPad * g_ui, rc.bottom - kInfo * g_ui);
+    return D2D1::RectF(kPad * g_ui, kCaption * g_ui, rc.right - kPad * g_ui, rc.bottom - BottomH() * g_ui);
 }
 
 static float FitScale() {
@@ -436,11 +440,11 @@ static void ResizeToContent() {
     MONITORINFO mi = {sizeof(mi)};
     GetMonitorInfoW(mon, &mi);
     RECT wa = mi.rcWork;
-    float maxW = (wa.right - wa.left) * 0.85f - 2 * kPad * g_ui, maxH = (wa.bottom - wa.top) * 0.85f - (kCaption + kInfo) * g_ui;
+    float maxW = (wa.right - wa.left) * 0.85f - 2 * kPad * g_ui, maxH = (wa.bottom - wa.top) * 0.85f - (kCaption + BottomH()) * g_ui;
     float s = min(maxW / g_nw, maxH / g_nh);
     s = min(s, g_nativeKnown ? 1.0f : 2.0f);
     int w = max((int)(g_nw * s + 2 * kPad * g_ui), (int)(640 * g_ui));
-    int h = max((int)(g_nh * s + (kCaption + kInfo) * g_ui), (int)(320 * g_ui));
+    int h = max((int)(g_nh * s + (kCaption + BottomH()) * g_ui), (int)(320 * g_ui));
     SetWindowPos(g_wnd, HWND_TOPMOST, wa.left + (wa.right - wa.left - w) / 2, wa.top + (wa.bottom - wa.top - h) / 2,
                  w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
     if (g_rt) g_rt->Resize(D2D1::SizeU(w, h));
@@ -463,9 +467,16 @@ static void Prefetch(const std::vector<std::wstring>& files) {
 }
 
 // Abre (ou troca para) o arquivo com foco: mostra na hora o que houver em cache e carrega o resto em segundo plano.
+static bool OpenPath(const std::wstring& p, const std::vector<std::wstring>& neighbors);
+
 static bool OpenSelection() {
     std::vector<std::wstring> neighbors;
     std::wstring p = FocusedFile(g_defView, &neighbors);
+    return OpenPath(p, neighbors);
+}
+
+// Abre o preview de um arquivo (seleção do Explorer ou "DesignPeek.exe /peek arquivo").
+static bool OpenPath(const std::wstring& p, const std::vector<std::wstring>& neighbors) {
     if (p.empty() || !IsFile(p)) return g_open;
     if (g_open && p == g_path) return true;
 
@@ -478,7 +489,7 @@ static bool OpenSelection() {
     g_hasInfo = ci != nullptr;
     g_info = ci ? *ci : fmt::Info();
 
-    g_ui = GetDpiForWindow(g_defView) / 96.0f;
+    g_ui = (g_defView ? GetDpiForWindow(g_defView) : GetDpiForSystem()) / 96.0f;
     HMONITOR mon = MonitorFromWindow(g_defView, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi = {sizeof(mi)};
     GetMonitorInfoW(mon, &mi);
@@ -498,6 +509,7 @@ static bool OpenSelection() {
         Enqueue(p, 0, 0, !g_hasInfo, true);
     }
     UpdateNativeSize();
+    if (!g_open) { g_animStart = GetTickCount(); SetTimer(g_wnd, kAnimTimer, 15, nullptr); } // leve fade + escala ao abrir
     g_open = true;
     ResizeToContent();
     Fit();
@@ -601,19 +613,21 @@ static void CopyImage() {
 static std::vector<std::wstring> g_convFiles;
 static bool g_converting;
 static std::wstring g_toastTitle, g_toastText;
+static int g_toastState;           // 0 convertendo, 1 pronto, 2 erro
+static UINT g_toastDone, g_toastTotal;
 static std::vector<std::wstring> g_toastOutputs;
 static int g_altHot = -1;
 static ULONGLONG g_altDownAt;
 static bool g_altFired;          // botões já mostrados neste toque
 
-static void ShowToast(const std::wstring& title, const std::wstring& text, DWORD hideAfterMs) {
-    g_toastTitle = title; g_toastText = text;
+static void ShowToast(const std::wstring& title, const std::wstring& text, DWORD hideAfterMs, int state) {
+    g_toastTitle = title; g_toastText = text; g_toastState = state;
     HMONITOR mon = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
     if (g_defView) mon = MonitorFromWindow(g_defView, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi = {sizeof(mi)};
     GetMonitorInfoW(mon, &mi);
     float ui = GetDpiForWindow(g_defView ? g_defView : GetDesktopWindow()) / 96.0f;
-    int w = (int)(380 * ui), h = (int)(72 * ui), m = (int)(16 * ui);
+    int w = (int)(380 * ui), h = (int)(80 * ui), m = (int)(18 * ui);
     SetWindowPos(g_toastWnd, HWND_TOPMOST, mi.rcWork.right - w - m, mi.rcWork.bottom - h - m, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
     InvalidateRect(g_toastWnd, nullptr, TRUE);
     KillTimer(g_toastWnd, kToastTimer);
@@ -621,13 +635,14 @@ static void ShowToast(const std::wstring& title, const std::wstring& text, DWORD
 }
 
 static void StartConversion(conv::Kind kind) {
-    if (g_converting) { ShowToast(L"Aguarde", L"Já há uma conversão em andamento.", 3000); return; }
+    if (g_converting) { ShowToast(L"Aguarde", L"Já há uma conversão em andamento.", 3000, 0); return; }
     std::vector<std::wstring> files = g_convFiles;
     if (files.empty()) return;
     g_converting = true;
     g_toastOutputs.clear();
     static const wchar_t* names[] = {L"PNG", L"JPG", L"PDF"};
-    ShowToast(std::wstring(L"Convertendo para ") + names[kind], L"Preparando…", 0);
+    g_toastDone = 0; g_toastTotal = (UINT)files.size();
+    ShowToast(std::wstring(L"Convertendo para ") + names[kind], L"Preparando…", 0, 0);
     conv::Options opt;
     opt.quality = g_cfg.quality / 100.0f;
     opt.dpi = g_cfg.dpi300 ? 300 : 72;
@@ -649,7 +664,7 @@ static void ShowAltPopup() {
     if (g_convFiles.empty()) return;
     POINT pt; GetCursorPos(&pt);
     float ui = GetDpiForWindow(g_defView) / 96.0f;
-    int w = (int)(300 * ui), h = (int)(92 * ui);
+    int w = (int)(330 * ui), h = (int)(112 * ui);
     MONITORINFO mi = {sizeof(mi)};
     GetMonitorInfoW(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi);
     int x = max((int)mi.rcWork.left, min((int)mi.rcWork.right - w, (int)pt.x - w / 2));
@@ -748,7 +763,6 @@ static void OnHotkey(int id) {
     case kHotMinus: case kHotSub: ZoomAtCenter(0.8f); break;
     case kHotPgUp: ChangePage(-1); break;
     case kHotPgDn: ChangePage(1); break;
-    case kHotB: g_cfg.lightBg = !g_cfg.lightBg; SaveConfig(); SafeRelease(g_checker); InvalidateRect(g_wnd, nullptr, FALSE); break;
     }
     UpdateHotkeys();
 }
@@ -767,12 +781,13 @@ static std::wstring FormatSize(UINT64 b) {
 static void CreateDeviceResources() {
     if (!g_rt) {
         RECT rc; GetClientRect(g_wnd, &rc);
-        D2D1_RENDER_TARGET_PROPERTIES rp = D2D1::RenderTargetProperties();
-        rp.dpiX = rp.dpiY = 96; // trabalha em pixels
+        D2D1_RENDER_TARGET_PROPERTIES rp = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), 96, 96); // pixels; transparência para o vidro
         if (FAILED(g_d2d->CreateHwndRenderTarget(rp, D2D1::HwndRenderTargetProperties(g_wnd, D2D1::SizeU(rc.right, rc.bottom)), &g_rt))) return;
+        g_rt->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
     }
     if (!g_checker) { // xadrez para transparência
-        UINT32 a = g_cfg.lightBg ? 0xFFFFFFFF : 0xFF3A3A3A, b = g_cfg.lightBg ? 0xFFE2E2E2 : 0xFF2C2C2C;
+        UINT32 a = g_theme.dark ? 0xFF3A3A3C : 0xFFFFFFFF, b = g_theme.dark ? 0xFF2C2C2E : 0xFFE5E5EA;
         UINT32 cells[16 * 16];
         for (int y = 0; y < 16; ++y) for (int x = 0; x < 16; ++x) cells[y * 16 + x] = ((x < 8) ^ (y < 8)) ? a : b;
         ID2D1Bitmap* cb = nullptr;
@@ -785,38 +800,21 @@ static void CreateDeviceResources() {
 
 static void DiscardDeviceResources() { SafeRelease(g_gpuBmp); SafeRelease(g_checker); SafeRelease(g_rt); }
 
-static void EnsureTextFormats() {
-    if (g_titleFmt && g_fmtScale == g_ui) return;
-    SafeRelease(g_titleFmt); SafeRelease(g_infoFmt); SafeRelease(g_iconFmt);
-    g_dw->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 14 * g_ui, L"pt-br", &g_titleFmt);
-    g_dw->CreateTextFormat(L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12 * g_ui, L"pt-br", &g_infoFmt);
-    const wchar_t* icons = FontInstalled(L"Segoe Fluent Icons") ? L"Segoe Fluent Icons" : L"Segoe MDL2 Assets";
-    g_dw->CreateTextFormat(icons, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 16 * g_ui, L"pt-br", &g_iconFmt);
-    DWRITE_TRIMMING trim = {DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
-    IDWriteInlineObject* ellipsis = nullptr;
-    for (IDWriteTextFormat* f : {g_titleFmt, g_infoFmt, g_iconFmt}) {
-        if (!f) continue;
-        f->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-        f->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        if (SUCCEEDED(g_dw->CreateEllipsisTrimmingSign(f, &ellipsis))) { f->SetTrimming(&trim, ellipsis); ellipsis->Release(); }
-    }
-    if (g_iconFmt) g_iconFmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-    g_fmtScale = g_ui;
-}
+static D2D1_RECT_F GearRectF() { return D2D1::RectF(14 * g_ui, 12 * g_ui, 46 * g_ui, 44 * g_ui); }
+static RECT GearRect() { D2D1_RECT_F r = GearRectF(); return {(LONG)r.left, (LONG)r.top, (LONG)r.right, (LONG)r.bottom}; }
 
-static RECT GearRect() { int s = (int)(kCaption * g_ui); return {(int)(4 * g_ui), 0, (int)(4 * g_ui) + s, s}; }
-
-static std::wstring InfoLine() {
+// Informações em "chips" na cápsula flutuante de baixo.
+static std::vector<std::wstring> InfoChips() {
     std::vector<std::wstring> parts;
     wchar_t t[128];
     const fmt::Info& in = g_info;
-    if (!g_hasInfo) return L"Carregando informações…";
+    if (!g_hasInfo) { parts.push_back(L"Carregando informações…"); return parts; }
     if (in.w && in.h) {
         swprintf(t, 128, L"%u × %u px", in.w, in.h);
         parts.push_back(t);
         if (in.dpi >= 1 && in.note.empty()) {
-            swprintf(t, 128, L"%.0f dpi (%.1f × %.1f cm)", in.dpi, in.w / in.dpi * 2.54, in.h / in.dpi * 2.54);
-            for (wchar_t* c = t; *c; ++c) if (*c == L'.') *c = L',';
+            swprintf(t, 128, L"%.0f dpi · %.1f × %.1f cm", in.dpi, in.w / in.dpi * 2.54, in.h / in.dpi * 2.54);
+            for (wchar_t* c = t; *c; ++c) if (*c == L'.' && c[1] != L' ') *c = L',';
             parts.push_back(t);
         }
     }
@@ -824,46 +822,49 @@ static std::wstring InfoLine() {
     if (in.pages > 1) { swprintf(t, 128, L"%u páginas", in.pages); parts.push_back(t); }
     if (!in.color.empty()) {
         std::wstring c = in.color;
-        if (in.bits) { swprintf(t, 128, L" %u bits", in.bits); c += t; }
+        if (in.bits) { swprintf(t, 128, L" · %u bits", in.bits); c += t; }
         parts.push_back(c);
     }
     if (!in.camera.empty()) parts.push_back(in.camera);
     if (g_fileSize) parts.push_back(FormatSize(g_fileSize));
     if (!in.app.empty()) parts.push_back(in.app);
     if (!in.note.empty()) parts.push_back(in.note);
-    std::wstring s;
-    for (auto& p : parts) s += (s.empty() ? L"" : L"   ·   ") + p;
-    return s;
+    return parts;
 }
+
+static float Ease(float t) { t = max(0.0f, min(1.0f, t)); return 1 - (1 - t) * (1 - t) * (1 - t); }
 
 static void Paint() {
     CreateDeviceResources();
     if (!g_rt) return;
-    EnsureTextFormats();
     if (!g_gpuBmp && g_dib) {
         DIBSECTION ds;
         if (GetObject(g_dib, sizeof(ds), &ds) == sizeof(ds))
             g_rt->CreateBitmap(D2D1::SizeU(g_bw, g_bh), ds.dsBm.bmBits, g_bw * 4,
                                D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)), &g_gpuBmp);
     }
-    bool light = g_cfg.lightBg;
+    const ui::Theme& th = g_theme;
     D2D1_SIZE_F size = g_rt->GetSize();
-    ID2D1SolidColorBrush *text = nullptr, *dim = nullptr, *red = nullptr, *accent = nullptr, *hot = nullptr;
+    float s = g_ui, anim = Ease((GetTickCount() - g_animStart) / 160.0f);
     g_rt->BeginDraw();
-    g_rt->Clear(D2D1::ColorF(light ? 0xF3F3F3 : 0x1E1E1E));
-    g_rt->CreateSolidColorBrush(D2D1::ColorF(light ? 0x1E1E1E : 0xE6E6E6), &text);
-    g_rt->CreateSolidColorBrush(D2D1::ColorF(light ? 0x6A6A6A : 0x9A9A9A), &dim);
-    g_rt->CreateSolidColorBrush(D2D1::ColorF(light ? 0xC42B1C : 0xFF6B6B), &red);
-    g_rt->CreateSolidColorBrush(D2D1::ColorF(light ? 0x005FB8 : 0x4CC2FF), &accent);
-    g_rt->CreateSolidColorBrush(D2D1::ColorF(light ? 0x000000 : 0xFFFFFF, 0.08f), &hot);
+    g_rt->Clear(th.tint);
+    ui::Painter p(g_rt, g_dw, th, s);
 
-    // imagem
+    // imagem flutuando, com cantos arredondados
     D2D1_RECT_F a = ImageArea();
     if (g_gpuBmp) {
-        float w = g_nw * g_scale, h = g_nh * g_scale;
+        float k = 0.97f + 0.03f * anim;
+        float w = g_nw * g_scale * k, h = g_nh * g_scale * k;
         float cx = (a.left + a.right) / 2 + g_ox, cy = (a.top + a.bottom) / 2 + g_oy;
         D2D1_RECT_F dst = D2D1::RectF(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2);
-        g_rt->PushAxisAlignedClip(a, D2D1_ANTIALIAS_MODE_ALIASED);
+        float radius = 14 * s;
+        if (g_fitMode) p.Shadow(dst, radius);
+        ID2D1RoundedRectangleGeometry* clip = nullptr;
+        D2D1_RECT_F clipRect = g_fitMode ? dst : a;
+        g_d2d->CreateRoundedRectangleGeometry(D2D1::RoundedRect(clipRect, radius, radius), &clip);
+        ID2D1Layer* layer = nullptr;
+        g_rt->CreateLayer(&layer);
+        if (clip && layer) g_rt->PushLayer(D2D1::LayerParameters(D2D1::InfiniteRect(), clip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1::IdentityMatrix(), anim), layer);
         if (g_alpha && g_checker) g_rt->FillRectangle(dst, g_checker);
         ID2D1DeviceContext* dc = nullptr;
         bool pixelPeep = w / g_bw >= 3; // zoom alto: pixels nítidos
@@ -871,60 +872,100 @@ static void Paint() {
             dc->DrawBitmap(g_gpuBmp, &dst, 1.0f, pixelPeep ? D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR : D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, nullptr, nullptr);
             dc->Release();
         } else g_rt->DrawBitmap(g_gpuBmp, dst, 1.0f, pixelPeep ? D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR : D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
-        g_rt->PopAxisAlignedClip();
+        if (clip && layer) g_rt->PopLayer();
+        SafeRelease(layer); SafeRelease(clip);
+        if (g_fitMode) p.Stroke(dst, radius, th.stroke);
+    } else p.Text(L"Carregando…", a, 13, th.text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
+
+    // barra de cima: engrenagem, nome, zoom/página
+    p.CircleButton(GearRectF(), L"", g_gearHot);
+    float side = 170 * s;
+    p.Text(g_name, D2D1::RectF(side, 12 * s, size.width - side, 44 * s), 14, th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+    wchar_t t[64];
+    swprintf(t, 64, L"%.0f%%", g_scale * 100 * (g_nativeKnown ? 1.0f : g_nw / g_bw));
+    std::wstring zoom = t;
+    float zw = p.Measure(zoom, 12, DWRITE_FONT_WEIGHT_SEMI_BOLD) + 24 * s, x = size.width - 14 * s;
+    D2D1_RECT_F zr = D2D1::RectF(x - zw, 14 * s, x, 42 * s);
+    p.Glass(zr, 14 * s);
+    p.Text(zoom, zr, 12, th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+    x = zr.left - 8 * s;
+    if (g_pages > 1) {
+        swprintf(t, 64, L"%d / %d", g_page + 1, g_pages);
+        std::wstring pg = t;
+        float pw = p.Measure(pg, 12, DWRITE_FONT_WEIGHT_SEMI_BOLD) + 24 * s;
+        D2D1_RECT_F pr = D2D1::RectF(x - pw, 14 * s, x, 42 * s);
+        p.Glass(pr, 14 * s);
+        p.Text(pg, pr, 12, th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+    }
+    if (!g_flash.empty() || g_loading) {
+        std::wstring f = g_flash.empty() ? std::wstring(L"Carregando…") : g_flash;
+        p.Text(f, D2D1::RectF(54 * s, 12 * s, side, 44 * s), 12, g_flash.empty() ? th.text2 : th.accent);
     }
 
-    if (g_titleFmt && g_infoFmt) {
-        float side = 160 * g_ui;
-        // engrenagem (configurações)
-        RECT gr = GearRect();
-        D2D1_RECT_F gf = D2D1::RectF((float)gr.left, (float)gr.top + 4 * g_ui, (float)gr.right, (float)gr.bottom - 4 * g_ui);
-        if (g_gearHot) g_rt->FillRoundedRectangle(D2D1::RoundedRect(gf, 4 * g_ui, 4 * g_ui), hot);
-        if (g_iconFmt) g_rt->DrawText(L"", 1, g_iconFmt, gf, g_gearHot ? text : dim);
-        if (!g_flash.empty() || g_loading) {
-            const std::wstring& f = g_flash.empty() ? std::wstring(L"Carregando…") : g_flash;
-            g_infoFmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-            g_rt->DrawText(f.c_str(), (UINT32)f.size(), g_infoFmt, D2D1::RectF((float)gr.right + 4 * g_ui, 0, side, kCaption * g_ui), accent);
+    // cápsula flutuante (ornament) com as informações
+    std::vector<std::wstring> chips = InfoChips();
+    float gap = 22 * s, padX = 18 * s, maxW = size.width - 40 * s;
+    std::vector<float> widths;
+    float total = padX * 2;
+    for (auto& c : chips) {
+        float w = p.Measure(c, widths.empty() ? 12 : 12, widths.empty() ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL) + 4 * s;
+        if (total + w + (widths.empty() ? 0 : gap) > maxW) break; // o que não cabe fica de fora
+        total += w + (widths.empty() ? 0 : gap);
+        widths.push_back(w);
+    }
+    float ob = size.height - 14 * s, oh = 36 * s;
+    D2D1_RECT_F orn = D2D1::RectF((size.width - total) / 2, ob - oh, (size.width + total) / 2, ob);
+    p.Glass(orn, oh / 2);
+    float cxp = orn.left + padX;
+    for (size_t i = 0; i < widths.size(); ++i) {
+        if (i) { // separador fino
+            D2D1_RECT_F sep = D2D1::RectF(cxp + gap / 2 - 0.5f * s, orn.top + 11 * s, cxp + gap / 2 + 0.5f * s, orn.bottom - 11 * s);
+            p.Fill(sep, 0, th.stroke);
+            cxp += gap;
         }
-        // título, página e zoom
-        std::wstring right;
-        wchar_t t[64];
-        if (g_pages > 1) { swprintf(t, 64, L"Página %d de %d   ", g_page + 1, g_pages); right += t; }
-        swprintf(t, 64, L"%.0f%%", g_scale * 100 * (g_nativeKnown ? 1.0f : g_nw / g_bw));
-        right += t;
-        g_titleFmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-        g_rt->DrawText(g_name.c_str(), (UINT32)g_name.size(), g_titleFmt, D2D1::RectF(side, 0, size.width - side, kCaption * g_ui), text);
-        g_infoFmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
-        g_rt->DrawText(right.c_str(), (UINT32)right.size(), g_infoFmt, D2D1::RectF(size.width - side - kPad * g_ui, 0, size.width - kPad * g_ui, kCaption * g_ui), dim);
+        p.Text(chips[i], D2D1::RectF(cxp, orn.top, cxp + widths[i] + 2, orn.bottom), 12, i == 0 ? th.text : th.text2, i == 0 ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL);
+        cxp += widths[i];
+    }
 
-        // barra de informações
-        g_infoFmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-        float top = size.height - kInfo * g_ui, lineH = 20 * g_ui;
-        std::wstring l1 = InfoLine();
-        g_rt->DrawText(l1.c_str(), (UINT32)l1.size(), g_infoFmt, D2D1::RectF(kPad * g_ui, top + 4 * g_ui, size.width - kPad * g_ui, top + 4 * g_ui + lineH), text);
-
-        std::wstring l2;
+    // fontes do documento (faltando = vermelho)
+    if (!g_info.fonts.empty()) {
+        std::wstring l2 = L"Fontes   ";
         std::vector<DWRITE_TEXT_RANGE> missing;
-        if (!g_info.fonts.empty()) {
-            l2 = L"Fontes: ";
-            for (size_t i = 0; i < g_info.fonts.size(); ++i) {
-                if (i) l2 += L", ";
-                bool ok = FontInstalled(g_info.fontFamilies[i]);
-                if (!ok) missing.push_back({(UINT32)l2.size(), (UINT32)g_info.fonts[i].size() + 2});
-                l2 += g_info.fonts[i];
-                if (!ok) l2 += L" ⚠";
-            }
-        } else l2 = L"Roda: zoom  ·  Arrastar: mover  ·  Z: 100%  ·  0: ajustar  ·  PgUp/PgDn: páginas  ·  Enter: abrir  ·  Ctrl+C: copiar  ·  B: fundo";
+        for (size_t i = 0; i < g_info.fonts.size(); ++i) {
+            if (i) l2 += L"  ·  ";
+            bool ok = FontInstalled(g_info.fontFamilies[i]);
+            if (!ok) missing.push_back({(UINT32)l2.size(), (UINT32)g_info.fonts[i].size() + 2});
+            l2 += g_info.fonts[i];
+            if (!ok) l2 += L" ⚠";
+        }
+        float fw = min(p.Measure(l2, 11.5f) * 1.08f + 2 * padX, maxW), fh = 30 * s; // folga para os nomes em negrito
+        D2D1_RECT_F fr = D2D1::RectF((size.width - fw) / 2, orn.top - 8 * s - fh, (size.width + fw) / 2, orn.top - 8 * s);
+        p.Glass(fr, fh / 2);
+        IDWriteTextFormat* f = p.Format(11.5f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
         IDWriteTextLayout* lay = nullptr;
-        float lw = size.width - 2 * kPad * g_ui;
-        if (SUCCEEDED(g_dw->CreateTextLayout(l2.c_str(), (UINT32)l2.size(), g_infoFmt, lw, lineH, &lay))) {
-            for (auto& r : missing) lay->SetDrawingEffect(red, r);
-            g_rt->DrawTextLayout(D2D1::Point2F(kPad * g_ui, top + 4 * g_ui + lineH), lay, g_info.fonts.empty() ? dim : text);
+        ID2D1SolidColorBrush *txt = nullptr, *red = nullptr, *lbl = nullptr;
+        g_rt->CreateSolidColorBrush(th.text, &txt); g_rt->CreateSolidColorBrush(th.danger, &red); g_rt->CreateSolidColorBrush(th.text2, &lbl);
+        if (f && txt && red && lbl && SUCCEEDED(g_dw->CreateTextLayout(l2.c_str(), (UINT32)l2.size(), f, fr.right - fr.left - 2 * padX, fh, &lay))) {
+            lay->SetDrawingEffect(lbl, {0, 6});
+            for (auto& r : missing) { lay->SetDrawingEffect(red, r); lay->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, r); }
+            g_rt->DrawTextLayout(D2D1::Point2F(fr.left + padX, fr.top), lay, txt);
             lay->Release();
         }
+        SafeRelease(txt); SafeRelease(red); SafeRelease(lbl);
+        if (f) f->Release();
     }
-    SafeRelease(text); SafeRelease(dim); SafeRelease(red); SafeRelease(accent); SafeRelease(hot);
     if (g_rt->EndDraw() == D2DERR_RECREATE_TARGET) DiscardDeviceResources();
+}
+
+// Tema do Windows mudou (claro/escuro): reaplica o vidro e redesenha tudo.
+static void ApplyTheme() {
+    bool dark = ui::SystemDark();
+    bool glass = true;
+    for (HWND w : {g_wnd, g_altWnd, g_toastWnd, g_settingsWnd})
+        if (w) glass &= ui::EnableGlass(w, dark);
+    g_theme = ui::MakeTheme(dark, glass);
+    SafeRelease(g_checker);
+    for (HWND w : {g_wnd, g_altWnd, g_toastWnd, g_settingsWnd}) if (w) InvalidateRect(w, nullptr, FALSE);
 }
 
 // ---------- janela do preview ----------
@@ -935,9 +976,10 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_LOADED: OnLoaded((Loaded*)lp); return 0;
     case WM_CONV_PROGRESS: {
         wchar_t t[96];
-        swprintf(t, 96, L"%u de %u arquivo%ls…", (unsigned)wp, (unsigned)lp, lp > 1 ? L"s" : L"");
+        g_toastDone = (UINT)wp; g_toastTotal = (UINT)lp;
+        swprintf(t, 96, L"%u de %u arquivo%ls", (unsigned)wp, (unsigned)lp, lp > 1 ? L"s" : L"");
         g_toastText = t;
-        InvalidateRect(g_toastWnd, nullptr, TRUE);
+        InvalidateRect(g_toastWnd, nullptr, FALSE);
         return 0;
     }
     case WM_CONV_DONE: {
@@ -946,20 +988,24 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         g_toastOutputs = r->outputs;
         static const wchar_t* names[] = {L"PNG", L"JPG", L"PDF"};
         wchar_t t[160];
-        if (r->outputs.empty()) ShowToast(L"Não foi possível converter", L"Nenhum arquivo gerou imagem.", 6000);
+        if (r->outputs.empty()) ShowToast(L"Não foi possível converter", L"Nenhum arquivo gerou imagem.", 6000, 2);
         else {
             if (wp == conv::kPdf) swprintf(t, 160, L"%ls", PathFindFileNameW(r->outputs[0].c_str()));
             else swprintf(t, 160, L"%u arquivo%ls %ls", (unsigned)r->outputs.size(), r->outputs.size() > 1 ? L"s" : L"", names[wp]);
             std::wstring text = t;
             if (r->failed) text += L"  ·  " + std::to_wstring(r->failed) + L" com erro";
-            ShowToast(L"✓ Pronto — clique para mostrar na pasta", text, 7000);
+            ShowToast(L"Pronto · clique para ver na pasta", text, 7000, 1);
         }
         delete r;
         return 0;
     }
     case WM_OPEN_SETTINGS: OpenSettings(); return 0;
+    case WM_SETTINGCHANGE:
+        if (lp && wcscmp((const wchar_t*)lp, L"ImmersiveColorSet") == 0) ApplyTheme();
+        return 0;
     case WM_TIMER:
         if (wp == kAltTimer) { AltTick(); return 0; }
+        if (wp == kAnimTimer) { InvalidateRect(h, nullptr, FALSE); if (GetTickCount() - g_animStart > 180) KillTimer(h, wp); return 0; }
         if (wp == kSelTimer) { KillTimer(h, wp); if (HWND dv = FocusedFileList()) SyncSelectionOrder(dv); return 0; }
         KillTimer(h, wp);
         if (wp == kRefreshTimer && g_open) OpenSelection();
@@ -1029,27 +1075,17 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(h, msg, wp, lp);
 }
 
-// ---------- janelinhas desenhadas com GDI (botões do Alt e aviso) ----------
+// ---------- botões do Alt e aviso (vidro, Direct2D) ----------
 
-static HFONT MakeFont(float ui, int size, int weight) {
-    return CreateFontW(-(int)(size * ui), 0, 0, 0, weight, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
-}
+static ui::Surface g_altSurf, g_toastSurf, g_setSurf;
 
-static void FillRound(HDC dc, RECT r, COLORREF c, int radius) {
-    HBRUSH b = CreateSolidBrush(c);
-    HPEN p = CreatePen(PS_SOLID, 1, c);
-    HGDIOBJ ob = SelectObject(dc, b), op = SelectObject(dc, p);
-    RoundRect(dc, r.left, r.top, r.right, r.bottom, radius, radius);
-    SelectObject(dc, ob); SelectObject(dc, op);
-    DeleteObject(b); DeleteObject(p);
-}
+static float WndScale(HWND h) { return GetDpiForWindow(h) / 96.0f; }
 
-static RECT AltButton(HWND h, int i) {
+static D2D1_RECT_F AltButton(HWND h, int i) {
     RECT rc; GetClientRect(h, &rc);
-    float ui = GetDpiForWindow(h) / 96.0f;
-    int pad = (int)(10 * ui), gap = (int)(8 * ui), top = (int)(36 * ui);
-    int bw = (rc.right - 2 * pad - 2 * gap) / 3;
-    return {pad + i * (bw + gap), top, pad + i * (bw + gap) + bw, rc.bottom - pad};
+    float s = WndScale(h), pad = 12 * s, gap = 8 * s, top = 38 * s;
+    float bw = (rc.right - 2 * pad - 2 * gap) / 3;
+    return D2D1::RectF(pad + i * (bw + gap), top, pad + i * (bw + gap) + bw, rc.bottom - pad);
 }
 
 static LRESULT CALLBACK AltProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
@@ -1058,12 +1094,13 @@ static LRESULT CALLBACK AltProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_MOUSEMOVE: {
         POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         int hotNow = -1;
-        for (int i = 0; i < 3; ++i) { RECT r = AltButton(h, i); if (PtInRect(&r, p)) hotNow = i; }
+        for (int i = 0; i < 3; ++i) if (ui::Hit(AltButton(h, i), p)) hotNow = i;
         if (hotNow != g_altHot) { g_altHot = hotNow; InvalidateRect(h, nullptr, FALSE); }
         TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, h, 0};
         TrackMouseEvent(&tme);
         return 0;
     }
+    case WM_SETCURSOR: SetCursor(LoadCursor(nullptr, g_altHot >= 0 ? IDC_HAND : IDC_ARROW)); return TRUE;
     case WM_MOUSELEAVE:
         g_altHot = -1;
         if (GetAsyncKeyState(VK_MENU) >= 0) HideAltPopup(); // soltou o Alt e saiu de cima: some
@@ -1071,55 +1108,43 @@ static LRESULT CALLBACK AltProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_LBUTTONUP: {
         POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
-        for (int i = 0; i < 3; ++i) {
-            RECT r = AltButton(h, i);
-            if (PtInRect(&r, p)) { HideAltPopup(); StartConversion((conv::Kind)i); break; }
-        }
+        for (int i = 0; i < 3; ++i)
+            if (ui::Hit(AltButton(h, i), p)) { HideAltPopup(); StartConversion((conv::Kind)i); break; }
         return 0;
     }
+    case WM_SIZE: g_altSurf.Resize(LOWORD(lp), HIWORD(lp)); return 0;
     case WM_ERASEBKGND: return 1;
     case WM_PAINT: {
         PAINTSTRUCT ps;
-        HDC dc = BeginPaint(h, &ps);
-        RECT rc; GetClientRect(h, &rc);
-        float ui = GetDpiForWindow(h) / 96.0f;
-        HDC mem = CreateCompatibleDC(dc);
-        HBITMAP buf = CreateCompatibleBitmap(dc, rc.right, rc.bottom);
-        HGDIOBJ ob = SelectObject(mem, buf);
-        HBRUSH bg = CreateSolidBrush(RGB(32, 32, 32));
-        FillRect(mem, &rc, bg);
-        DeleteObject(bg);
-        SetBkMode(mem, TRANSPARENT);
-        HFONT small = MakeFont(ui, 12, FW_NORMAL), big = MakeFont(ui, 14, FW_SEMIBOLD), tiny = MakeFont(ui, 10, FW_NORMAL);
-        size_t n = g_convFiles.size();
-        std::wstring title = n == 1 ? L"Converter “" + std::wstring(PathFindFileNameW(g_convFiles[0].c_str())) + L"”"
-                                    : L"Converter " + std::to_wstring(n) + L" arquivos";
-        SelectObject(mem, small);
-        SetTextColor(mem, RGB(200, 200, 200));
-        RECT tr = {(int)(12 * ui), 0, rc.right - (int)(12 * ui), (int)(34 * ui)};
-        DrawTextW(mem, title.c_str(), -1, &tr, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
-        static const wchar_t* labels[] = {L"PNG", L"JPG", L"PDF"};
-        for (int i = 0; i < 3; ++i) {
-            RECT r = AltButton(h, i);
-            FillRound(mem, r, g_altHot == i ? RGB(0, 103, 192) : RGB(58, 58, 58), (int)(8 * ui));
-            SetTextColor(mem, RGB(255, 255, 255));
-            SelectObject(mem, big);
-            RECT lr = r;
-            bool sub = i == 2 && n > 1;
-            if (sub) lr.bottom -= (int)(10 * ui);
-            DrawTextW(mem, labels[i], -1, &lr, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
-            if (sub) { // PDF com várias páginas
-                SelectObject(mem, tiny);
-                SetTextColor(mem, RGB(210, 210, 210));
-                RECT sr = r; sr.top = r.bottom - (int)(20 * ui);
-                std::wstring s = std::to_wstring(n) + L" páginas";
-                DrawTextW(mem, s.c_str(), -1, &sr, DT_SINGLELINE | DT_CENTER | DT_TOP);
+        BeginPaint(h, &ps);
+        g_altSurf.hwnd = h;
+        if (g_altSurf.Begin(g_d2d)) {
+            float s = WndScale(h);
+            ID2D1RenderTarget* rt = g_altSurf.rt;
+            D2D1_SIZE_F sz = rt->GetSize();
+            rt->Clear(g_theme.tint);
+            ui::Painter p(rt, g_dw, g_theme, s);
+            p.Stroke(D2D1::RectF(0, 0, sz.width, sz.height), 8 * s, g_theme.stroke);
+            size_t n = g_convFiles.size();
+            std::wstring title = n == 1 ? L"Converter “" + std::wstring(PathFindFileNameW(g_convFiles[0].c_str())) + L"”"
+                                        : L"Converter " + std::to_wstring(n) + L" arquivos";
+            p.Text(title, D2D1::RectF(16 * s, 6 * s, sz.width - 16 * s, 34 * s), 12, g_theme.text2, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+            static const wchar_t* labels[] = {L"PNG", L"JPG", L"PDF"};
+            static const wchar_t* icons[] = {L"", L"", L""};
+            for (int i = 0; i < 3; ++i) {
+                D2D1_RECT_F r = AltButton(h, i);
+                bool hot = g_altHot == i;
+                float rad = 14 * s;
+                if (hot) p.Fill(r, rad, g_theme.accent); else p.Glass(r, rad);
+                D2D1_COLOR_F c = hot ? g_theme.onAccent : g_theme.text;
+                bool sub = i == 2 && n > 1;
+                p.Icon(icons[i], D2D1::RectF(r.left, r.top + 6 * s, r.right, r.top + 28 * s), 16, c);
+                p.Text(labels[i], D2D1::RectF(r.left, r.top + 26 * s, r.right, r.top + (sub ? 44 : 50) * s), 13, c, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+                if (sub) p.Text(std::to_wstring(n) + L" páginas", D2D1::RectF(r.left, r.top + 42 * s, r.right, r.bottom - 4 * s), 10,
+                                hot ? g_theme.onAccent : g_theme.text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
             }
+            g_altSurf.End();
         }
-        BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
-        SelectObject(mem, ob);
-        DeleteObject(buf); DeleteDC(mem);
-        DeleteObject(small); DeleteObject(big); DeleteObject(tiny);
         EndPaint(h, &ps);
         return 0;
     }
@@ -1149,27 +1174,38 @@ static LRESULT CALLBACK ToastProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_MOUSEACTIVATE: return MA_NOACTIVATE;
     case WM_TIMER: KillTimer(h, wp); ShowWindow(h, SW_HIDE); return 0;
+    case WM_SETCURSOR: SetCursor(LoadCursor(nullptr, g_converting ? IDC_ARROW : IDC_HAND)); return TRUE;
     case WM_LBUTTONUP: if (!g_converting) { ShowWindow(h, SW_HIDE); RevealOutputs(); } return 0;
     case WM_RBUTTONUP: if (!g_converting) ShowWindow(h, SW_HIDE); return 0;
+    case WM_SIZE: g_toastSurf.Resize(LOWORD(lp), HIWORD(lp)); return 0;
     case WM_ERASEBKGND: return 1;
     case WM_PAINT: {
         PAINTSTRUCT ps;
-        HDC dc = BeginPaint(h, &ps);
-        RECT rc; GetClientRect(h, &rc);
-        float ui = GetDpiForWindow(h) / 96.0f;
-        HBRUSH bg = CreateSolidBrush(RGB(32, 32, 32));
-        FillRect(dc, &rc, bg);
-        DeleteObject(bg);
-        SetBkMode(dc, TRANSPARENT);
-        HFONT big = MakeFont(ui, 14, FW_SEMIBOLD), small = MakeFont(ui, 12, FW_NORMAL);
-        int pad = (int)(16 * ui);
-        RECT r1 = {pad, (int)(10 * ui), rc.right - pad, rc.bottom / 2 + (int)(2 * ui)};
-        RECT r2 = {pad, rc.bottom / 2 + (int)(2 * ui), rc.right - pad, rc.bottom - (int)(10 * ui)};
-        SelectObject(dc, big); SetTextColor(dc, RGB(255, 255, 255));
-        DrawTextW(dc, g_toastTitle.c_str(), -1, &r1, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
-        SelectObject(dc, small); SetTextColor(dc, RGB(190, 190, 190));
-        DrawTextW(dc, g_toastText.c_str(), -1, &r2, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
-        DeleteObject(big); DeleteObject(small);
+        BeginPaint(h, &ps);
+        g_toastSurf.hwnd = h;
+        if (g_toastSurf.Begin(g_d2d)) {
+            float s = WndScale(h);
+            ID2D1RenderTarget* rt = g_toastSurf.rt;
+            D2D1_SIZE_F sz = rt->GetSize();
+            rt->Clear(g_theme.tint);
+            ui::Painter p(rt, g_dw, g_theme, s);
+            p.Stroke(D2D1::RectF(0, 0, sz.width, sz.height), 8 * s, g_theme.stroke);
+            // ícone redondo: progresso, pronto ou erro
+            D2D1_RECT_F ic = D2D1::RectF(16 * s, (sz.height - 40 * s) / 2, 56 * s, (sz.height + 40 * s) / 2);
+            p.Fill(ic, 20 * s, g_toastState == 2 ? g_theme.danger : g_theme.accent);
+            p.Icon(g_toastState == 0 ? L"" : g_toastState == 1 ? L"" : L"", ic, 16, g_theme.onAccent);
+            float x = 70 * s;
+            p.Text(g_toastTitle, D2D1::RectF(x, 14 * s, sz.width - 16 * s, 36 * s), 13.5f, g_theme.text, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+            p.Text(g_toastText, D2D1::RectF(x, 36 * s, sz.width - 16 * s, 56 * s), 12, g_theme.text2);
+            if (g_toastState == 0) { // barra de progresso arredondada
+                D2D1_RECT_F bar = D2D1::RectF(x, sz.height - 18 * s, sz.width - 18 * s, sz.height - 13 * s);
+                p.Fill(bar, 2.5f * s, g_theme.track);
+                float f = g_toastTotal ? (float)g_toastDone / g_toastTotal : 0.05f;
+                bar.right = bar.left + max(5 * s, (bar.right - bar.left) * f);
+                p.Fill(bar, 2.5f * s, g_theme.accent);
+            }
+            g_toastSurf.End();
+        }
         EndPaint(h, &ps);
         return 0;
     }
@@ -1177,102 +1213,209 @@ static LRESULT CALLBACK ToastProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(h, msg, wp, lp);
 }
 
-// ---------- configurações ----------
+// ---------- configurações (painel de vidro desenhado à mão) ----------
 
 static void SetAutostart(bool on);
 static bool AutostartEnabled();
 
-enum { kIdSpace = 101, kIdAlt, kIdDelay, kIdQuality, kIdAutostart, kIdFolder, kIdQuit, kIdClose, kIdAbout, kIdDpi72, kIdDpi300, kIdPdfSmall, kIdPdfRaw };
+enum { kTogSpace = 1, kTogAlt, kDelayMinus, kDelayPlus, kDpi72, kDpi300, kPdfSmall, kPdfRaw, kQualMinus, kQualPlus, kTogAuto, kBtnFolder, kBtnQuit, kBtnClose };
 
 static const wchar_t* kAbout =
-    L"O DesignThumbs deixa o Explorer do Windows entender arquivos de design e fotografia:\r\n\r\n"
-    L"• Miniaturas e painel de visualização (Alt+P) para Photoshop (PSD/PSB), Illustrator (AI), InDesign (INDD), "
-    L"EPS, SVG/SVGZ, CorelDRAW (CDR), Affinity, Adobe XD, Sketch, Krita, Procreate e RAW de câmeras "
-    L"(CR3, CR2, NEF, ARW, DNG, RAF, ORF, RW2...).\r\n\r\n"
-    L"• Preview com Espaço: selecione um arquivo e aperte Espaço.\r\n"
-    L"    Espaço/Esc fecha · setas trocam de arquivo · roda do mouse dá zoom · arrastar move\r\n"
-    L"    Z = 100% · 0 = ajustar · duplo clique alterna · PgUp/PgDn = páginas do InDesign\r\n"
-    L"    Enter abre no programa · Ctrl+C copia a imagem · B alterna fundo claro/escuro\r\n"
-    L"    A barra de baixo mostra tamanho, DPI, cor, câmera e as fontes usadas (faltando = vermelho ⚠).\r\n\r\n"
-    L"• Converter com Alt: selecione um ou vários arquivos e segure Alt. Aparecem botões para PNG, JPG ou PDF. "
-    L"Os arquivos são salvos ao lado dos originais, em 72 ou 300 dpi (configurável). Com vários arquivos, o PDF reúne "
-    L"todos em páginas, na ordem em que você clicou neles. O PDF pode ser comprimido (menor) ou sem compressão (maior, sem perda).\r\n\r\n"
-    L"Leve: não fica escutando o teclado e só trabalha quando você pede.";
+    L"O DesignThumbs ensina o Explorer a entender arquivos de design e fotografia: miniaturas e painel de visualização (Alt+P) "
+    L"para Photoshop, Illustrator, InDesign, EPS, SVG, CorelDRAW, Affinity, XD, Sketch, Krita, Procreate e RAW de câmeras.\n\n"
+    L"Preview com Espaço: selecione um arquivo e aperte Espaço. Setas trocam de arquivo, a roda do mouse dá zoom e arrastar move. "
+    L"Z mostra em 100%, 0 ajusta, PgUp/PgDn troca páginas do InDesign, Enter abre no programa e Ctrl+C copia a imagem. "
+    L"Embaixo aparecem tamanho, DPI, cor, câmera e as fontes usadas (as que faltam ficam em vermelho).\n\n"
+    L"Conversão rápida: selecione arquivos e segure Alt para converter em PNG, JPG ou PDF. Com vários arquivos, o PDF segue "
+    L"a ordem em que você clicou neles.\n\n"
+    L"Leve: não escuta o teclado e só trabalha quando você pede.";
 
-static HFONT g_settingsFont;
+static std::vector<std::pair<int, D2D1_RECT_F>> g_setHits;
+static int g_setHot;
+static float g_setScroll, g_setContentH;
+
+static void SettingsAction(int id) {
+    switch (id) {
+    case kTogSpace: g_cfg.space = !g_cfg.space; break;
+    case kTogAlt: g_cfg.alt = !g_cfg.alt; break;
+    case kDelayMinus: g_cfg.altDelay = max(150ul, (unsigned long)g_cfg.altDelay - 100); break;
+    case kDelayPlus: g_cfg.altDelay = min(3000ul, (unsigned long)g_cfg.altDelay + 100); break;
+    case kDpi72: g_cfg.dpi300 = false; break;
+    case kDpi300: g_cfg.dpi300 = true; break;
+    case kPdfSmall: g_cfg.pdfRaw = false; break;
+    case kPdfRaw: g_cfg.pdfRaw = true; break;
+    case kQualMinus: g_cfg.quality = max(50ul, (unsigned long)g_cfg.quality - 2); break;
+    case kQualPlus: g_cfg.quality = min(100ul, (unsigned long)g_cfg.quality + 2); break;
+    case kTogAuto: SetAutostart(!AutostartEnabled()); break;
+    case kBtnFolder: {
+        wchar_t exe[MAX_PATH]; GetModuleFileNameW(nullptr, exe, MAX_PATH);
+        PIDLIST_ABSOLUTE pidl = nullptr;
+        if (SUCCEEDED(SHParseDisplayName(exe, nullptr, &pidl, 0, nullptr))) { SHOpenFolderAndSelectItems(pidl, 0, nullptr, 0); CoTaskMemFree(pidl); }
+        return;
+    }
+    case kBtnQuit: DestroyWindow(g_settingsWnd); PostMessage(g_wnd, WM_CLOSE, 0, 0); return;
+    case kBtnClose: DestroyWindow(g_settingsWnd); return;
+    default: return;
+    }
+    SaveConfig();
+    UpdateHotkeys();
+}
+
+static void PaintSettings(HWND h) {
+    g_setSurf.hwnd = h;
+    if (!g_setSurf.Begin(g_d2d)) return;
+    float s = WndScale(h);
+    ID2D1RenderTarget* rt = g_setSurf.rt;
+    D2D1_SIZE_F sz = rt->GetSize();
+    const ui::Theme& th = g_theme;
+    rt->Clear(th.tint);
+    ui::Painter p(rt, g_dw, th, s);
+    g_setHits.clear();
+    auto hit = [&](int id, D2D1_RECT_F r) { g_setHits.push_back({id, r}); return g_setHot == id; };
+
+    // cabeçalho fixo
+    p.Text(L"DesignPeek", D2D1::RectF(28 * s, 22 * s, sz.width - 80 * s, 54 * s), 24, th.text, DWRITE_FONT_WEIGHT_BOLD);
+    p.Text(L"Configurações", D2D1::RectF(28 * s, 52 * s, sz.width - 80 * s, 74 * s), 13, th.text2);
+    D2D1_RECT_F close = D2D1::RectF(sz.width - 52 * s, 22 * s, sz.width - 22 * s, 52 * s);
+    p.CircleButton(close, L"", hit(kBtnClose, close));
+
+    // conteúdo rolável
+    float top = 92 * s;
+    D2D1_RECT_F view = D2D1::RectF(0, top, sz.width, sz.height);
+    rt->PushAxisAlignedClip(view, D2D1_ANTIALIAS_MODE_ALIASED);
+    float x = 20 * s, w = sz.width - 40 * s, y = top - g_setScroll, rowH = 50 * s;
+    auto section = [&](const wchar_t* title) {
+        p.Text(title, D2D1::RectF(x + 10 * s, y, x + w, y + 22 * s), 11.5f, th.text2, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+        y += 26 * s;
+    };
+    auto card = [&](int rows) { D2D1_RECT_F c = D2D1::RectF(x, y, x + w, y + rows * rowH); p.Glass(c, 16 * s); return c; };
+    auto label = [&](int row, const D2D1_RECT_F& c, const wchar_t* t, const wchar_t* sub = nullptr) {
+        float ry = c.top + row * rowH;
+        if (row) p.Fill(D2D1::RectF(c.left + 16 * s, ry, c.right - 16 * s, ry + 1 * s), 0, th.stroke);
+        if (sub) {
+            p.Text(t, D2D1::RectF(c.left + 16 * s, ry + 7 * s, c.right - 200 * s, ry + 28 * s), 13, th.text);
+            p.Text(sub, D2D1::RectF(c.left + 16 * s, ry + 26 * s, c.right - 200 * s, ry + 44 * s), 11, th.text2);
+        } else p.Text(t, D2D1::RectF(c.left + 16 * s, ry, c.right - 200 * s, ry + rowH), 13, th.text);
+        return ry;
+    };
+    auto toggle = [&](int id, const D2D1_RECT_F& c, float ry, bool on) {
+        D2D1_RECT_F r = D2D1::RectF(c.right - 16 * s - 46 * s, ry + (rowH - 26 * s) / 2, c.right - 16 * s, ry + (rowH + 26 * s) / 2);
+        p.Toggle(r, on, hit(id, r));
+    };
+    auto rightBox = [&](const D2D1_RECT_F& c, float ry, float bw) {
+        return D2D1::RectF(c.right - 16 * s - bw, ry + (rowH - 30 * s) / 2, c.right - 16 * s, ry + (rowH + 30 * s) / 2);
+    };
+
+    section(L"PREVIEW");
+    D2D1_RECT_F c = card(1);
+    toggle(kTogSpace, c, label(0, c, L"Preview com a barra de Espaço", L"Selecione um arquivo e aperte Espaço"), g_cfg.space);
+    y = c.bottom + 22 * s;
+
+    section(L"CONVERSÃO RÁPIDA");
+    c = card(5);
+    toggle(kTogAlt, c, label(0, c, L"Botões ao segurar Alt", L"PNG, JPG ou PDF sobre o mouse"), g_cfg.alt);
+    {
+        float ry = label(1, c, L"Tempo segurando");
+        D2D1_RECT_F r = rightBox(c, ry, 150 * s), mi, pl;
+        int hot = g_setHot == kDelayMinus ? 0 : g_setHot == kDelayPlus ? 1 : -1;
+        p.Stepper(r, std::to_wstring(g_cfg.altDelay) + L" ms", hot, &mi, &pl);
+        hit(kDelayMinus, mi); hit(kDelayPlus, pl);
+    }
+    {
+        float ry = label(2, c, L"Resolução");
+        D2D1_RECT_F r = rightBox(c, ry, 180 * s), parts[2];
+        std::wstring l[2] = {L"72 dpi", L"300 dpi"};
+        p.Segmented(r, l, 2, g_cfg.dpi300 ? 1 : 0, g_setHot == kDpi72 ? 0 : g_setHot == kDpi300 ? 1 : -1, parts);
+        hit(kDpi72, parts[0]); hit(kDpi300, parts[1]);
+    }
+    {
+        float ry = label(3, c, L"PDF");
+        D2D1_RECT_F r = rightBox(c, ry, 230 * s), parts[2];
+        std::wstring l[2] = {L"Comprimido", L"Sem compressão"};
+        p.Segmented(r, l, 2, g_cfg.pdfRaw ? 1 : 0, g_setHot == kPdfSmall ? 0 : g_setHot == kPdfRaw ? 1 : -1, parts);
+        hit(kPdfSmall, parts[0]); hit(kPdfRaw, parts[1]);
+    }
+    {
+        float ry = label(4, c, L"Qualidade JPG/PDF");
+        D2D1_RECT_F r = rightBox(c, ry, 150 * s), mi, pl;
+        int hot = g_setHot == kQualMinus ? 0 : g_setHot == kQualPlus ? 1 : -1;
+        p.Stepper(r, std::to_wstring(g_cfg.quality) + L"%", hot, &mi, &pl);
+        hit(kQualMinus, mi); hit(kQualPlus, pl);
+    }
+    y = c.bottom + 22 * s;
+
+    section(L"SISTEMA");
+    c = card(1);
+    toggle(kTogAuto, c, label(0, c, L"Iniciar com o Windows"), AutostartEnabled());
+    y = c.bottom + 12 * s;
+    {
+        float bw = (w - 10 * s) / 2;
+        D2D1_RECT_F b1 = D2D1::RectF(x, y, x + bw, y + 36 * s), b2 = D2D1::RectF(x + bw + 10 * s, y, x + w, y + 36 * s);
+        p.Pill(b1, L"Abrir pasta do programa", hit(kBtnFolder, b1));
+        p.Pill(b2, L"Encerrar o DesignPeek", hit(kBtnQuit, b2));
+        y = b1.bottom + 22 * s;
+    }
+
+    section(L"SOBRE");
+    {
+        float ph = p.Paragraph(kAbout, x + 16 * s, y + 14 * s, w - 32 * s, 12, th.text2, false);
+        D2D1_RECT_F about = D2D1::RectF(x, y, x + w, y + ph + 28 * s);
+        p.Glass(about, 16 * s);
+        p.Paragraph(kAbout, x + 16 * s, y + 14 * s, w - 32 * s, 12, th.text2);
+        y = about.bottom + 20 * s;
+    }
+    g_setContentH = y + g_setScroll - top;
+    rt->PopAxisAlignedClip();
+    p.Stroke(D2D1::RectF(0, 0, sz.width, sz.height), 8 * s, th.stroke);
+    g_setSurf.End();
+}
 
 static LRESULT CALLBACK SettingsProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
-    case WM_CREATE: {
-        float ui = GetDpiForWindow(h) / 96.0f;
-        auto S = [ui](int v) { return (int)(v * ui); };
-        g_settingsFont = MakeFont(ui, 12, FW_NORMAL);
-        HFONT title = MakeFont(ui, 18, FW_SEMIBOLD);
-        auto make = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int hh, int id, HFONT f = nullptr) {
-            HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, S(x), S(y), S(w), S(hh), h, (HMENU)(INT_PTR)id, g_inst, nullptr);
-            SendMessageW(c, WM_SETFONT, (WPARAM)(f ? f : g_settingsFont), TRUE);
-            return c;
-        };
-        make(L"STATIC", L"DesignPeek — Configurações", 0, 20, 14, 460, 30, 0, title);
-        make(L"BUTTON", L"Preview com a barra de Espaço", BS_AUTOCHECKBOX | WS_TABSTOP, 20, 56, 460, 24, kIdSpace);
-        make(L"BUTTON", L"Botões de conversão ao segurar Alt", BS_AUTOCHECKBOX | WS_TABSTOP, 20, 84, 300, 24, kIdAlt);
-        make(L"STATIC", L"Tempo segurando (ms):", SS_CENTERIMAGE, 40, 112, 170, 24, 0);
-        make(L"EDIT", std::to_wstring(g_cfg.altDelay).c_str(), WS_BORDER | ES_NUMBER | WS_TABSTOP, 210, 112, 70, 24, kIdDelay);
-        make(L"STATIC", L"Qualidade do JPG/PDF (50–100):", SS_CENTERIMAGE, 20, 144, 190, 24, 0);
-        make(L"EDIT", std::to_wstring(g_cfg.quality).c_str(), WS_BORDER | ES_NUMBER | WS_TABSTOP, 210, 144, 70, 24, kIdQuality);
-        make(L"STATIC", L"Resolução da conversão:", SS_CENTERIMAGE, 20, 176, 190, 24, 0);
-        make(L"BUTTON", L"72 dpi", BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, 210, 176, 90, 24, kIdDpi72);
-        make(L"BUTTON", L"300 dpi", BS_AUTORADIOBUTTON, 300, 176, 90, 24, kIdDpi300);
-        make(L"STATIC", L"PDF:", SS_CENTERIMAGE, 20, 206, 190, 24, 0);
-        make(L"BUTTON", L"Comprimido (arquivo menor)", BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, 210, 206, 330, 24, kIdPdfSmall);
-        make(L"BUTTON", L"Normal, sem compressão (arquivo maior)", BS_AUTORADIOBUTTON, 210, 232, 330, 24, kIdPdfRaw);
-        make(L"BUTTON", L"Iniciar com o Windows", BS_AUTOCHECKBOX | WS_GROUP | WS_TABSTOP, 20, 266, 460, 24, kIdAutostart);
-        make(L"EDIT", kAbout, WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL, 20, 300, 520, 220, kIdAbout);
-        make(L"BUTTON", L"Abrir pasta do programa", WS_TABSTOP, 20, 534, 170, 30, kIdFolder);
-        make(L"BUTTON", L"Encerrar o DesignPeek", WS_TABSTOP, 200, 534, 170, 30, kIdQuit);
-        make(L"BUTTON", L"Fechar", BS_DEFPUSHBUTTON | WS_TABSTOP, 440, 534, 100, 30, kIdClose);
-        CheckRadioButton(h, kIdDpi72, kIdDpi300, g_cfg.dpi300 ? kIdDpi300 : kIdDpi72);
-        CheckRadioButton(h, kIdPdfSmall, kIdPdfRaw, g_cfg.pdfRaw ? kIdPdfRaw : kIdPdfSmall);
-        CheckDlgButton(h, kIdSpace, g_cfg.space ? BST_CHECKED : BST_UNCHECKED);
-        CheckDlgButton(h, kIdAlt, g_cfg.alt ? BST_CHECKED : BST_UNCHECKED);
-        CheckDlgButton(h, kIdAutostart, AutostartEnabled() ? BST_CHECKED : BST_UNCHECKED);
+    case WM_NCHITTEST: { // arrastar pelo cabeçalho
+        POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+        ScreenToClient(h, &pt);
+        float s = WndScale(h);
+        bool onButton = false;
+        for (auto& e : g_setHits) if (ui::Hit(e.second, pt)) onButton = true;
+        return pt.y < 86 * s && !onButton ? HTCAPTION : HTCLIENT;
+    }
+    case WM_MOUSEMOVE: {
+        POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+        int hot = 0;
+        for (auto& e : g_setHits) if (ui::Hit(e.second, pt)) hot = e.first;
+        if (hot != g_setHot) { g_setHot = hot; InvalidateRect(h, nullptr, FALSE); }
+        TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, h, 0};
+        TrackMouseEvent(&tme);
         return 0;
     }
-    case WM_CTLCOLORSTATIC: SetBkMode((HDC)wp, TRANSPARENT); return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
-    case WM_COMMAND: {
-        int id = LOWORD(wp);
-        if (id == kIdSpace) g_cfg.space = IsDlgButtonChecked(h, kIdSpace) == BST_CHECKED;
-        else if (id == kIdAlt) g_cfg.alt = IsDlgButtonChecked(h, kIdAlt) == BST_CHECKED;
-        else if (id == kIdDpi72 || id == kIdDpi300) g_cfg.dpi300 = IsDlgButtonChecked(h, kIdDpi300) == BST_CHECKED;
-        else if (id == kIdPdfSmall || id == kIdPdfRaw) g_cfg.pdfRaw = IsDlgButtonChecked(h, kIdPdfRaw) == BST_CHECKED;
-        else if (id == kIdAutostart) SetAutostart(IsDlgButtonChecked(h, kIdAutostart) == BST_CHECKED);
-        else if ((id == kIdDelay || id == kIdQuality) && HIWORD(wp) == EN_KILLFOCUS) {
-            BOOL ok;
-            UINT v = GetDlgItemInt(h, id, &ok, FALSE);
-            if (id == kIdDelay) g_cfg.altDelay = ok ? max(150u, min(3000u, v)) : g_cfg.altDelay;
-            else g_cfg.quality = ok ? max(50u, min(100u, v)) : g_cfg.quality;
-            SetDlgItemInt(h, id, id == kIdDelay ? g_cfg.altDelay : g_cfg.quality, FALSE);
-        } else if (id == kIdFolder) {
-            wchar_t exe[MAX_PATH]; GetModuleFileNameW(nullptr, exe, MAX_PATH);
-            PIDLIST_ABSOLUTE p = nullptr;
-            if (SUCCEEDED(SHParseDisplayName(exe, nullptr, &p, 0, nullptr))) { SHOpenFolderAndSelectItems(p, 0, nullptr, 0); CoTaskMemFree(p); }
-        } else if (id == kIdQuit) { DestroyWindow(h); PostMessage(g_wnd, WM_CLOSE, 0, 0); return 0; }
-        else if (id == kIdClose || id == IDCANCEL) { SetFocus(h); DestroyWindow(h); return 0; }
-        else return 0;
-        SaveConfig();
-        UpdateHotkeys();
+    case WM_SETCURSOR: if (LOWORD(lp) == HTCLIENT) { SetCursor(LoadCursor(nullptr, g_setHot ? IDC_HAND : IDC_ARROW)); return TRUE; } break;
+    case WM_MOUSELEAVE: if (g_setHot) { g_setHot = 0; InvalidateRect(h, nullptr, FALSE); } return 0;
+    case WM_LBUTTONUP: {
+        POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+        for (auto& e : g_setHits) if (ui::Hit(e.second, pt)) { int id = e.first; SettingsAction(id); break; }
+        if (g_settingsWnd) InvalidateRect(h, nullptr, FALSE);
+        return 0;
+    }
+    case WM_MOUSEWHEEL: {
+        RECT rc; GetClientRect(h, &rc);
+        float viewH = rc.bottom - 92 * WndScale(h);
+        g_setScroll = max(0.0f, min(max(0.0f, g_setContentH - viewH), g_setScroll - GET_WHEEL_DELTA_WPARAM(wp) * 0.6f));
+        InvalidateRect(h, nullptr, FALSE);
+        return 0;
+    }
+    case WM_KEYDOWN: if (wp == VK_ESCAPE) DestroyWindow(h); return 0;
+    case WM_SIZE: g_setSurf.Resize(LOWORD(lp), HIWORD(lp)); return 0;
+    case WM_ERASEBKGND: return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        BeginPaint(h, &ps);
+        PaintSettings(h);
+        EndPaint(h, &ps);
         return 0;
     }
     case WM_CLOSE: DestroyWindow(h); return 0;
-    case WM_DESTROY: {
-        // grava os campos numéricos mesmo sem perder o foco
-        BOOL ok;
-        UINT v = GetDlgItemInt(h, kIdDelay, &ok, FALSE); if (ok) g_cfg.altDelay = max(150u, min(3000u, v));
-        v = GetDlgItemInt(h, kIdQuality, &ok, FALSE); if (ok) g_cfg.quality = max(50u, min(100u, v));
-        SaveConfig();
-        g_settingsWnd = nullptr;
-        return 0;
-    }
+    case WM_DESTROY: g_setSurf.Release(); g_setHits.clear(); g_settingsWnd = nullptr; return 0;
     }
     return DefWindowProcW(h, msg, wp, lp);
 }
@@ -1280,17 +1423,19 @@ static LRESULT CALLBACK SettingsProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 static void OpenSettings() {
     if (g_settingsWnd) { ShowWindow(g_settingsWnd, SW_RESTORE); SetForegroundWindow(g_settingsWnd); return; }
     POINT pt; GetCursorPos(&pt);
-    UINT dpi = GetDpiForWindow(GetDesktopWindow());
     HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi = {sizeof(mi)};
     GetMonitorInfoW(mon, &mi);
-    float ui = dpi / 96.0f;
-    RECT r = {0, 0, (int)(560 * ui), (int)(578 * ui)};
-    AdjustWindowRectExForDpi(&r, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, FALSE, 0, dpi);
-    int w = r.right - r.left, h = r.bottom - r.top;
-    g_settingsWnd = CreateWindowExW(0, L"DesignPeekSettings", L"DesignPeek", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+    UINT dpi = 96;
+    if (HWND fg = GetForegroundWindow()) dpi = GetDpiForWindow(fg);
+    float s = dpi / 96.0f;
+    int w = (int)(540 * s), h = min((int)(760 * s), (int)(mi.rcWork.bottom - mi.rcWork.top - 40));
+    g_setScroll = 0;
+    g_setHot = 0;
+    g_settingsWnd = CreateWindowExW(WS_EX_APPWINDOW, L"DesignPeekSettings", L"DesignPeek — Configurações", WS_POPUP | WS_MINIMIZEBOX | WS_SYSMENU,
                                     mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - w) / 2, mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - h) / 2,
                                     w, h, nullptr, nullptr, g_inst, nullptr);
+    ui::EnableGlass(g_settingsWnd, g_theme.dark);
     ShowWindow(g_settingsWnd, SW_SHOW);
     SetForegroundWindow(g_settingsWnd);
 }
@@ -1362,18 +1507,16 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
         return 1;
 
     WNDCLASSW wc = {};
-    wc.style = CS_DROPSHADOW | CS_DBLCLKS;
+    wc.style = CS_DBLCLKS;
     wc.lpfnWndProc = WndProc;
     wc.hInstance = inst;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.lpszClassName = L"DesignPeekWnd";
     RegisterClassW(&wc);
-    wc.style = CS_DROPSHADOW;
+    wc.style = 0;
     wc.lpfnWndProc = AltProc; wc.lpszClassName = L"DesignPeekAlt"; RegisterClassW(&wc);
     wc.lpfnWndProc = ToastProc; wc.lpszClassName = L"DesignPeekToast"; RegisterClassW(&wc);
-    wc.style = 0;
     wc.lpfnWndProc = SettingsProc; wc.lpszClassName = L"DesignPeekSettings";
-    wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
     wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
     RegisterClassW(&wc);
 
@@ -1381,12 +1524,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     g_wnd = CreateWindowExW(exStyle, L"DesignPeekWnd", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
     g_altWnd = CreateWindowExW(exStyle, L"DesignPeekAlt", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
     g_toastWnd = CreateWindowExW(exStyle, L"DesignPeekToast", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
-    DWORD corner = 2; // DWMWCP_ROUND (Windows 11)
-    BOOL dark = TRUE;
-    for (HWND w : {g_wnd, g_altWnd, g_toastWnd}) {
-        DwmSetWindowAttribute(w, 33, &corner, sizeof(corner));
-        DwmSetWindowAttribute(w, 20, &dark, sizeof(dark));
-    }
+    ApplyTheme(); // vidro + tema claro/escuro do Windows
 
     std::thread(WorkerLoop).detach();
     g_focusHook = SetWinEventHook(EVENT_OBJECT_FOCUS, EVENT_OBJECT_FOCUS, nullptr, FocusEvent, 0, 0, WINEVENT_OUTOFCONTEXT);
@@ -1394,9 +1532,14 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     g_fgHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr, FocusEvent, 0, 0, WINEVENT_OUTOFCONTEXT);
     UpdateHotkeys();
     if (args.find(L"/settings") != std::wstring::npos) OpenSettings();
+    size_t peek = args.find(L"/peek ");
+    if (peek != std::wstring::npos) { // abre um arquivo direto (útil em "Abrir com")
+        std::wstring f = args.substr(peek + 6);
+        f.erase(0, f.find_first_not_of(L" \"")); f.erase(f.find_last_not_of(L" \"") + 1);
+        OpenPath(f, {});
+    }
     MSG m;
     while (GetMessageW(&m, nullptr, 0, 0) > 0) {
-        if (g_settingsWnd && IsDialogMessageW(g_settingsWnd, &m)) continue;
         TranslateMessage(&m);
         DispatchMessageW(&m);
     }
@@ -1404,6 +1547,6 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     UnhookWinEvent(g_fgHook);
     UnhookWinEvent(g_selHook);
     DiscardDeviceResources();
-    SafeRelease(g_titleFmt); SafeRelease(g_infoFmt); SafeRelease(g_iconFmt); SafeRelease(g_dw); SafeRelease(g_d2d);
+    SafeRelease(g_dw); SafeRelease(g_d2d);
     ExitProcess(0); // a thread de carregamento é encerrada junto
 }
