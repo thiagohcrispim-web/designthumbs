@@ -5,7 +5,7 @@ Ferramentas leves para o Explorer do Windows 10/11 trabalhar com arquivos de des
 - **DesignThumbs.dll** — miniaturas no Explorer.
 - **Painel de visualização** do Explorer (`Alt+P`) para os mesmos formatos.
 - **DesignPeek.exe** — selecione um arquivo e aperte **Espaço** para um preview grande (estilo Quick Look do Mac).
-- **Converter com Ctrl** — selecione arquivos e segure **Ctrl**: botões para PNG, JPG ou PDF aparecem sobre o mouse.
+- **Converter com Alt** — selecione arquivos e segure **Alt**: botões para PNG, JPG ou PDF aparecem sobre o mouse.
 
 ## Formatos
 | Tipo | Extensões | Origem da imagem |
@@ -35,18 +35,22 @@ Ferramentas leves para o Explorer do Windows 10/11 trabalhar com arquivos de des
 A barra inferior mostra dimensões, DPI e tamanho de impressão, modo de cor, páginas, câmera, tamanho do arquivo, programa de origem
 e as **fontes** usadas em INDD/AI — as que não estão instaladas aparecem em vermelho com ⚠.
 
-## Converter com Ctrl
-Com um ou vários arquivos selecionados, segure **Ctrl** parado (~0,5 s) e clique em:
-(Dá para selecionar com Ctrl+clique e continuar segurando: os botões aparecem quando você para de clicar.)
+## Converter com Alt
+Com um ou vários arquivos selecionados, segure **Alt** (~0,5 s) e clique em:
 - **PNG** / **JPG** — um arquivo por original (InDesign: um por página), salvo ao lado do original, na maior resolução disponível.
-- **PDF** — com um arquivo, um PDF; com vários, **um único PDF com todas as páginas na ordem da seleção**,
+- **PDF** — com um arquivo, um PDF; com vários, **um único PDF com as páginas na ordem em que você clicou nos arquivos**
+  (selecionou 1.jpg, depois 3.jpg e 2.jpg → páginas 1, 3, 2),
   nomeado automaticamente como `primeiro arquivo (+N).pdf`. Um `.ai` sozinho é copiado como PDF (mantém o vetor).
+
+Resolução: **72 dpi** (padrão) ou **300 dpi** — documentos com tamanho físico (InDesign, Illustrator, SVG) são gerados nessa
+resolução; imagens mantêm seus pixels e recebem o DPI escolhido (no PDF, define o tamanho da página).
+PDF **comprimido** (JPEG, arquivo pequeno) ou **normal, sem compressão** (sem perda, arquivo grande).
 
 Um aviso no canto da tela mostra o progresso; clique nele para abrir a pasta com os arquivos gerados.
 
 ## Configurações
 Clique na engrenagem do preview, rode `DesignPeek.exe` de novo ou use o atalho "DesignPeek" do menu Iniciar:
-preview com Espaço, botões do Ctrl (e tempo), qualidade do JPG/PDF, iniciar com o Windows.
+preview com Espaço, botões do Alt (e tempo), qualidade do JPG/PDF, 72/300 dpi, PDF comprimido ou sem compressão, iniciar com o Windows.
 
 ## Instalar
 Extraia numa pasta fixa e rode `install.bat` (não precisa de administrador). `uninstall.bat` remove tudo.
@@ -56,9 +60,10 @@ Extraia numa pasta fixa e rode `install.bat` (não precisa de administrador). `u
 - Linux: `build.sh` (MinGW + headers Direct2D recentes do mingw-w64 em `$D2D_INC`).
 
 ## Versões
+- **v4.2** — botões de conversão no Alt; 72/300 dpi; PDF comprimido ou sem compressão; ordem do PDF = ordem dos cliques.
 - **v4.1** — botões de conversão passam do Shift para o Ctrl; Ctrl+clique reinicia a contagem.
 - **v4** — painel de visualização (Alt+P), preview em segundo plano com cache e pré-carregamento dos vizinhos,
-  conversão para PNG/JPG/PDF segurando Shift (v4.1: Ctrl) (PDF multipáginas na ordem da seleção), configurações (engrenagem),
+  conversão para PNG/JPG/PDF segurando Shift (v4.1: Ctrl, v4.2: Alt) (PDF multipáginas na ordem da seleção), configurações (engrenagem),
   fundo claro/escuro.
 - **v3** — preview com zoom/arrastar, fundo xadrez, páginas do InDesign, barra de informações com fontes faltando,
   Enter/Ctrl+C, AI nítido via PDF, novos formatos (EPS completo, SVGZ, CDR, Affinity, XD, Sketch, Krita, Procreate, RAW de câmera),

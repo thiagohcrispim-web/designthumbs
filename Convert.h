@@ -201,7 +201,7 @@ inline bool PixelsOf(HBITMAP bmp, BYTE** px, UINT* w, UINT* h) {
 }
 
 // Codifica com WIC. JPEG: compõe sobre branco (sem transparência).
-inline bool Encode(HBITMAP bmp, const GUID& container, float quality, IStream* out) {
+inline bool Encode(HBITMAP bmp, const GUID& container, float quality, IStream* out, double dpi = 0) {
     BYTE* px; UINT w, h;
     if (!PixelsOf(bmp, &px, &w, &h)) return false;
     bool jpeg = IsEqualGUID(container, GUID_ContainerFormatJpeg);
@@ -230,15 +230,17 @@ inline bool Encode(HBITMAP bmp, const GUID& container, float quality, IStream* o
         VARIANT v; VariantInit(&v); v.vt = VT_R4; v.fltVal = quality;
         props->Write(1, &opt, &v);
     }
-    ok = ok && SUCCEEDED(fr->Initialize(props)) && SUCCEEDED(fr->WriteSource(wb, nullptr)) && SUCCEEDED(fr->Commit()) && SUCCEEDED(enc->Commit());
+    ok = ok && SUCCEEDED(fr->Initialize(props));
+    if (ok && dpi > 0) fr->SetResolution(dpi, dpi);
+    ok = ok && SUCCEEDED(fr->WriteSource(wb, nullptr)) && SUCCEEDED(fr->Commit()) && SUCCEEDED(enc->Commit());
     SafeRelease(props); SafeRelease(fr); SafeRelease(enc); SafeRelease(wb); SafeRelease(f);
     return ok;
 }
 
-inline bool SaveImage(HBITMAP bmp, const std::wstring& path, bool jpeg, float quality) {
+inline bool SaveImage(HBITMAP bmp, const std::wstring& path, bool jpeg, float quality, double dpi) {
     IStream* s = nullptr;
     if (FAILED(SHCreateStreamOnFileEx(path.c_str(), STGM_WRITE | STGM_CREATE | STGM_SHARE_DENY_WRITE, FILE_ATTRIBUTE_NORMAL, TRUE, nullptr, &s))) return false;
-    bool ok = Encode(bmp, jpeg ? GUID_ContainerFormatJpeg : GUID_ContainerFormatPng, quality, s);
+    bool ok = Encode(bmp, jpeg ? GUID_ContainerFormatJpeg : GUID_ContainerFormatPng, quality, s, dpi);
     s->Release();
     if (!ok) DeleteFileW(path.c_str());
     return ok;
@@ -268,11 +270,12 @@ class PdfWriter {
     int NewObj() { offsets_.push_back(out_.size()); int id = (int)offsets_.size(); out_ += std::to_string(id) + " 0 obj\n"; return id; }
 public:
     PdfWriter() { out_ = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n"; offsets_ = {0, 0}; } // 1 = catálogo, 2 = páginas (escritos no fim)
-    // Página com tamanho em pontos (1/72 pol).
-    void AddJpegPage(const std::vector<BYTE>& jpg, UINT w, UINT h, double ptW, double ptH) {
+    // Página com tamanho em pontos (1/72 pol). jpeg = false: pixels RGB sem compressão.
+    void AddImagePage(const std::vector<BYTE>& jpg, UINT w, UINT h, double ptW, double ptH, bool jpeg = true) {
         char buf[256];
         int img = NewObj();
-        snprintf(buf, sizeof(buf), "<< /Type /XObject /Subtype /Image /Width %u /Height %u /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length %zu >>\nstream\n", w, h, jpg.size());
+        snprintf(buf, sizeof(buf), "<< /Type /XObject /Subtype /Image /Width %u /Height %u /ColorSpace /DeviceRGB /BitsPerComponent 8 %s/Length %zu >>\nstream\n",
+                 w, h, jpeg ? "/Filter /DCTDecode " : "", jpg.size());
         out_ += buf;
         out_.append((const char*)jpg.data(), jpg.size());
         out_ += "\nendstream\nendobj\n";
@@ -307,6 +310,18 @@ public:
     }
 };
 
+// Pixels RGB (linhas de cima para baixo) compostos sobre branco, para o PDF sem compressão.
+inline bool RgbBytes(HBITMAP bmp, std::vector<BYTE>& out) {
+    BYTE* px; UINT w, h;
+    if (!PixelsOf(bmp, &px, &w, &h)) return false;
+    out.resize((size_t)w * h * 3);
+    BYTE* d = out.data();
+    for (size_t i = 0, n = (size_t)w * h; i < n; ++i, px += 4, d += 3) {
+        d[0] = (BYTE)(px[2] + (255 - px[3])); d[1] = (BYTE)(px[1] + (255 - px[3])); d[2] = (BYTE)(px[0] + (255 - px[3]));
+    }
+    return true;
+}
+
 inline bool JpegBytes(HBITMAP bmp, float quality, std::vector<BYTE>& out) {
     IStream* s = nullptr;
     if (FAILED(CreateStreamOnHGlobal(nullptr, TRUE, &s))) return false;
@@ -324,10 +339,23 @@ inline bool JpegBytes(HBITMAP bmp, float quality, std::vector<BYTE>& out) {
 
 enum Kind { kPng, kJpg, kPdf };
 
+struct Options {
+    float quality = 0.92f;  // JPG e PDF comprimido
+    UINT dpi = 72;          // 72 ou 300
+    bool pdfRaw = false;    // PDF sem compressão (pixels RGB)
+};
+
+// Pixels a gerar: documentos com tamanho físico (INDD, AI, SVG) seguem o DPI escolhido;
+// imagens (PSD, JPG, RAW...) usam a resolução nativa.
+inline UINT TargetSize(const fmt::Info& in, UINT dpi) {
+    if (in.pageWmm > 0 && in.pageHmm > 0) return max(256u, min(16384u, (UINT)(max(in.pageWmm, in.pageHmm) / 25.4 * dpi + 0.5)));
+    return ExportSize(in);
+}
+
 struct Result { std::vector<std::wstring> outputs; int failed = 0; };
 
 // Converte arquivos na ordem recebida. progress(feito, total) é chamado a cada arquivo.
-inline Result Convert(const std::vector<std::wstring>& files, Kind kind, float jpgQuality, const std::function<void(size_t, size_t)>& progress) {
+inline Result Convert(const std::vector<std::wstring>& files, Kind kind, const Options& opt, const std::function<void(size_t, size_t)>& progress) {
     Result r;
     // Um único .ai para PDF: ele já é um PDF, basta copiar (mantém o vetor)
     if (kind == kPdf && files.size() == 1 && ExtOf(files[0]) == L".ai") {
@@ -341,7 +369,7 @@ inline Result Convert(const std::vector<std::wstring>& files, Kind kind, float j
         const std::wstring& f = files[i];
         fmt::Info in;
         FileInfo(f, &in);
-        UINT cx = ExportSize(in);
+        UINT cx = TargetSize(in, opt.dpi);
         int pages = 1;
         bool any = false;
         for (int page = 0; page < pages; ++page) {
@@ -350,19 +378,19 @@ inline Result Convert(const std::vector<std::wstring>& files, Kind kind, float j
             BYTE* px; UINT w, h;
             PixelsOf(bmp, &px, &w, &h);
             if (kind == kPdf) {
-                std::vector<BYTE> jpg;
-                if (JpegBytes(bmp, jpgQuality, jpg)) {
-                    // tamanho físico: página do INDD/AI, DPI da imagem ou 150 dpi
+                std::vector<BYTE> data;
+                if (opt.pdfRaw ? RgbBytes(bmp, data) : JpegBytes(bmp, opt.quality, data)) {
+                    // tamanho físico: página do INDD/AI/SVG; senão pixels no DPI escolhido
                     double ptW, ptH;
                     if (in.pageWmm > 0 && in.pageHmm > 0) { ptW = in.pageWmm / 25.4 * 72; ptH = ptW * h / w; }
-                    else { double dpi = in.dpi >= 72 && in.note.empty() && in.w == w ? in.dpi : 150; ptW = w / dpi * 72; ptH = h / dpi * 72; }
-                    pdf.AddJpegPage(jpg, w, h, ptW, ptH);
+                    else { ptW = w * 72.0 / opt.dpi; ptH = h * 72.0 / opt.dpi; }
+                    pdf.AddImagePage(data, w, h, ptW, ptH, !opt.pdfRaw);
                     any = true;
                 }
             } else {
                 std::wstring base = BaseOf(f) + (pages > 1 ? L" - p" + std::to_wstring(page + 1) : L"");
                 std::wstring out = UniquePath(DirOf(f), base, kind == kJpg ? L".jpg" : L".png");
-                if (SaveImage(bmp, out, kind == kJpg, jpgQuality)) { r.outputs.push_back(out); any = true; }
+                if (SaveImage(bmp, out, kind == kJpg, opt.quality, opt.dpi)) { r.outputs.push_back(out); any = true; }
             }
             DeleteObject(bmp);
         }

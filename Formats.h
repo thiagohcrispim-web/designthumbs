@@ -1003,6 +1003,7 @@ inline void GetInfo(IStream* s, const std::wstring& ext, Info* in) {
         wchar_t t[64];
         swprintf(t, 64, L"%g × %g", w, h);
         in->pageSize = t;
+        in->pageWmm = w / 96 * 25.4; in->pageHmm = h / 96 * 25.4; // unidades do SVG = px a 96 dpi
         in->note = L"vetor";
     }
 }
