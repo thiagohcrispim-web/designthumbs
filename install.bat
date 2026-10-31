@@ -1,6 +1,8 @@
 @echo off
 rem Execute como Administrador
 cd /d "%~dp0"
+rem remove a marca "baixado da internet" (evita a tela do SmartScreen ao iniciar com o Windows)
+powershell -NoProfile -Command "Get-ChildItem -LiteralPath '%~dp0' | Unblock-File" >nul 2>&1
 regsvr32 /s "%~dp0DesignThumbs.dll" && echo Miniaturas instaladas.
 rem remove a chave Run da v2 (agora usa a pasta Inicializar)
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v DesignPeek /f >nul 2>&1
