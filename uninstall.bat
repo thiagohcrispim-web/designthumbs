@@ -1,7 +1,7 @@
 @echo off
 rem Execute como Administrador
 "%~dp0DesignPeek.exe" /quit
-taskkill /f /im DesignPeek.exe >nul 2>&1
+"%~dp0DesignPeek.exe" /noautostart
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v DesignPeek /f >nul 2>&1
 regsvr32 /u /s "%~dp0DesignThumbs.dll" && echo Removido.
 rem libera a DLL para poder ser substituida/apagada

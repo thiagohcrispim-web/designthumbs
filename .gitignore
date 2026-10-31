@@ -3,3 +3,5 @@ DesignThumbs.zip
 *.exp
 *.lib
 DesignThumbs-*.zip
+*.res.o
+*.res

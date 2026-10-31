@@ -1,5 +1,7 @@
 // DesignPeek - "Quick Look" para o Explorer: selecione um arquivo e aperte Espaço.
-// Espaço/Esc/clique fecham. Setas trocam de arquivo com o preview aberto.
+// Espaço/Esc/clique fecham. Setas (ou clique em outro arquivo) trocam o preview.
+// Sem hook de teclado: o Espaço só vira atalho (RegisterHotKey) enquanto o foco está
+// na lista de arquivos, detectado por eventos de foco de acessibilidade (WinEvents).
 // Usa os thumbnail providers do Windows (incluindo o DesignThumbs), então funciona com
 // PSD, AI, INDD, SVG, JPG, PNG, PDF... sem decodificar nada aqui.
 #define WIN32_LEAN_AND_MEAN
@@ -14,14 +16,14 @@
 #include <string>
 
 static HWND g_wnd;
-static HHOOK g_hook;
-static bool g_open, g_swallowSpaceUp;
+static HWINEVENTHOOK g_focusHook, g_fgHook;
+static bool g_open, g_spaceKey, g_escKey;
 static HWND g_defView;           // lista de arquivos de onde veio o Espaço
 static HBITMAP g_bmp;
 static SIZE g_bmpSize;
 static std::wstring g_path, g_name;
 
-enum { WM_PEEK_OPEN = WM_APP + 1, WM_PEEK_CLOSE, WM_PEEK_REFRESH };
+enum { kHotSpace = 1, kHotEsc = 2 };
 static const int kCaption = 40, kPad = 12, kRefreshTimer = 1;
 static const COLORREF kBg = RGB(30, 30, 30), kText = RGB(230, 230, 230);
 
@@ -153,45 +155,39 @@ static bool LoadSelection() {
     return g_open;
 }
 
-static LRESULT CALLBACK KeyboardProc(int code, WPARAM wp, LPARAM lp) {
-    if (code == HC_ACTION) {
-        auto* kb = (KBDLLHOOKSTRUCT*)lp;
-        bool down = wp == WM_KEYDOWN || wp == WM_SYSKEYDOWN;
-        if (kb->vkCode == VK_SPACE && !down && g_swallowSpaceUp) { g_swallowSpaceUp = false; return 1; }
-        if (down) {
-            if (g_open) {
-                if (kb->vkCode == VK_SPACE || kb->vkCode == VK_ESCAPE) {
-                    g_swallowSpaceUp = kb->vkCode == VK_SPACE;
-                    PostMessage(g_wnd, WM_PEEK_CLOSE, 0, 0);
-                    return 1;
-                }
-                if (kb->vkCode >= VK_LEFT && kb->vkCode <= VK_DOWN) PostMessage(g_wnd, WM_PEEK_REFRESH, 0, 0);
-                else if (kb->vkCode != VK_SHIFT && kb->vkCode != VK_LSHIFT && kb->vkCode != VK_RSHIFT) PostMessage(g_wnd, WM_PEEK_CLOSE, 0, 0);
-            } else if (kb->vkCode == VK_SPACE && !(GetKeyState(VK_CONTROL) & 0x8000) && !(GetKeyState(VK_MENU) & 0x8000) &&
-                       !(GetKeyState(VK_SHIFT) & 0x8000) && !(GetKeyState(VK_LWIN) & 0x8000) && !(GetKeyState(VK_RWIN) & 0x8000)) {
-                if (HWND dv = FocusedFileList()) {
-                    g_defView = dv;
-                    g_swallowSpaceUp = true;
-                    PostMessage(g_wnd, WM_PEEK_OPEN, 0, 0);
-                    return 1;
-                }
-            }
-        }
+// Registra o Espaço como atalho só quando faz sentido, para não atrapalhar a digitação.
+static void UpdateHotkeys() {
+    bool space = g_open || FocusedFileList();
+    if (space != g_spaceKey) {
+        g_spaceKey = space ? RegisterHotKey(g_wnd, kHotSpace, MOD_NOREPEAT, VK_SPACE) : (UnregisterHotKey(g_wnd, kHotSpace), false);
     }
-    return CallNextHookEx(g_hook, code, wp, lp);
+    if (g_open != g_escKey) {
+        g_escKey = g_open ? RegisterHotKey(g_wnd, kHotEsc, MOD_NOREPEAT, VK_ESCAPE) : (UnregisterHotKey(g_wnd, kHotEsc), false);
+    }
+}
+
+static void CALLBACK FocusEvent(HWINEVENTHOOK, DWORD event, HWND hwnd, LONG, LONG, DWORD, DWORD) {
+    // Seleção mudou na mesma lista (setas/clique): atualiza o preview
+    if (g_open && event == EVENT_OBJECT_FOCUS && hwnd && GetParent(hwnd) == g_defView)
+        SetTimer(g_wnd, kRefreshTimer, 120, nullptr);
+    UpdateHotkeys();
 }
 
 static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
-    case WM_PEEK_OPEN: LoadSelection(); return 0;
-    case WM_PEEK_CLOSE: ClosePreview(); return 0;
-    case WM_PEEK_REFRESH: SetTimer(h, kRefreshTimer, 120, nullptr); return 0; // deixa o Explorer mudar a seleção antes
+    case WM_HOTKEY:
+        if (g_open) ClosePreview();
+        else if (wp == kHotSpace) {
+            if (HWND dv = FocusedFileList()) { g_defView = dv; LoadSelection(); }
+        }
+        UpdateHotkeys();
+        return 0;
     case WM_TIMER:
         KillTimer(h, kRefreshTimer);
         if (g_open) LoadSelection();
         return 0;
-    case WM_LBUTTONUP: case WM_RBUTTONUP: ClosePreview(); return 0;
-    case WM_ACTIVATE: if (LOWORD(wp) == WA_INACTIVE && g_open) ClosePreview(); return 0;
+    case WM_LBUTTONUP: case WM_RBUTTONUP: ClosePreview(); UpdateHotkeys(); return 0;
+    case WM_ACTIVATE: if (LOWORD(wp) == WA_INACTIVE && g_open) { ClosePreview(); UpdateHotkeys(); } return 0;
     case WM_ERASEBKGND: return 1;
     case WM_PAINT: {
         PAINTSTRUCT ps;
@@ -232,7 +228,31 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(h, msg, wp, lp);
 }
 
+// Atalho na pasta Inicializar (em vez de chave Run no registro).
+static void SetAutostart(bool on) {
+    PWSTR startup = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_Startup, 0, nullptr, &startup))) return;
+    std::wstring lnk = std::wstring(startup) + L"\\DesignPeek.lnk";
+    CoTaskMemFree(startup);
+    if (!on) { DeleteFileW(lnk.c_str()); return; }
+    wchar_t exe[MAX_PATH];
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    IShellLinkW* sl = nullptr; IPersistFile* pf = nullptr;
+    if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&sl)))) {
+        sl->SetPath(exe);
+        sl->SetDescription(L"DesignPeek - preview com Espaço");
+        if (SUCCEEDED(sl->QueryInterface(IID_PPV_ARGS(&pf)))) { pf->Save(lnk.c_str(), TRUE); pf->Release(); }
+        sl->Release();
+    }
+}
+
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
+    if (cmd && (wcsstr(cmd, L"/autostart") || wcsstr(cmd, L"/noautostart"))) {
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        SetAutostart(!wcsstr(cmd, L"/noautostart"));
+        CoUninitialize();
+        return 0;
+    }
     if (cmd && wcsstr(cmd, L"/quit")) { // encerra a instância em execução
         if (HWND w = FindWindowW(L"DesignPeekWnd", nullptr)) PostMessage(w, WM_CLOSE, 0, 0);
         return 0;
@@ -256,10 +276,13 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     BOOL dark = TRUE;
     DwmSetWindowAttribute(g_wnd, 20, &dark, sizeof(dark));
 
-    g_hook = SetWindowsHookExW(WH_KEYBOARD_LL, KeyboardProc, inst, 0);
+    g_focusHook = SetWinEventHook(EVENT_OBJECT_FOCUS, EVENT_OBJECT_FOCUS, nullptr, FocusEvent, 0, 0, WINEVENT_OUTOFCONTEXT);
+    g_fgHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr, FocusEvent, 0, 0, WINEVENT_OUTOFCONTEXT);
+    UpdateHotkeys();
     MSG m;
     while (GetMessageW(&m, nullptr, 0, 0) > 0) { TranslateMessage(&m); DispatchMessageW(&m); }
-    UnhookWindowsHookEx(g_hook);
+    UnhookWinEvent(g_focusHook);
+    UnhookWinEvent(g_fgHook);
     CoUninitialize();
     return 0;
 }
