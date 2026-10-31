@@ -2,7 +2,7 @@
 //   Espaço/Esc: fecha         Setas/clique em outro arquivo: troca o preview
 //   Roda do mouse/+/-: zoom   Arrastar: mover        Z: 100%   0: ajustar   Duplo clique: alterna
 //   PgUp/PgDn: páginas        Enter: abre no programa padrão  Ctrl+C: copia a imagem   B: fundo claro/escuro
-// Segurar Shift com arquivos selecionados mostra botões para converter em PNG, JPG ou PDF.
+// Segurar Ctrl com arquivos selecionados mostra botões para converter em PNG, JPG ou PDF.
 // Sem hook de teclado: o Espaço só vira atalho (RegisterHotKey) enquanto o foco está na lista de
 // arquivos, detectado por eventos de foco de acessibilidade (WinEvents).
 #define WIN32_LEAN_AND_MEAN
@@ -35,7 +35,7 @@ enum {
 
 // ---------- configurações (HKCU\Software\DesignThumbs) ----------
 
-struct Config { bool space = true, shift = true, lightBg = false; DWORD shiftDelay = 500, quality = 92; };
+struct Config { bool space = true, ctrl = true, lightBg = false; DWORD ctrlDelay = 500, quality = 92; };
 static Config g_cfg;
 static const wchar_t* kCfgKey = L"Software\\DesignThumbs";
 
@@ -47,20 +47,20 @@ static DWORD ReadDword(const wchar_t* name, DWORD def) {
 static void WriteDword(const wchar_t* name, DWORD v) { RegSetKeyValueW(HKEY_CURRENT_USER, kCfgKey, name, REG_DWORD, &v, sizeof(v)); }
 static void LoadConfig() {
     g_cfg.space = ReadDword(L"SpacePreview", 1) != 0;
-    g_cfg.shift = ReadDword(L"ShiftButtons", 1) != 0;
+    g_cfg.ctrl = ReadDword(L"CtrlButtons", 1) != 0;
     g_cfg.lightBg = ReadDword(L"LightBackground", 0) != 0;
-    g_cfg.shiftDelay = max(150ul, min(3000ul, (unsigned long)ReadDword(L"ShiftDelay", 500)));
+    g_cfg.ctrlDelay = max(150ul, min(3000ul, (unsigned long)ReadDword(L"CtrlDelay", 500)));
     g_cfg.quality = max(50ul, min(100ul, (unsigned long)ReadDword(L"JpgQuality", 92)));
 }
 static void SaveConfig() {
-    WriteDword(L"SpacePreview", g_cfg.space); WriteDword(L"ShiftButtons", g_cfg.shift); WriteDword(L"LightBackground", g_cfg.lightBg);
-    WriteDword(L"ShiftDelay", g_cfg.shiftDelay); WriteDword(L"JpgQuality", g_cfg.quality);
+    WriteDword(L"SpacePreview", g_cfg.space); WriteDword(L"CtrlButtons", g_cfg.ctrl); WriteDword(L"LightBackground", g_cfg.lightBg);
+    WriteDword(L"CtrlDelay", g_cfg.ctrlDelay); WriteDword(L"JpgQuality", g_cfg.quality);
 }
 
 // ---------- estado ----------
 
 static HINSTANCE g_inst;
-static HWND g_wnd, g_shiftWnd, g_toastWnd, g_settingsWnd;
+static HWND g_wnd, g_ctrlWnd, g_toastWnd, g_settingsWnd;
 static HWINEVENTHOOK g_focusHook, g_fgHook;
 static bool g_open, g_spaceKey, g_openKeys;
 static HWND g_defView;           // lista de arquivos de onde veio o Espaço
@@ -99,7 +99,7 @@ static const struct { int id; UINT mod, vk; } kOpenKeys[] = {
     {kHot0, 0, '0'}, {kHotNum0, 0, VK_NUMPAD0}, {kHotPlus, 0, VK_OEM_PLUS}, {kHotMinus, 0, VK_OEM_MINUS},
     {kHotAdd, 0, VK_ADD}, {kHotSub, 0, VK_SUBTRACT}, {kHotPgUp, 0, VK_PRIOR}, {kHotPgDn, 0, VK_NEXT}, {kHotB, 0, 'B'},
 };
-enum { kRefreshTimer = 1, kFlashTimer, kShiftTimer, kToastTimer };
+enum { kRefreshTimer = 1, kFlashTimer, kCtrlTimer, kToastTimer };
 static const float kCaption = 40, kInfo = 52, kPad = 12;
 
 static std::wstring ClassOf(HWND h) {
@@ -577,15 +577,15 @@ static void CopyImage() {
     if (dibMem) GlobalFree(dibMem);
 }
 
-// ---------- conversão (botões do Shift) ----------
+// ---------- conversão (botões do Ctrl) ----------
 
 static std::vector<std::wstring> g_convFiles;
 static bool g_converting;
 static std::wstring g_toastTitle, g_toastText;
 static std::vector<std::wstring> g_toastOutputs;
-static int g_shiftHot = -1;
-static ULONGLONG g_shiftDownAt;
-static bool g_shiftUsed;
+static int g_ctrlHot = -1;
+static ULONGLONG g_ctrlDownAt;
+static bool g_ctrlFired;          // botões já mostrados neste toque
 
 static void ShowToast(const std::wstring& title, const std::wstring& text, DWORD hideAfterMs) {
     g_toastTitle = title; g_toastText = text;
@@ -619,9 +619,9 @@ static void StartConversion(conv::Kind kind) {
     }).detach();
 }
 
-static void HideShiftPopup() { if (g_shiftWnd && IsWindowVisible(g_shiftWnd)) ShowWindow(g_shiftWnd, SW_HIDE); g_shiftHot = -1; }
+static void HideCtrlPopup() { if (g_ctrlWnd && IsWindowVisible(g_ctrlWnd)) ShowWindow(g_ctrlWnd, SW_HIDE); g_ctrlHot = -1; }
 
-static void ShowShiftPopup() {
+static void ShowCtrlPopup() {
     g_convFiles = SelectedFiles(g_defView);
     if (g_convFiles.empty()) return;
     POINT pt; GetCursorPos(&pt);
@@ -632,8 +632,8 @@ static void ShowShiftPopup() {
     int x = max((int)mi.rcWork.left, min((int)mi.rcWork.right - w, (int)pt.x - w / 2));
     int y = pt.y - h - (int)(14 * ui);
     if (y < mi.rcWork.top) y = pt.y + (int)(20 * ui); // sem espaço acima: mostra abaixo do cursor
-    SetWindowPos(g_shiftWnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-    InvalidateRect(g_shiftWnd, nullptr, TRUE);
+    SetWindowPos(g_ctrlWnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    InvalidateRect(g_ctrlWnd, nullptr, TRUE);
 }
 
 static bool CursorOver(HWND h) {
@@ -643,21 +643,23 @@ static bool CursorOver(HWND h) {
     return PtInRect(&rc, pt) != 0;
 }
 
-// Shift segurado sozinho (sem outra tecla ou clique) por g_cfg.shiftDelay ms com a lista de arquivos em foco.
-static void ShiftTick() {
-    bool shift = GetAsyncKeyState(VK_SHIFT) < 0;
-    if (!shift) {
-        g_shiftDownAt = 0;
-        if (IsWindowVisible(g_shiftWnd) && !CursorOver(g_shiftWnd)) HideShiftPopup();
+// Ctrl segurado parado por g_cfg.ctrlDelay ms com a lista de arquivos em foco mostra os botões.
+// Ctrl+clique / Ctrl+tecla reiniciam a contagem: dá para selecionar com Ctrl+clique e depois só segurar.
+static void CtrlTick() {
+    bool ctrl = GetAsyncKeyState(VK_CONTROL) < 0;
+    if (!ctrl) {
+        g_ctrlDownAt = 0;
+        g_ctrlFired = false;
+        if (IsWindowVisible(g_ctrlWnd) && !CursorOver(g_ctrlWnd)) HideCtrlPopup();
         return;
     }
     ULONGLONG now = GetTickCount64();
-    if (!g_shiftDownAt) { g_shiftDownAt = now; g_shiftUsed = false; }
-    for (int vk = 1; vk < 255 && !g_shiftUsed; ++vk) // Shift+clique / Shift+setas = seleção, não mostrar
-        if (vk != VK_SHIFT && vk != VK_LSHIFT && vk != VK_RSHIFT && GetAsyncKeyState(vk) < 0) g_shiftUsed = true;
-    if (!g_shiftUsed && !g_open && !IsWindowVisible(g_shiftWnd) && now - g_shiftDownAt >= g_cfg.shiftDelay) {
-        g_shiftUsed = true;
-        if (HWND dv = FocusedFileList()) { g_defView = dv; ShowShiftPopup(); }
+    if (!g_ctrlDownAt) g_ctrlDownAt = now;
+    for (int vk = 1; vk < 255; ++vk)
+        if (vk != VK_CONTROL && vk != VK_LCONTROL && vk != VK_RCONTROL && GetAsyncKeyState(vk) < 0) { g_ctrlDownAt = now; g_ctrlFired = false; break; }
+    if (!g_ctrlFired && !g_open && !IsWindowVisible(g_ctrlWnd) && now - g_ctrlDownAt >= g_cfg.ctrlDelay) {
+        g_ctrlFired = true;
+        if (HWND dv = FocusedFileList()) { g_defView = dv; ShowCtrlPopup(); }
     }
 }
 
@@ -678,11 +680,11 @@ static void UpdateHotkeys() {
         }
         g_openKeys = g_open;
     }
-    // Shift só é observado com a lista de arquivos em foco (ou com os botões visíveis)
+    // Ctrl só é observado com a lista de arquivos em foco (ou com os botões visíveis)
     static bool watching;
-    bool watch = g_cfg.shift && (list || IsWindowVisible(g_shiftWnd));
+    bool watch = g_cfg.ctrl && (list || IsWindowVisible(g_ctrlWnd));
     if (watch != watching) {
-        if (watch) SetTimer(g_wnd, kShiftTimer, 40, nullptr); else { KillTimer(g_wnd, kShiftTimer); g_shiftDownAt = 0; }
+        if (watch) SetTimer(g_wnd, kCtrlTimer, 40, nullptr); else { KillTimer(g_wnd, kCtrlTimer); g_ctrlDownAt = 0; }
         watching = watch;
     }
 }
@@ -690,9 +692,9 @@ static void UpdateHotkeys() {
 static void CALLBACK FocusEvent(HWINEVENTHOOK, DWORD event, HWND hwnd, LONG, LONG, DWORD, DWORD) {
     if (g_open && event == EVENT_OBJECT_FOCUS && hwnd && GetParent(hwnd) == g_defView)
         SetTimer(g_wnd, kRefreshTimer, 90, nullptr); // seleção mudou (setas/clique): atualiza o preview
-    if (event == EVENT_SYSTEM_FOREGROUND && hwnd != g_wnd && hwnd != g_shiftWnd && hwnd != g_toastWnd) {
+    if (event == EVENT_SYSTEM_FOREGROUND && hwnd != g_wnd && hwnd != g_ctrlWnd && hwnd != g_toastWnd) {
         if (g_open && GetAncestor(hwnd, GA_ROOT) != GetAncestor(g_defView, GA_ROOT)) ClosePreview(); // foi para outro programa
-        if (!CursorOver(g_shiftWnd)) HideShiftPopup();
+        if (!CursorOver(g_ctrlWnd)) HideCtrlPopup();
     }
     UpdateHotkeys();
 }
@@ -703,7 +705,7 @@ static void OnHotkey(int id) {
     switch (id) {
     case kHotSpace:
         if (g_open) ClosePreview();
-        else if (HWND dv = FocusedFileList()) { HideShiftPopup(); g_defView = dv; OpenSelection(); }
+        else if (HWND dv = FocusedFileList()) { HideCtrlPopup(); g_defView = dv; OpenSelection(); }
         break;
     case kHotEsc: ClosePreview(); break;
     case kHotEnter: {
@@ -930,7 +932,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_OPEN_SETTINGS: OpenSettings(); return 0;
     case WM_TIMER:
-        if (wp == kShiftTimer) { ShiftTick(); return 0; }
+        if (wp == kCtrlTimer) { CtrlTick(); return 0; }
         KillTimer(h, wp);
         if (wp == kRefreshTimer && g_open) OpenSelection();
         if (wp == kFlashTimer) { g_flash.clear(); InvalidateRect(h, nullptr, FALSE); }
@@ -999,7 +1001,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(h, msg, wp, lp);
 }
 
-// ---------- janelinhas desenhadas com GDI (botões do Shift e aviso) ----------
+// ---------- janelinhas desenhadas com GDI (botões do Ctrl e aviso) ----------
 
 static HFONT MakeFont(float ui, int size, int weight) {
     return CreateFontW(-(int)(size * ui), 0, 0, 0, weight, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
@@ -1014,7 +1016,7 @@ static void FillRound(HDC dc, RECT r, COLORREF c, int radius) {
     DeleteObject(b); DeleteObject(p);
 }
 
-static RECT ShiftButton(HWND h, int i) {
+static RECT CtrlButton(HWND h, int i) {
     RECT rc; GetClientRect(h, &rc);
     float ui = GetDpiForWindow(h) / 96.0f;
     int pad = (int)(10 * ui), gap = (int)(8 * ui), top = (int)(36 * ui);
@@ -1022,28 +1024,28 @@ static RECT ShiftButton(HWND h, int i) {
     return {pad + i * (bw + gap), top, pad + i * (bw + gap) + bw, rc.bottom - pad};
 }
 
-static LRESULT CALLBACK ShiftProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+static LRESULT CALLBACK CtrlProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_MOUSEACTIVATE: return MA_NOACTIVATE;
     case WM_MOUSEMOVE: {
         POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         int hotNow = -1;
-        for (int i = 0; i < 3; ++i) { RECT r = ShiftButton(h, i); if (PtInRect(&r, p)) hotNow = i; }
-        if (hotNow != g_shiftHot) { g_shiftHot = hotNow; InvalidateRect(h, nullptr, FALSE); }
+        for (int i = 0; i < 3; ++i) { RECT r = CtrlButton(h, i); if (PtInRect(&r, p)) hotNow = i; }
+        if (hotNow != g_ctrlHot) { g_ctrlHot = hotNow; InvalidateRect(h, nullptr, FALSE); }
         TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, h, 0};
         TrackMouseEvent(&tme);
         return 0;
     }
     case WM_MOUSELEAVE:
-        g_shiftHot = -1;
-        if (GetAsyncKeyState(VK_SHIFT) >= 0) HideShiftPopup(); // soltou o Shift e saiu de cima: some
+        g_ctrlHot = -1;
+        if (GetAsyncKeyState(VK_CONTROL) >= 0) HideCtrlPopup(); // soltou o Ctrl e saiu de cima: some
         else InvalidateRect(h, nullptr, FALSE);
         return 0;
     case WM_LBUTTONUP: {
         POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         for (int i = 0; i < 3; ++i) {
-            RECT r = ShiftButton(h, i);
-            if (PtInRect(&r, p)) { HideShiftPopup(); StartConversion((conv::Kind)i); break; }
+            RECT r = CtrlButton(h, i);
+            if (PtInRect(&r, p)) { HideCtrlPopup(); StartConversion((conv::Kind)i); break; }
         }
         return 0;
     }
@@ -1070,8 +1072,8 @@ static LRESULT CALLBACK ShiftProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         DrawTextW(mem, title.c_str(), -1, &tr, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
         static const wchar_t* labels[] = {L"PNG", L"JPG", L"PDF"};
         for (int i = 0; i < 3; ++i) {
-            RECT r = ShiftButton(h, i);
-            FillRound(mem, r, g_shiftHot == i ? RGB(0, 103, 192) : RGB(58, 58, 58), (int)(8 * ui));
+            RECT r = CtrlButton(h, i);
+            FillRound(mem, r, g_ctrlHot == i ? RGB(0, 103, 192) : RGB(58, 58, 58), (int)(8 * ui));
             SetTextColor(mem, RGB(255, 255, 255));
             SelectObject(mem, big);
             RECT lr = r;
@@ -1152,7 +1154,7 @@ static LRESULT CALLBACK ToastProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 static void SetAutostart(bool on);
 static bool AutostartEnabled();
 
-enum { kIdSpace = 101, kIdShift, kIdDelay, kIdQuality, kIdAutostart, kIdFolder, kIdQuit, kIdClose, kIdAbout };
+enum { kIdSpace = 101, kIdCtrl, kIdDelay, kIdQuality, kIdAutostart, kIdFolder, kIdQuit, kIdClose, kIdAbout };
 
 static const wchar_t* kAbout =
     L"O DesignThumbs deixa o Explorer do Windows entender arquivos de design e fotografia:\r\n\r\n"
@@ -1164,7 +1166,7 @@ static const wchar_t* kAbout =
     L"    Z = 100% · 0 = ajustar · duplo clique alterna · PgUp/PgDn = páginas do InDesign\r\n"
     L"    Enter abre no programa · Ctrl+C copia a imagem · B alterna fundo claro/escuro\r\n"
     L"    A barra de baixo mostra tamanho, DPI, cor, câmera e as fontes usadas (faltando = vermelho ⚠).\r\n\r\n"
-    L"• Converter com Shift: selecione um ou vários arquivos e segure Shift. Aparecem botões para PNG, JPG ou PDF. "
+    L"• Converter com Ctrl: selecione um ou vários arquivos e segure Ctrl (sem clicar). Aparecem botões para PNG, JPG ou PDF. "
     L"Os arquivos são salvos ao lado dos originais. Com vários arquivos, o PDF reúne todos em páginas, "
     L"na ordem em que foram selecionados.\r\n\r\n"
     L"Leve: não fica escutando o teclado e só trabalha quando você pede.";
@@ -1185,9 +1187,9 @@ static LRESULT CALLBACK SettingsProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         };
         make(L"STATIC", L"DesignPeek — Configurações", 0, 20, 14, 460, 30, 0, title);
         make(L"BUTTON", L"Preview com a barra de Espaço", BS_AUTOCHECKBOX | WS_TABSTOP, 20, 56, 460, 24, kIdSpace);
-        make(L"BUTTON", L"Botões de conversão ao segurar Shift", BS_AUTOCHECKBOX | WS_TABSTOP, 20, 84, 300, 24, kIdShift);
+        make(L"BUTTON", L"Botões de conversão ao segurar Ctrl", BS_AUTOCHECKBOX | WS_TABSTOP, 20, 84, 300, 24, kIdCtrl);
         make(L"STATIC", L"Tempo segurando (ms):", SS_CENTERIMAGE, 40, 112, 170, 24, 0);
-        make(L"EDIT", std::to_wstring(g_cfg.shiftDelay).c_str(), WS_BORDER | ES_NUMBER | WS_TABSTOP, 210, 112, 70, 24, kIdDelay);
+        make(L"EDIT", std::to_wstring(g_cfg.ctrlDelay).c_str(), WS_BORDER | ES_NUMBER | WS_TABSTOP, 210, 112, 70, 24, kIdDelay);
         make(L"STATIC", L"Qualidade do JPG/PDF (50–100):", SS_CENTERIMAGE, 20, 144, 190, 24, 0);
         make(L"EDIT", std::to_wstring(g_cfg.quality).c_str(), WS_BORDER | ES_NUMBER | WS_TABSTOP, 210, 144, 70, 24, kIdQuality);
         make(L"BUTTON", L"Iniciar com o Windows", BS_AUTOCHECKBOX | WS_TABSTOP, 20, 176, 460, 24, kIdAutostart);
@@ -1196,7 +1198,7 @@ static LRESULT CALLBACK SettingsProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         make(L"BUTTON", L"Encerrar o DesignPeek", WS_TABSTOP, 200, 476, 170, 30, kIdQuit);
         make(L"BUTTON", L"Fechar", BS_DEFPUSHBUTTON | WS_TABSTOP, 440, 476, 100, 30, kIdClose);
         CheckDlgButton(h, kIdSpace, g_cfg.space ? BST_CHECKED : BST_UNCHECKED);
-        CheckDlgButton(h, kIdShift, g_cfg.shift ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(h, kIdCtrl, g_cfg.ctrl ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(h, kIdAutostart, AutostartEnabled() ? BST_CHECKED : BST_UNCHECKED);
         return 0;
     }
@@ -1204,14 +1206,14 @@ static LRESULT CALLBACK SettingsProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_COMMAND: {
         int id = LOWORD(wp);
         if (id == kIdSpace) g_cfg.space = IsDlgButtonChecked(h, kIdSpace) == BST_CHECKED;
-        else if (id == kIdShift) g_cfg.shift = IsDlgButtonChecked(h, kIdShift) == BST_CHECKED;
+        else if (id == kIdCtrl) g_cfg.ctrl = IsDlgButtonChecked(h, kIdCtrl) == BST_CHECKED;
         else if (id == kIdAutostart) SetAutostart(IsDlgButtonChecked(h, kIdAutostart) == BST_CHECKED);
         else if ((id == kIdDelay || id == kIdQuality) && HIWORD(wp) == EN_KILLFOCUS) {
             BOOL ok;
             UINT v = GetDlgItemInt(h, id, &ok, FALSE);
-            if (id == kIdDelay) g_cfg.shiftDelay = ok ? max(150u, min(3000u, v)) : g_cfg.shiftDelay;
+            if (id == kIdDelay) g_cfg.ctrlDelay = ok ? max(150u, min(3000u, v)) : g_cfg.ctrlDelay;
             else g_cfg.quality = ok ? max(50u, min(100u, v)) : g_cfg.quality;
-            SetDlgItemInt(h, id, id == kIdDelay ? g_cfg.shiftDelay : g_cfg.quality, FALSE);
+            SetDlgItemInt(h, id, id == kIdDelay ? g_cfg.ctrlDelay : g_cfg.quality, FALSE);
         } else if (id == kIdFolder) {
             wchar_t exe[MAX_PATH]; GetModuleFileNameW(nullptr, exe, MAX_PATH);
             PIDLIST_ABSOLUTE p = nullptr;
@@ -1227,7 +1229,7 @@ static LRESULT CALLBACK SettingsProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_DESTROY: {
         // grava os campos numéricos mesmo sem perder o foco
         BOOL ok;
-        UINT v = GetDlgItemInt(h, kIdDelay, &ok, FALSE); if (ok) g_cfg.shiftDelay = max(150u, min(3000u, v));
+        UINT v = GetDlgItemInt(h, kIdDelay, &ok, FALSE); if (ok) g_cfg.ctrlDelay = max(150u, min(3000u, v));
         v = GetDlgItemInt(h, kIdQuality, &ok, FALSE); if (ok) g_cfg.quality = max(50u, min(100u, v));
         SaveConfig();
         g_settingsWnd = nullptr;
@@ -1329,7 +1331,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     wc.lpszClassName = L"DesignPeekWnd";
     RegisterClassW(&wc);
     wc.style = CS_DROPSHADOW;
-    wc.lpfnWndProc = ShiftProc; wc.lpszClassName = L"DesignPeekShift"; RegisterClassW(&wc);
+    wc.lpfnWndProc = CtrlProc; wc.lpszClassName = L"DesignPeekCtrl"; RegisterClassW(&wc);
     wc.lpfnWndProc = ToastProc; wc.lpszClassName = L"DesignPeekToast"; RegisterClassW(&wc);
     wc.style = 0;
     wc.lpfnWndProc = SettingsProc; wc.lpszClassName = L"DesignPeekSettings";
@@ -1339,11 +1341,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
 
     DWORD exStyle = WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE;
     g_wnd = CreateWindowExW(exStyle, L"DesignPeekWnd", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
-    g_shiftWnd = CreateWindowExW(exStyle, L"DesignPeekShift", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
+    g_ctrlWnd = CreateWindowExW(exStyle, L"DesignPeekCtrl", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
     g_toastWnd = CreateWindowExW(exStyle, L"DesignPeekToast", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
     DWORD corner = 2; // DWMWCP_ROUND (Windows 11)
     BOOL dark = TRUE;
-    for (HWND w : {g_wnd, g_shiftWnd, g_toastWnd}) {
+    for (HWND w : {g_wnd, g_ctrlWnd, g_toastWnd}) {
         DwmSetWindowAttribute(w, 33, &corner, sizeof(corner));
         DwmSetWindowAttribute(w, 20, &dark, sizeof(dark));
     }
