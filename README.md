@@ -69,6 +69,8 @@ Extraia numa pasta fixa e rode `install.bat` (não precisa de administrador). `u
 - Linux: `build.sh` (MinGW + headers Direct2D recentes do mingw-w64 em `$D2D_INC`).
 
 ## Versões
+- **v7.1** — corrige o PDF travando até o tempo-limite (o arquivo é copiado para a memória antes de ir ao leitor de PDF);
+  registro de diagnóstico em `%LOCALAPPDATA%\DesignThumbs\pdf.log`.
 - **v7** — PDF e pranchetas do Illustrator página a página (leitor de PDF nativo do Windows); setas discretas no canto
   da imagem no painel Alt+P, só para PDF e InDesign; Pasta Padrão Maker logo abaixo de Pasta/Atalho no menu Novo.
 - **v6** — setas de página no painel Alt+P e no preview; Novo › Pasta Padrão Maker (Edit, Links, Preview).

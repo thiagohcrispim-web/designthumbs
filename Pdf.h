@@ -73,8 +73,9 @@ struct IPdfDocumentStatics : public IInspectable {
 
 static const IID IID_IRandomAccessStream = {0x905A0FE1, 0xBC53, 0x11DF, {0x8C, 0x49, 0x00, 0x1E, 0x4F, 0xC6, 0x86, 0xDA}};
 
-// Espera uma operação assíncrona do WinRT terminar (as do PDF rodam no pool de threads).
-inline HRESULT Wait(IUnknown* op, DWORD timeoutMs = 15000) {
+// Espera uma operação assíncrona do WinRT terminar. Processa mensagens enquanto isso: o leitor de PDF pode
+// precisar chamar de volta esta thread (STA) e, sem isso, tudo travaria até o tempo-limite.
+inline HRESULT Wait(IUnknown* op, DWORD timeoutMs = 10000) {
     IAsyncInfo* info = nullptr;
     HRESULT hr = op->QueryInterface(IID_IAsyncInfo, (void**)&info);
     if (FAILED(hr)) return hr;
@@ -82,11 +83,30 @@ inline HRESULT Wait(IUnknown* op, DWORD timeoutMs = 15000) {
     DWORD start = GetTickCount();
     while (SUCCEEDED(info->get_Status(&status)) && status == 0) {
         if (GetTickCount() - start > timeoutMs) { info->Cancel(); status = 2; break; }
-        Sleep(4);
+        MSG m;
+        while (PeekMessageW(&m, nullptr, 0, 0, PM_REMOVE)) { TranslateMessage(&m); DispatchMessageW(&m); }
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, 4, QS_ALLINPUT);
     }
     if (status == 3) info->get_ErrorCode(&hr); else hr = status == 1 ? S_OK : E_ABORT;
     info->Release();
     return hr;
+}
+
+// Registro de falhas em %LOCALAPPDATA%\\DesignThumbs\\pdf.log (para diagnóstico).
+inline void Log(const char* step, HRESULT hr) {
+    wchar_t path[MAX_PATH];
+    DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", path, MAX_PATH);
+    if (!n || n > MAX_PATH - 40) return;
+    wcscat_s(path, L"\\DesignThumbs");
+    CreateDirectoryW(path, nullptr);
+    wcscat_s(path, L"\\pdf.log");
+    HANDLE f = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return;
+    SYSTEMTIME t; GetLocalTime(&t);
+    char line[160];
+    int len = wsprintfA(line, "%02d/%02d %02d:%02d:%02d  %s  hr=0x%08X\r\n", t.wDay, t.wMonth, t.wHour, t.wMinute, t.wSecond, step, (unsigned)hr);
+    DWORD w; WriteFile(f, line, len, &w, nullptr);
+    CloseHandle(f);
 }
 
 inline HRESULT Activate(const wchar_t* cls, IInspectable** out) {
@@ -100,20 +120,41 @@ inline HRESULT Activate(const wchar_t* cls, IInspectable** out) {
 // Documento PDF aberto a partir de um IStream.
 class Document {
     IPdfDocument* doc_ = nullptr;
+    IStream* mem_ = nullptr; // cópia do arquivo na memória (pode ser usada de qualquer thread)
 public:
-    ~Document() { if (doc_) doc_->Release(); }
-    bool Open(IStream* s) {
+    ~Document() { if (doc_) doc_->Release(); if (mem_) mem_->Release(); }
+    bool Open(IStream* src) {
+        // Copia para a memória: o stream do Explorer/arquivo só pode ser lido pela thread que o abriu,
+        // e o leitor de PDF lê em outra thread.
+        STATSTG st0 = {};
+        if (FAILED(src->Stat(&st0, STATFLAG_NONAME)) || st0.cbSize.QuadPart == 0 || st0.cbSize.QuadPart > (512ull << 20)) return false;
+        SIZE_T size = (SIZE_T)st0.cbSize.QuadPart;
+        HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, size);
+        if (!hg) return false;
+        BYTE* dst = (BYTE*)GlobalLock(hg);
         LARGE_INTEGER zero = {};
-        s->Seek(zero, STREAM_SEEK_SET, nullptr);
+        src->Seek(zero, STREAM_SEEK_SET, nullptr);
+        SIZE_T done = 0;
+        while (done < size) {
+            ULONG got = 0;
+            if (FAILED(src->Read(dst + done, (ULONG)(size - done < (1u << 24) ? size - done : (1u << 24)), &got)) || !got) break;
+            done += got;
+        }
+        GlobalUnlock(hg);
+        if (done < size || FAILED(CreateStreamOnHGlobal(hg, TRUE, &mem_))) { if (!mem_) GlobalFree(hg); return false; }
+        IStream* s = mem_;
         HSTRING cls = nullptr;
         IPdfDocumentStatics* st = nullptr;
         IUnknown* ras = nullptr;
         IAsyncResult<IPdfDocument>* op = nullptr;
         const wchar_t* name = L"Windows.Data.Pdf.PdfDocument";
-        bool ok = SUCCEEDED(WindowsCreateString(name, (UINT32)wcslen(name), &cls)) &&
-                  SUCCEEDED(RoGetActivationFactory(cls, IID_IPdfDocumentStatics, (void**)&st)) &&
-                  SUCCEEDED(CreateRandomAccessStreamOverStream(s, BSOS_DEFAULT, IID_IRandomAccessStream, (void**)&ras)) &&
-                  SUCCEEDED(st->LoadFromStreamAsync(ras, &op)) && SUCCEEDED(Wait(op)) && SUCCEEDED(op->GetResults(&doc_)) && doc_;
+        HRESULT hr = WindowsCreateString(name, (UINT32)wcslen(name), &cls);
+        if (SUCCEEDED(hr) && FAILED(hr = RoGetActivationFactory(cls, IID_IPdfDocumentStatics, (void**)&st))) Log("RoGetActivationFactory(PdfDocument)", hr);
+        if (SUCCEEDED(hr) && FAILED(hr = CreateRandomAccessStreamOverStream(s, BSOS_DEFAULT, IID_IRandomAccessStream, (void**)&ras))) Log("CreateRandomAccessStreamOverStream", hr);
+        if (SUCCEEDED(hr) && FAILED(hr = st->LoadFromStreamAsync(ras, &op))) Log("LoadFromStreamAsync", hr);
+        if (SUCCEEDED(hr) && FAILED(hr = Wait(op))) Log("LoadFromStreamAsync (espera)", hr);
+        if (SUCCEEDED(hr) && FAILED(hr = op->GetResults(&doc_))) Log("GetResults(PdfDocument)", hr);
+        bool ok = SUCCEEDED(hr) && doc_;
         if (op) op->Release(); if (ras) ras->Release(); if (st) st->Release();
         WindowsDeleteString(cls);
         return ok;
@@ -143,9 +184,12 @@ public:
             opt->put_DestinationWidth(wide ? cx : (UINT)(cx * sz.Width / sz.Height + 1));
             opt->put_DestinationHeight(wide ? (UINT)(cx * sz.Height / sz.Width + 1) : cx);
             opt->put_BackgroundColor({255, 255, 255, 255});
-            if (SUCCEEDED(page->RenderWithOptionsToStreamAsync(mem, opt, &op)) && SUCCEEDED(Wait(op)) && SUCCEEDED(op->GetResults()))
-                CreateStreamOverRandomAccessStream(mem, IID_IStream, (void**)&out);
-        }
+            HRESULT hr = page->RenderWithOptionsToStreamAsync(mem, opt, &op);
+            if (FAILED(hr)) Log("RenderWithOptionsToStreamAsync", hr);
+            else if (FAILED(hr = Wait(op))) Log("RenderWithOptionsToStreamAsync (espera)", hr);
+            else if (FAILED(hr = op->GetResults())) Log("GetResults(render)", hr);
+            else if (FAILED(hr = CreateStreamOverRandomAccessStream(mem, IID_IStream, (void**)&out))) Log("CreateStreamOverRandomAccessStream", hr);
+        } else Log("preparar renderização da página", E_FAIL);
         if (op) op->Release(); if (mem) mem->Release(); if (memObj) memObj->Release();
         if (opt) opt->Release(); if (optObj) optObj->Release(); if (page) page->Release();
         return out;
