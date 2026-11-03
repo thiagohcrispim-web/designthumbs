@@ -102,16 +102,12 @@ inline bool RenderFile(const std::wstring& path, UINT cx, int page, HBITMAP* out
     if (fmt::Handles(ext)) {
         IStream* s = nullptr;
         if (SUCCEEDED(SHCreateStreamOnFileEx(path.c_str(), STGM_READ | STGM_SHARE_DENY_NONE, 0, FALSE, nullptr, &s))) {
-            // .ai de uma página: o PDF renderizado é mais nítido que a miniatura XMP
-            if (ext == L".ai") {
-                HBITMAP x = nullptr; bool a;
-                fmt::Render(s, ext, 16, 0, &x, &a, &n);
-                if (x) DeleteObject(x);
-                if (n <= 1 && (bmp = PdfHandlerImage(path, cx)) != nullptr) { bmp = ToDib(bmp); *alpha = PrepareAlpha(bmp); }
-            }
-            if (!bmp && FAILED(fmt::Render(s, ext, cx, page, &bmp, alpha, &n))) bmp = nullptr;
+            if (FAILED(fmt::Render(s, ext, cx, page, &bmp, alpha, &n, true))) bmp = nullptr;
             s->Release();
         }
+        // .ai sem imagem nenhuma: gerador de miniaturas de PDF do Windows (Edge/Acrobat)
+        if (ext == L".ai" && !bmp)
+            if (HBITMAP x = PdfHandlerImage(path, cx)) { bmp = ToDib(x); *alpha = PrepareAlpha(bmp); }
     }
     if (!bmp) {
         IShellItemImageFactory* f = nullptr;

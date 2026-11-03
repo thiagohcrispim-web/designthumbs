@@ -1512,12 +1512,15 @@ static void SetStartMenu(bool on) {
 // ---------- Novo > Pasta Padrão Maker ----------
 
 static const wchar_t* kFolderSet[] = {L"Edit", L"Links", L"Preview"};
-static const wchar_t* kNewExt = L"Software\\Classes\\.designpeekfolders";
+// O Explorer ordena o menu Novo pela extensão: começar com "0" deixa o item logo depois de Pasta e Atalho.
+static const wchar_t* kNewExt = L"Software\\Classes\\.0pastapadraomaker";
+static const wchar_t* kNewExtOld = L"Software\\Classes\\.designpeekfolders"; // v6
 static const wchar_t* kNewProgId = L"Software\\Classes\\DesignThumbs.PastaPadraoMaker";
 
 // Entrada no menu Novo do Explorer (por usuário). O Explorer chama "DesignPeek.exe /newfolders <arquivo novo>".
 static void SetNewMenu(bool on) {
     RegDeleteTreeW(HKEY_CURRENT_USER, kNewExt);
+    RegDeleteTreeW(HKEY_CURRENT_USER, kNewExtOld);
     RegDeleteTreeW(HKEY_CURRENT_USER, kNewProgId);
     if (on) {
         wchar_t exe[MAX_PATH];

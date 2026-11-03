@@ -11,6 +11,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include "Pdf.h"
 
 namespace fmt {
 using std::min; using std::max;
@@ -33,7 +34,10 @@ inline bool InList(const std::wstring& ext, const wchar_t* const* list, size_t n
     for (size_t i = 0; i < n; ++i) if (_wcsicmp(ext.c_str(), list[i]) == 0) return true;
     return false;
 }
-inline bool Handles(const std::wstring& ext) { return InList(ext, kExtensions, ARRAYSIZE(kExtensions)); }
+// PDF: só painel de visualização e preview (as miniaturas de PDF ficam com o Edge/Acrobat).
+static const wchar_t* const kPreviewOnly[] = {L".pdf"};
+inline bool HasThumbnail(const std::wstring& ext) { return InList(ext, kExtensions, ARRAYSIZE(kExtensions)); }
+inline bool Handles(const std::wstring& ext) { return HasThumbnail(ext) || InList(ext, kPreviewOnly, ARRAYSIZE(kPreviewOnly)); }
 inline bool IsRaw(const std::wstring& ext) { return InList(ext, kRawExtensions, ARRAYSIZE(kRawExtensions)); }
 
 // ---------- utilidades ----------
@@ -859,15 +863,38 @@ inline bool LooksLikeSvg(const Bytes& b) {
     return Find(b.data(), b.data() + min(b.size(), (size_t)64 << 10), "<svg", 4) != nullptr;
 }
 
+// ---------- PDF / AI (leitor nativo do Windows) ----------
+
+inline bool IsPdfLike(const BYTE* magic, const std::wstring& ext) {
+    return memcmp(magic, "%PDF", 4) == 0 && (_wcsicmp(ext.c_str(), L".pdf") == 0 || _wcsicmp(ext.c_str(), L".ai") == 0);
+}
+
+inline HRESULT PdfRender(IStream* s, UINT cx, int page, HBITMAP* out, int* pages) {
+    pdfrt::Document doc;
+    if (!doc.Open(s)) return E_FAIL;
+    int n = (int)doc.Pages();
+    if (n <= 0) return E_FAIL;
+    if (pages) *pages = n;
+    page = max(0, min(page, n - 1));
+    IStream* png = doc.RenderPng((UINT32)page, cx);
+    if (!png) return E_FAIL;
+    Bytes b;
+    HRESULT hr = ReadHead(png, b, 256u << 20) ? DecodeWic(b.data(), b.size(), cx, out) : E_FAIL;
+    png->Release();
+    return hr;
+}
+
 // ---------- entrada única ----------
 
 // Gera a imagem de um arquivo. ext: extensão com ponto (pode ser vazia); cx: lado máximo;
 // page: página (INDD com várias páginas); pages recebe o total de páginas.
-inline HRESULT Render(IStream* s, const std::wstring& ext, UINT cx, int page, HBITMAP* out, bool* alpha, int* pages = nullptr) {
+// hq: preview/painel/conversão (PDF e .ai renderizados página a página); sem hq: miniatura rápida.
+inline HRESULT Render(IStream* s, const std::wstring& ext, UINT cx, int page, HBITMAP* out, bool* alpha, int* pages = nullptr, bool hq = false) {
     *alpha = false;
     if (pages) *pages = 1;
     BYTE magic[16] = {};
     ReadAt(s, 0, magic, sizeof(magic));
+    if (IsPdfLike(magic, ext) && (hq || _wcsicmp(ext.c_str(), L".pdf") == 0) && SUCCEEDED(PdfRender(s, cx, page, out, pages))) return S_OK;
     if (memcmp(magic, "8BPS", 4) == 0) {
         HRESULT hr = PsdComposite(s, cx, out);
         return SUCCEEDED(hr) ? hr : PsdEmbeddedThumb(s, cx, out);
@@ -984,6 +1011,26 @@ inline void GetInfo(IStream* s, const std::wstring& ext, Info* in) {
             if (!model.empty() && model.compare(0, cam.size(), cam) == 0) cam.clear(); // "Canon Canon EOS R5"
             in->camera = Widen(cam.empty() ? model : cam + " " + model);
             in->note = L"preview embutido";
+        }
+        return;
+    }
+    if (IsPdfLike(magic, ext)) { // páginas e tamanho físico pelo leitor de PDF
+        pdfrt::Document doc;
+        pdfrt::Size sz;
+        if (doc.Open(s)) {
+            in->pages = doc.Pages();
+            if (doc.PageSize(0, &sz)) {
+                in->pageWmm = sz.Width / 96 * 25.4; in->pageHmm = sz.Height / 96 * 25.4;
+                wchar_t t[64];
+                swprintf(t, 64, L"%.0f × %.0f mm", in->pageWmm, in->pageHmm);
+                in->pageSize = t;
+            }
+        }
+        Bytes b;
+        if (ReadHead(s, b, 256u << 20)) { // fontes e programa (XMP), sem sobrescrever o que o PDF informou
+            Info x;
+            XmpInfo(b, &x);
+            in->app = x.app; in->fonts = x.fonts; in->fontFamilies = x.fontFamilies;
         }
         return;
     }

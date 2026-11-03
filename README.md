@@ -3,7 +3,7 @@
 Ferramentas leves para o Explorer do Windows 10/11 trabalhar com arquivos de design e fotografia.
 
 - **DesignThumbs.dll** — miniaturas no Explorer.
-- **Painel de visualização** do Explorer (`Alt+P`) para os mesmos formatos, com setas ‹ › para folhear as páginas do InDesign.
+- **Painel de visualização** do Explorer (`Alt+P`) para os mesmos formatos e para **PDF**, com setas ‹ › no canto da imagem para folhear as páginas de PDF e InDesign.
 - **DesignPeek.exe** — selecione um arquivo e aperte **Espaço** para um preview grande (estilo Quick Look do Mac).
 - **Converter com Alt** — selecione arquivos e segure **Alt**: botões para PNG, JPG ou PDF aparecem sobre o mouse.
 
@@ -16,7 +16,8 @@ usa um fundo sólido com o mesmo visual.
 | Tipo | Extensões | Origem da imagem |
 |---|---|---|
 | Photoshop | psd, psb | imagem composta (8/16/32 bits, RGB/Cinza/CMYK) |
-| Illustrator | ai | miniatura XMP; no preview, renderização em PDF pelo Windows (Edge/Acrobat) |
+| Illustrator | ai | miniatura XMP; no preview e na conversão, cada prancheta renderizada pelo leitor de PDF do Windows |
+| PDF | pdf | painel Alt+P, preview e conversão, página a página (leitor de PDF do Windows) |
 | InDesign | indd, indt | miniaturas XMP, uma por página |
 | EPS | eps, epsf, epsi | preview TIFF/WMF, XMP ou EPSI |
 | SVG | svg, svgz | Direct2D |
@@ -53,7 +54,7 @@ PDF **comprimido** (JPEG, arquivo pequeno) ou **normal, sem compressão** (sem p
 Um aviso no canto da tela mostra o progresso; clique nele para abrir a pasta com os arquivos gerados.
 
 ## Menu Novo › Pasta Padrão Maker
-Botão direito numa pasta › **Novo › Pasta Padrão Maker** cria as pastas **Edit**, **Links** e **Preview** de uma vez
+Botão direito numa pasta › **Novo › Pasta Padrão Maker** (logo depois de Pasta e Atalho) cria as pastas **Edit**, **Links** e **Preview** de uma vez
 e deixa as três selecionadas.
 
 ## Configurações
@@ -68,6 +69,8 @@ Extraia numa pasta fixa e rode `install.bat` (não precisa de administrador). `u
 - Linux: `build.sh` (MinGW + headers Direct2D recentes do mingw-w64 em `$D2D_INC`).
 
 ## Versões
+- **v7** — PDF e pranchetas do Illustrator página a página (leitor de PDF nativo do Windows); setas discretas no canto
+  da imagem no painel Alt+P, só para PDF e InDesign; Pasta Padrão Maker logo abaixo de Pasta/Atalho no menu Novo.
 - **v6** — setas de página no painel Alt+P e no preview; Novo › Pasta Padrão Maker (Edit, Links, Preview).
 - **v5** — nova interface de vidro (preview, botões do Alt, aviso e configurações), tema claro/escuro do Windows,
   animação de abertura, `DesignPeek.exe /peek arquivo` para abrir um arquivo direto.
