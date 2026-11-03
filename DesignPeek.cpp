@@ -1924,9 +1924,9 @@ static void SetStartMenu(bool on);
 static void SetNewMenu(bool on);
 
 static int Install(bool silent) {
-    if (!silent && MessageBoxW(nullptr, T(L"Instalar o DesignThumbs?\n\nMiniaturas, painel de visualização e preview com Espaço para arquivos de design. Não precisa de administrador.",
-                                         L"Install DesignThumbs?\n\nThumbnails, preview pane and Space preview for design files. No administrator needed.",
-                                         L"¿Instalar DesignThumbs?\n\nMiniaturas, panel de vista previa y vista previa con Espacio para archivos de diseño. No requiere administrador."),
+    if (!silent && MessageBoxW(nullptr, T(L"Instalar o DesignThumbs?\n\nMiniaturas, painel de visualização e preview com Espaço para arquivos de design. Não precisa de administrador.\n\nPrivacidade: uma vez por dia o programa consulta o GitHub para ver se há versão nova (pode desligar nas configurações). Nenhum dado seu é enviado.",
+                                         L"Install DesignThumbs?\n\nThumbnails, preview pane and Space preview for design files. No administrator needed.\n\nPrivacy: once a day the program checks GitHub for a new version (you can turn this off in settings). None of your data is sent.",
+                                         L"¿Instalar DesignThumbs?\n\nMiniaturas, panel de vista previa y vista previa con Espacio para archivos de diseño. No requiere administrador.\n\nPrivacidad: una vez al día el programa consulta GitHub para ver si hay una versión nueva (se puede desactivar en la configuración). No se envía ningún dato tuyo."),
                                L"DesignThumbs", MB_YESNO | MB_ICONQUESTION) != IDYES)
         return 0;
     std::wstring dir = InstallDir();

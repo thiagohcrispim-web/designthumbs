@@ -1,0 +1,46 @@
+# Compila o DesignThumbs a cada envio e publica o instalador como artefato.
+# Base para a assinatura gratuita da SignPath Foundation (builds automatizados e verificáveis).
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar MinGW
+        run: sudo apt-get update && sudo apt-get install -y g++-mingw-w64-x86-64-posix
+
+      - name: Compilar
+        run: ./build.sh
+
+      - name: Publicar artefato
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: DesignThumbs-Setup
+          path: DesignThumbs-Setup.exe
+          if-no-files-found: error
+
+      # Depois da aprovação na SignPath Foundation, descomente e preencha os IDs do projeto
+      # (e crie o segredo SIGNPATH_API_TOKEN em Settings > Secrets and variables > Actions):
+      # - name: Assinar com SignPath
+      #   uses: signpath/github-action-submit-signing-request@v1
+      #   with:
+      #     api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+      #     organization-id: COLE-AQUI
+      #     project-slug: designthumbs
+      #     signing-policy-slug: release-signing
+      #     github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      #     wait-for-completion: true
+      #     output-artifact-directory: signed
