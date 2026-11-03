@@ -173,7 +173,7 @@ inline void FileInfo(const std::wstring& path, fmt::Info* in) {
             if (ch) in->bits = bpp / ch;
             WICPixelFormatNumericRepresentation nr;
             if (ch >= 4 && (IsEqualGUID(pf, GUID_WICPixelFormat32bppCMYK) || IsEqualGUID(pf, GUID_WICPixelFormat64bppCMYK))) in->color = L"CMYK";
-            else if (ch == 1 && SUCCEEDED(pi->GetNumericRepresentation(&nr)) && nr != WICPixelFormatNumericRepresentationIndexed) in->color = L"Escala de cinza";
+            else if (ch == 1 && SUCCEEDED(pi->GetNumericRepresentation(&nr)) && nr != WICPixelFormatNumericRepresentationIndexed) in->color = T(L"Escala de cinza", L"Grayscale", L"Escala de grises");
             else if (ch >= 3) in->color = ch == 4 ? L"RGBA" : L"RGB";
         }
         SafeRelease(pi); SafeRelease(ci);

@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include "Pdf.h"
+#include "I18n.h"
 
 namespace fmt {
 using std::min; using std::max;
@@ -21,6 +22,7 @@ typedef std::vector<BYTE> Bytes;
 static const wchar_t* const kExtensions[] = {
     L".psd", L".psb", L".ai", L".indd", L".indt", L".eps", L".epsf", L".epsi", L".svg", L".svgz",
     L".cdr", L".afdesign", L".afphoto", L".afpub", L".xd", L".sketch", L".kra", L".ora", L".procreate",
+    L".ase", L".aco", // paletas de cor
     // câmeras: usa o JPEG de preview embutido no RAW
     L".cr2", L".cr3", L".crw", L".nef", L".nrw", L".arw", L".srf", L".sr2", L".dng", L".raf", L".orf",
     L".rw2", L".rwl", L".pef", L".srw", L".3fr", L".erf", L".kdc", L".mrw", L".mef", L".iiq",
@@ -35,7 +37,10 @@ inline bool InList(const std::wstring& ext, const wchar_t* const* list, size_t n
     return false;
 }
 // PDF: só painel de visualização e preview (as miniaturas de PDF ficam com o Edge/Acrobat).
-static const wchar_t* const kPreviewOnly[] = {L".pdf"};
+// Fontes: o Windows já gera as miniaturas; o DesignThumbs faz o painel e o preview com a folha de amostra.
+static const wchar_t* const kPreviewOnly[] = {L".pdf", L".ttf", L".otf", L".ttc"};
+inline bool IsFontExt(const std::wstring& e) { return !_wcsicmp(e.c_str(), L".ttf") || !_wcsicmp(e.c_str(), L".otf") || !_wcsicmp(e.c_str(), L".ttc"); }
+inline bool IsPaletteExt(const std::wstring& e) { return !_wcsicmp(e.c_str(), L".ase") || !_wcsicmp(e.c_str(), L".aco"); }
 inline bool HasThumbnail(const std::wstring& ext) { return InList(ext, kExtensions, ARRAYSIZE(kExtensions)); }
 inline bool Handles(const std::wstring& ext) { return HasThumbnail(ext) || InList(ext, kPreviewOnly, ARRAYSIZE(kPreviewOnly)); }
 inline bool IsRaw(const std::wstring& ext) { return InList(ext, kRawExtensions, ARRAYSIZE(kRawExtensions)); }
@@ -884,6 +889,16 @@ inline HRESULT PdfRender(IStream* s, UINT cx, int page, HBITMAP* out, int* pages
     return hr;
 }
 
+} // namespace fmt
+#include "Extra.h"
+namespace fmt {
+
+inline bool ReadPalette(IStream* s, const std::wstring& ext, std::vector<Swatch>& sw) {
+    Bytes b;
+    if (!ReadHead(s, b, 16u << 20)) return false;
+    return !_wcsicmp(ext.c_str(), L".ase") ? ParseAse(b, sw) : ParseAco(b, sw);
+}
+
 // ---------- entrada única ----------
 
 // Gera a imagem de um arquivo. ext: extensão com ponto (pode ser vazia); cx: lado máximo;
@@ -895,6 +910,14 @@ inline HRESULT Render(IStream* s, const std::wstring& ext, UINT cx, int page, HB
     BYTE magic[16] = {};
     ReadAt(s, 0, magic, sizeof(magic));
     if (IsPdfLike(magic, ext) && (hq || _wcsicmp(ext.c_str(), L".pdf") == 0) && SUCCEEDED(PdfRender(s, cx, page, out, pages))) return S_OK;
+    if (IsPaletteExt(ext)) {
+        std::vector<Swatch> sw;
+        return ReadPalette(s, ext, sw) ? RenderPalette(sw, cx, out) : E_FAIL;
+    }
+    if (IsFontExt(ext) || (ext.empty() && IsFontMagic(magic))) {
+        Bytes b;
+        return ReadHead(s, b, 64u << 20) ? RenderFont(b, cx, out) : E_FAIL;
+    }
     if (memcmp(magic, "8BPS", 4) == 0) {
         HRESULT hr = PsdComposite(s, cx, out);
         return SUCCEEDED(hr) ? hr : PsdEmbeddedThumb(s, cx, out);
@@ -988,7 +1011,7 @@ inline void GetInfo(IStream* s, const std::wstring& ext, Info* in) {
     ReadAt(s, 0, magic, sizeof(magic));
     PsdHeader ph;
     if (ReadPsdHeader(s, &ph)) {
-        static const wchar_t* modes[] = {L"Bitmap", L"Escala de cinza", L"Indexado", L"RGB", L"CMYK", L"", L"", L"Multicanal", L"Duotone", L"Lab"};
+        const wchar_t* modes[] = {L"Bitmap", T(L"Escala de cinza", L"Grayscale", L"Escala de grises"), T(L"Indexado", L"Indexed", L"Indexado"), L"RGB", L"CMYK", L"", L"", T(L"Multicanal", L"Multichannel", L"Multicanal"), L"Duotone", L"Lab"};
         in->w = ph.w; in->h = ph.h; in->bits = ph.depth;
         in->color = ph.mode < 10 ? modes[ph.mode] : L"";
         Bytes res; size_t len;
@@ -1010,7 +1033,22 @@ inline void GetInfo(IStream* s, const std::wstring& ext, Info* in) {
             std::string cam = t.make.empty() ? js.exif.make : t.make, model = t.model.empty() ? js.exif.model : t.model;
             if (!model.empty() && model.compare(0, cam.size(), cam) == 0) cam.clear(); // "Canon Canon EOS R5"
             in->camera = Widen(cam.empty() ? model : cam + " " + model);
-            in->note = L"preview embutido";
+            in->note = T(L"preview embutido", L"embedded preview", L"vista previa incrustada");
+        }
+        return;
+    }
+    if (IsPaletteExt(ext)) {
+        std::vector<Swatch> sw;
+        if (ReadPalette(s, ext, sw)) { wchar_t t[64]; swprintf(t, 64, T(L"%u cores", L"%u colors", L"%u colores"), (unsigned)sw.size()); in->pageSize = t; }
+        in->note = T(L"clique numa cor para copiar o HEX", L"click a color to copy its HEX", L"haz clic en un color para copiar el HEX");
+        return;
+    }
+    if (IsFontExt(ext)) {
+        Bytes b; FontFile ff;
+        if (ReadHead(s, b, 64u << 20) && ff.Open(b)) {
+            in->pageSize = ff.family + (ff.style.empty() ? L"" : L" " + ff.style);
+            wchar_t t[64]; swprintf(t, 64, T(L"%u glifos", L"%u glyphs", L"%u glifos"), ff.glyphs); in->note = t;
+            in->fonts.push_back(ff.family); in->fontFamilies.push_back(ff.family);
         }
         return;
     }
@@ -1037,7 +1075,7 @@ inline void GetInfo(IStream* s, const std::wstring& ext, Info* in) {
     if (memcmp(magic, "PK\3\4", 4) == 0) {
         Bytes img;
         if (ZipPreview(s, img)) WicInfo(img.data(), img.size(), in);
-        in->note = L"preview embutido";
+        in->note = T(L"preview embutido", L"embedded preview", L"vista previa incrustada");
         in->w = in->h = 0; // tamanho do preview, não do documento
         return;
     }
@@ -1051,7 +1089,7 @@ inline void GetInfo(IStream* s, const std::wstring& ext, Info* in) {
         swprintf(t, 64, L"%g × %g", w, h);
         in->pageSize = t;
         in->pageWmm = w / 96 * 25.4; in->pageHmm = h / 96 * 25.4; // unidades do SVG = px a 96 dpi
-        in->note = L"vetor";
+        in->note = T(L"vetor", L"vector", L"vector");
     }
 }
 

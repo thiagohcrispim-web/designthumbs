@@ -22,6 +22,8 @@ usa um fundo sólido com o mesmo visual.
 | EPS | eps, epsf, epsi | preview TIFF/WMF, XMP ou EPSI |
 | SVG | svg, svgz | Direct2D |
 | Pacotes | cdr, afdesign, afphoto, afpub, xd, sketch, kra, ora, procreate | preview guardado no pacote |
+| Paletas | ase, aco | miniatura com as amostras; no preview, nome e HEX de cada cor |
+| Fontes | ttf, otf, ttc | painel Alt+P e preview com folha de amostra (miniaturas ficam com o Windows) |
 | RAW de câmera | cr2, cr3, crw, nef, nrw, arw, srf, sr2, dng, raf, orf, rw2, rwl, pef, srw, 3fr, erf, kdc, mrw, mef, iiq | JPEG de preview embutido, com rotação |
 
 ## DesignPeek — atalhos
@@ -35,6 +37,7 @@ usa um fundo sólido com o mesmo visual.
 | PgUp / PgDn ou setas ‹ › na imagem | páginas (InDesign) |
 | Enter | abre no programa padrão |
 | Ctrl+C | copia a imagem (PNG com transparência) |
+| Passar o mouse / clicar | conta-gotas: mostra o HEX da cor / copia |
 | ⚙ (canto superior esquerdo) | configurações e ajuda |
 
 A barra inferior mostra dimensões, DPI e tamanho de impressão, modo de cor, páginas, câmera, tamanho do arquivo, programa de origem
@@ -54,15 +57,26 @@ PDF **comprimido** (JPEG, arquivo pequeno) ou **normal, sem compressão** (sem p
 Um aviso no canto da tela mostra o progresso; clique nele para abrir a pasta com os arquivos gerados.
 
 ## Menu Novo › Pasta Padrão Maker
-Botão direito numa pasta › **Novo › Pasta Padrão Maker** (logo depois de Pasta e Atalho) cria as pastas **Edit**, **Links** e **Preview** de uma vez
-e deixa as três selecionadas.
+Botão direito numa pasta › **Novo › Pasta Padrão Maker** (logo depois de Pasta e Atalho) cria as pastas da lista
+(padrão: **Edit**, **Links** e **Preview**) e deixa todas selecionadas. A lista fica em
+`%LOCALAPPDATA%\DesignThumbs\pastas.txt` — uma pasta por linha, `Links\Fontes` cria subpasta — e abre pelo botão
+**Editar** nas configurações.
+
+## Idiomas
+Português, inglês e espanhol — segue o idioma do Windows, ou escolha nas configurações.
 
 ## Configurações
 Clique na engrenagem do preview, rode `DesignPeek.exe` de novo ou use o atalho "DesignPeek" do menu Iniciar:
 preview com Espaço, botões do Alt (e tempo), qualidade do JPG/PDF, 72/300 dpi, PDF comprimido ou sem compressão, iniciar com o Windows.
 
 ## Instalar
-Extraia numa pasta fixa e rode `install.bat` (não precisa de administrador). `uninstall.bat` remove tudo.
+Rode **DesignThumbs-Setup.exe** (não precisa de administrador). Ele instala em `%LOCALAPPDATA%\Programs\DesignThumbs`,
+aparece em **Configurações › Aplicativos** (onde também se desinstala) e atualiza versões anteriores sozinho.
+Os scripts `install.bat`/`uninstall.bat` continuam disponíveis para uso manual.
+
+## Atualização automática
+O DesignPeek procura versões novas nas Releases de `thiagohcrispim-web/designthumbs` uma vez por dia. Quando encontra,
+mostra um aviso; um clique baixa e instala em segundo plano. Dá para desligar ou procurar na hora nas configurações.
 
 ## Compilar
 - Windows: `build.bat` no "x64 Native Tools Command Prompt for VS".
@@ -73,6 +87,8 @@ Arraste um arquivo para cima de `diagnostico.bat`: uma janela mostra, passo a pa
 (leitor de PDF, páginas, registro do painel Alt+P). Ctrl+C copia o texto da janela.
 
 ## Versões
+- **v8** — instalador (DesignThumbs-Setup.exe) com desinstalação pelo Windows; atualização automática; paletas .ase/.aco;
+  fontes .ttf/.otf; conta-gotas no preview; Pasta Padrão Maker configurável; português, inglês e espanhol.
 - **v7.3** — ícone do programa.
 - **v7.2** — ferramenta de diagnóstico (`diagnostico.bat`).
 - **v7.1** — corrige o PDF travando até o tempo-limite (o arquivo é copiado para a memória antes de ir ao leitor de PDF);

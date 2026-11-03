@@ -22,6 +22,7 @@
 #include "Convert.h" // antes do dwrite.h (ordem dos headers do MinGW)
 #include <dwrite.h>
 #include "Ui.h"
+#include "Update.h"
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -32,12 +33,12 @@ using std::min; using std::max;
 using conv::SafeRelease; using conv::Lower;
 
 enum {
-    WM_LOADED = WM_APP + 1, WM_CONV_PROGRESS, WM_CONV_DONE, WM_OPEN_SETTINGS,
+    WM_LOADED = WM_APP + 1, WM_CONV_PROGRESS, WM_CONV_DONE, WM_OPEN_SETTINGS, WM_UPDATE_FOUND, WM_UPDATE_NONE, WM_UPDATE_READY,
 };
 
 // ---------- configurações (HKCU\Software\DesignThumbs) ----------
 
-struct Config { bool space = true, alt = true, dpi300 = false, pdfRaw = false; DWORD altDelay = 500, quality = 92; };
+struct Config { bool space = true, alt = true, picker = true, autoUpdate = true, dpi300 = false, pdfRaw = false; DWORD altDelay = 500, quality = 92; };
 static Config g_cfg;
 static const wchar_t* kCfgKey = L"Software\\DesignThumbs";
 
@@ -53,12 +54,14 @@ static void LoadConfig() {
     g_cfg.altDelay = max(150ul, min(3000ul, (unsigned long)ReadDword(L"AltDelay", 500)));
     g_cfg.quality = max(50ul, min(100ul, (unsigned long)ReadDword(L"JpgQuality", 92)));
     g_cfg.dpi300 = ReadDword(L"ConvertDpi", 72) == 300;
+    g_cfg.picker = ReadDword(L"ColorPicker", 1) != 0;
+    g_cfg.autoUpdate = ReadDword(L"AutoUpdate", 1) != 0;
     g_cfg.pdfRaw = ReadDword(L"PdfUncompressed", 0) != 0;
 }
 static void SaveConfig() {
     WriteDword(L"SpacePreview", g_cfg.space); WriteDword(L"AltButtons", g_cfg.alt);
     WriteDword(L"AltDelay", g_cfg.altDelay); WriteDword(L"JpgQuality", g_cfg.quality);
-    WriteDword(L"ConvertDpi", g_cfg.dpi300 ? 300 : 72); WriteDword(L"PdfUncompressed", g_cfg.pdfRaw);
+    WriteDword(L"ConvertDpi", g_cfg.dpi300 ? 300 : 72); WriteDword(L"ColorPicker", g_cfg.picker); WriteDword(L"AutoUpdate", g_cfg.autoUpdate); WriteDword(L"PdfUncompressed", g_cfg.pdfRaw);
 }
 
 // ---------- estado ----------
@@ -87,6 +90,9 @@ static bool g_alpha, g_full, g_loading, g_firstFull;
 static float g_nw = 1, g_nh = 1, g_scale = 1, g_ox, g_oy, g_ui = 1;
 static bool g_fitMode = true, g_nativeKnown, g_dragging, g_gearHot;
 static int g_arrowHot;            // seta de página sob o mouse (-1/1)
+static bool g_pickOn;              // conta-gotas: cursor sobre a imagem
+static COLORREF g_pickColor;
+static POINT g_pickPt, g_downPt;
 static POINT g_dragFrom;
 
 // Direct2D / DirectWrite
@@ -102,7 +108,7 @@ static const struct { int id; UINT mod, vk; } kOpenKeys[] = {
     {kHot0, 0, '0'}, {kHotNum0, 0, VK_NUMPAD0}, {kHotPlus, 0, VK_OEM_PLUS}, {kHotMinus, 0, VK_OEM_MINUS},
     {kHotAdd, 0, VK_ADD}, {kHotSub, 0, VK_SUBTRACT}, {kHotPgUp, 0, VK_PRIOR}, {kHotPgDn, 0, VK_NEXT},
 };
-enum { kRefreshTimer = 1, kFlashTimer, kAltTimer, kToastTimer, kSelTimer, kAnimTimer };
+enum { kRefreshTimer = 1, kFlashTimer, kAltTimer, kToastTimer, kSelTimer, kAnimTimer, kUpdateTimer };
 static const float kCaption = 56, kPad = 18;
 static ui::Theme g_theme = ui::MakeTheme(true, false);
 static DWORD g_animStart;
@@ -419,6 +425,35 @@ static void ActualSize() {
 
 static void UpdateHotkeys();
 
+// Cor do pixel sob o cursor (para o conta-gotas). false fora da imagem ou em área transparente.
+static bool PixelAt(POINT pt, COLORREF* c) {
+    if (!g_dib) return false;
+    D2D1_RECT_F a = ImageArea();
+    float w = g_nw * g_scale, h = g_nh * g_scale;
+    float left = (a.left + a.right) / 2 + g_ox - w / 2, top = (a.top + a.bottom) / 2 + g_oy - h / 2;
+    if (pt.x < a.left || pt.x >= a.right || pt.y < a.top || pt.y >= a.bottom) return false;
+    float fx = (pt.x - left) / w, fy = (pt.y - top) / h;
+    if (fx < 0 || fx >= 1 || fy < 0 || fy >= 1) return false;
+    DIBSECTION ds;
+    if (GetObject(g_dib, sizeof(ds), &ds) != sizeof(ds) || !ds.dsBm.bmBits) return false;
+    const BYTE* px = (const BYTE*)ds.dsBm.bmBits + ((size_t)(fy * g_bh) * g_bw + (size_t)(fx * g_bw)) * 4;
+    if (px[3] < 8) return false;
+    auto un = [&](BYTE v) { return (BYTE)min(255, v * 255 / px[3]); }; // tira a pré-multiplicação
+    *c = RGB(un(px[2]), un(px[1]), un(px[0]));
+    return true;
+}
+
+static std::wstring HexOf(COLORREF c) { wchar_t t[16]; swprintf(t, 16, L"#%02X%02X%02X", GetRValue(c), GetGValue(c), GetBValue(c)); return t; }
+
+static void CopyText(const std::wstring& t) {
+    HGLOBAL m = GlobalAlloc(GMEM_MOVEABLE, (t.size() + 1) * sizeof(wchar_t));
+    if (!m) return;
+    memcpy(GlobalLock(m), t.c_str(), (t.size() + 1) * sizeof(wchar_t));
+    GlobalUnlock(m);
+    if (OpenClipboard(g_wnd)) { EmptyClipboard(); if (SetClipboardData(CF_UNICODETEXT, m)) m = nullptr; CloseClipboard(); }
+    if (m) GlobalFree(m);
+}
+
 static void SetDisplay(HBITMAP bmp, bool owned, bool alpha, UINT cx) {
     if (g_dib && g_dibOwned && g_dib != bmp) DeleteObject(g_dib);
     g_dib = bmp; g_dibOwned = owned; g_alpha = alpha; g_dibCx = cx;
@@ -603,7 +638,7 @@ static void CopyImage() {
         if (pngMem && SetClipboardData(RegisterClipboardFormatW(L"PNG"), pngMem)) pngMem = nullptr;
         if (dibMem && SetClipboardData(CF_DIB, dibMem)) dibMem = nullptr;
         CloseClipboard();
-        Flash(L"Imagem copiada");
+        Flash(T(L"Imagem copiada", L"Image copied", L"Imagen copiada"));
     }
     if (pngMem) GlobalFree(pngMem);
     if (dibMem) GlobalFree(dibMem);
@@ -615,6 +650,8 @@ static std::vector<std::wstring> g_convFiles;
 static bool g_converting;
 static std::wstring g_toastTitle, g_toastText;
 static int g_toastState;           // 0 convertendo, 1 pronto, 2 erro
+static int g_toastAction;          // clique: 0 mostra os arquivos, 1 instala a atualização
+static upd::Release g_release;
 static UINT g_toastDone, g_toastTotal;
 static std::vector<std::wstring> g_toastOutputs;
 static int g_altHot = -1;
@@ -636,14 +673,14 @@ static void ShowToast(const std::wstring& title, const std::wstring& text, DWORD
 }
 
 static void StartConversion(conv::Kind kind) {
-    if (g_converting) { ShowToast(L"Aguarde", L"Já há uma conversão em andamento.", 3000, 0); return; }
+    if (g_converting) { ShowToast(T(L"Aguarde", L"Please wait", L"Espera"), T(L"Já há uma conversão em andamento.", L"A conversion is already running.", L"Ya hay una conversión en curso."), 3000, 0); return; }
     std::vector<std::wstring> files = g_convFiles;
     if (files.empty()) return;
     g_converting = true;
     g_toastOutputs.clear();
     static const wchar_t* names[] = {L"PNG", L"JPG", L"PDF"};
     g_toastDone = 0; g_toastTotal = (UINT)files.size();
-    ShowToast(std::wstring(L"Convertendo para ") + names[kind], L"Preparando…", 0, 0);
+    ShowToast(std::wstring(T(L"Convertendo para ", L"Converting to ", L"Convirtiendo a ")) + names[kind], T(L"Preparando…", L"Preparing…", L"Preparando…"), 0, 0);
     conv::Options opt;
     opt.quality = g_cfg.quality / 100.0f;
     opt.dpi = g_cfg.dpi300 ? 300 : 72;
@@ -654,6 +691,28 @@ static void StartConversion(conv::Kind kind) {
         auto* r = new conv::Result(conv::Convert(files, kind, opt, [wnd](size_t d, size_t t) { PostMessage(wnd, WM_CONV_PROGRESS, d, t); }));
         if (!PostMessage(wnd, WM_CONV_DONE, kind, (LPARAM)r)) delete r;
         CoUninitialize();
+    }).detach();
+}
+
+// Procura versão nova (no máximo uma vez por dia, exceto quando pedido nas configurações).
+static void CheckForUpdates(bool manual) {
+    ULONGLONG now = GetTickCount64() / 1000 + 0;
+    FILETIME ft; GetSystemTimeAsFileTime(&ft);
+    ULONGLONG t = ((ULONGLONG)ft.dwHighDateTime << 32 | ft.dwLowDateTime) / 10000000ULL; // segundos
+    DWORD sz = sizeof(ULONGLONG);
+    ULONGLONG last = 0;
+    RegGetValueW(HKEY_CURRENT_USER, kCfgKey, L"LastUpdateCheck", RRF_RT_REG_QWORD, nullptr, &last, &sz);
+    if (!manual && t - last < 24 * 3600) return;
+    RegSetKeyValueW(HKEY_CURRENT_USER, kCfgKey, L"LastUpdateCheck", REG_QWORD, &t, sizeof(t));
+    (void)now;
+    HWND wnd = g_wnd;
+    std::thread([manual, wnd] {
+        upd::Release r;
+        bool ok = upd::Latest(&r);
+        if (ok && upd::Compare(upd::kVersion, r.tag) < 0) {
+            auto* p = new upd::Release(r);
+            if (!PostMessage(wnd, WM_UPDATE_FOUND, 0, (LPARAM)p)) delete p;
+        } else if (manual) PostMessage(wnd, WM_UPDATE_NONE, ok, 0);
     }).detach();
 }
 
@@ -822,7 +881,7 @@ static std::vector<std::wstring> InfoChips() {
     std::vector<std::wstring> parts;
     wchar_t t[128];
     const fmt::Info& in = g_info;
-    if (!g_hasInfo) { parts.push_back(L"Carregando informações…"); return parts; }
+    if (!g_hasInfo) { parts.push_back(T(L"Carregando informações…", L"Loading details…", L"Cargando información…")); return parts; }
     if (in.w && in.h) {
         swprintf(t, 128, L"%u × %u px", in.w, in.h);
         parts.push_back(t);
@@ -833,7 +892,7 @@ static std::vector<std::wstring> InfoChips() {
         }
     }
     if (!in.pageSize.empty()) parts.push_back(in.pageSize);
-    if (in.pages > 1) { swprintf(t, 128, L"%u páginas", in.pages); parts.push_back(t); }
+    if (in.pages > 1) { swprintf(t, 128, T(L"%u páginas", L"%u pages", L"%u páginas"), in.pages); parts.push_back(t); }
     if (!in.color.empty()) {
         std::wstring c = in.color;
         if (in.bits) { swprintf(t, 128, L" · %u bits", in.bits); c += t; }
@@ -889,7 +948,7 @@ static void Paint() {
         if (clip && layer) g_rt->PopLayer();
         SafeRelease(layer); SafeRelease(clip);
         if (g_fitMode) p.Stroke(dst, radius, th.stroke);
-    } else p.Text(L"Carregando…", a, 13, th.text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
+    } else p.Text(T(L"Carregando…", L"Loading…", L"Cargando…"), a, 13, th.text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
 
     // setas de página
     if (g_pages > 1)
@@ -901,6 +960,20 @@ static void Paint() {
             p.Stroke(r, rad, th.stroke);
             p.Icon(d < 0 ? L"\uE76B" : L"\uE76C", r, 14, enabled ? th.text : th.text2);
         }
+
+    // conta-gotas: cápsula com a cor e o HEX ao lado do cursor
+    if (g_cfg.picker && g_pickOn && !g_dragging) {
+        std::wstring hex = HexOf(g_pickColor);
+        float pw = p.Measure(hex, 12, DWRITE_FONT_WEIGHT_SEMI_BOLD) + 44 * s, ph = 28 * s;
+        float px = min(g_pickPt.x + 18 * s, size.width - pw - 8 * s), py = min(g_pickPt.y + 18 * s, size.height - ph - 8 * s);
+        D2D1_RECT_F pr = D2D1::RectF(px, py, px + pw, py + ph);
+        p.Fill(pr, ph / 2, th.dark ? ui::Rgba(0x1C1C1E, 0.9f) : ui::Rgba(0xFFFFFF, 0.95f));
+        p.Stroke(pr, ph / 2, th.stroke);
+        D2D1_RECT_F dot = D2D1::RectF(px + 7 * s, py + 6 * s, px + 23 * s, py + 22 * s);
+        p.Fill(dot, 8 * s, D2D1::ColorF(GetRValue(g_pickColor) / 255.0f, GetGValue(g_pickColor) / 255.0f, GetBValue(g_pickColor) / 255.0f));
+        p.Stroke(dot, 8 * s, th.stroke);
+        p.Text(hex, D2D1::RectF(px + 30 * s, py, pr.right - 8 * s, pr.bottom), 12, th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+    }
 
     // barra de cima: engrenagem, nome, zoom/página
     p.CircleButton(GearRectF(), L"", g_gearHot);
@@ -923,7 +996,7 @@ static void Paint() {
         p.Text(pg, pr, 12, th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
     }
     if (!g_flash.empty() || g_loading) {
-        std::wstring f = g_flash.empty() ? std::wstring(L"Carregando…") : g_flash;
+        std::wstring f = g_flash.empty() ? std::wstring(T(L"Carregando…", L"Loading…", L"Cargando…")) : g_flash;
         p.Text(f, D2D1::RectF(54 * s, 12 * s, side, 44 * s), 12, g_flash.empty() ? th.text2 : th.accent);
     }
 
@@ -954,7 +1027,7 @@ static void Paint() {
 
     // fontes do documento (faltando = vermelho)
     if (!g_info.fonts.empty()) {
-        std::wstring l2 = L"Fontes   ";
+        std::wstring l2 = std::wstring(T(L"Fontes", L"Fonts", L"Fuentes")) + L"   ";
         std::vector<DWRITE_TEXT_RANGE> missing;
         for (size_t i = 0; i < g_info.fonts.size(); ++i) {
             if (i) l2 += L"  ·  ";
@@ -971,7 +1044,7 @@ static void Paint() {
         ID2D1SolidColorBrush *txt = nullptr, *red = nullptr, *lbl = nullptr;
         g_rt->CreateSolidColorBrush(th.text, &txt); g_rt->CreateSolidColorBrush(th.danger, &red); g_rt->CreateSolidColorBrush(th.text2, &lbl);
         if (f && txt && red && lbl && SUCCEEDED(g_dw->CreateTextLayout(l2.c_str(), (UINT32)l2.size(), f, fr.right - fr.left - 2 * padX, fh, &lay))) {
-            lay->SetDrawingEffect(lbl, {0, 6});
+            lay->SetDrawingEffect(lbl, {0, (UINT32)wcslen(T(L"Fontes", L"Fonts", L"Fuentes"))});
             for (auto& r : missing) { lay->SetDrawingEffect(red, r); lay->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, r); }
             g_rt->DrawTextLayout(D2D1::Point2F(fr.left + padX, fr.top), lay, txt);
             lay->Release();
@@ -1002,7 +1075,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_CONV_PROGRESS: {
         wchar_t t[96];
         g_toastDone = (UINT)wp; g_toastTotal = (UINT)lp;
-        swprintf(t, 96, L"%u de %u arquivo%ls", (unsigned)wp, (unsigned)lp, lp > 1 ? L"s" : L"");
+        swprintf(t, 96, T(L"%u de %u arquivo(s)", L"%u of %u file(s)", L"%u de %u archivo(s)"), (unsigned)wp, (unsigned)lp);
         g_toastText = t;
         InvalidateRect(g_toastWnd, nullptr, FALSE);
         return 0;
@@ -1013,23 +1086,47 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         g_toastOutputs = r->outputs;
         static const wchar_t* names[] = {L"PNG", L"JPG", L"PDF"};
         wchar_t t[160];
-        if (r->outputs.empty()) ShowToast(L"Não foi possível converter", L"Nenhum arquivo gerou imagem.", 6000, 2);
+        if (r->outputs.empty()) ShowToast(T(L"Não foi possível converter", L"Couldn't convert", L"No se pudo convertir"), T(L"Nenhum arquivo gerou imagem.", L"No file produced an image.", L"Ningún archivo generó imagen."), 6000, 2);
         else {
             if (wp == conv::kPdf) swprintf(t, 160, L"%ls", PathFindFileNameW(r->outputs[0].c_str()));
-            else swprintf(t, 160, L"%u arquivo%ls %ls", (unsigned)r->outputs.size(), r->outputs.size() > 1 ? L"s" : L"", names[wp]);
+            else swprintf(t, 160, T(L"%u arquivo(s) %ls", L"%u %ls file(s)", L"%u archivo(s) %ls"), (unsigned)r->outputs.size(), names[wp]);
             std::wstring text = t;
-            if (r->failed) text += L"  ·  " + std::to_wstring(r->failed) + L" com erro";
-            ShowToast(L"Pronto · clique para ver na pasta", text, 7000, 1);
+            if (r->failed) text += L"  ·  " + std::to_wstring(r->failed) + T(L" com erro", L" failed", L" con error");
+            g_toastAction = 0;
+            ShowToast(T(L"Pronto · clique para ver na pasta", L"Done · click to show in folder", L"Listo · clic para ver en la carpeta"), text, 7000, 1);
         }
         delete r;
         return 0;
     }
     case WM_OPEN_SETTINGS: OpenSettings(); return 0;
+    case WM_UPDATE_FOUND: {
+        auto* r = (upd::Release*)lp;
+        g_release = *r;
+        delete r;
+        g_toastAction = 1;
+        ShowToast(std::wstring(T(L"Nova versão ", L"New version ", L"Nueva versión ")) + g_release.tag,
+                  T(L"Clique para atualizar", L"Click to update", L"Clic para actualizar"), 15000, 1);
+        return 0;
+    }
+    case WM_UPDATE_NONE:
+        g_toastAction = 2;
+        ShowToast(wp ? T(L"Você já tem a versão mais recente", L"You're up to date", L"Ya tienes la versión más reciente")
+                     : T(L"Não foi possível procurar atualização", L"Couldn't check for updates", L"No se pudo buscar actualización"),
+                  std::wstring(T(L"Versão ", L"Version ", L"Versión ")) + upd::kVersion, 5000, wp ? 1 : 2);
+        return 0;
+    case WM_UPDATE_READY: {
+        auto* path = (std::wstring*)lp;
+        if (path->empty()) ShowToast(T(L"Falha ao baixar a atualização", L"Update download failed", L"Error al descargar la actualización"), g_release.tag, 6000, 2);
+        else ShellExecuteW(nullptr, L"open", path->c_str(), L"/S /update", nullptr, SW_SHOWNORMAL); // modo silencioso
+        delete path;
+        return 0;
+    }
     case WM_SETTINGCHANGE:
         if (lp && wcscmp((const wchar_t*)lp, L"ImmersiveColorSet") == 0) ApplyTheme();
         return 0;
     case WM_TIMER:
         if (wp == kAltTimer) { AltTick(); return 0; }
+        if (wp == kUpdateTimer) { if (g_cfg.autoUpdate) CheckForUpdates(false); SetTimer(h, kUpdateTimer, 6 * 3600 * 1000, nullptr); return 0; }
         if (wp == kAnimTimer) { InvalidateRect(h, nullptr, FALSE); if (GetTickCount() - g_animStart > 180) KillTimer(h, wp); return 0; }
         if (wp == kSelTimer) { KillTimer(h, wp); if (HWND dv = FocusedFileList()) SyncSelectionOrder(dv); return 0; }
         KillTimer(h, wp);
@@ -1055,7 +1152,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         if (PtInRect(&gr, pt)) { ClosePreview(); OpenSettings(); return 0; }
         if (int d = PageArrowAt(pt)) { ChangePage(d); return 0; }
         g_dragging = true;
-        g_dragFrom = pt;
+        g_dragFrom = g_downPt = pt;
         SetCapture(h);
         return 0;
     }
@@ -1071,6 +1168,16 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             TrackMouseEvent(&tme);
             InvalidateRect(h, nullptr, FALSE);
         }
+        if (g_cfg.picker && !g_dragging) {
+            COLORREF c;
+            bool on = !hotNow && !arrow && PixelAt(p, &c);
+            if (on || g_pickOn) {
+                g_pickOn = on; g_pickPt = p; if (on) g_pickColor = c;
+                TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, h, 0};
+                TrackMouseEvent(&tme);
+                InvalidateRect(h, nullptr, FALSE);
+            }
+        }
         if (g_dragging) {
             g_ox += p.x - g_dragFrom.x; g_oy += p.y - g_dragFrom.y;
             g_dragFrom = p;
@@ -1079,8 +1186,20 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         }
         return 0;
     }
-    case WM_MOUSELEAVE: if (g_gearHot || g_arrowHot) { g_gearHot = false; g_arrowHot = 0; InvalidateRect(h, nullptr, FALSE); } return 0;
-    case WM_LBUTTONUP: g_dragging = false; ReleaseCapture(); return 0;
+    case WM_MOUSELEAVE: if (g_gearHot || g_arrowHot || g_pickOn) { g_gearHot = false; g_arrowHot = 0; g_pickOn = false; InvalidateRect(h, nullptr, FALSE); } return 0;
+    case WM_LBUTTONUP: {
+        POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+        bool click = g_dragging && abs(p.x - g_downPt.x) < 4 && abs(p.y - g_downPt.y) < 4;
+        g_dragging = false;
+        ReleaseCapture();
+        COLORREF c;
+        if (click && g_cfg.picker && PixelAt(p, &c)) { // clique sem arrastar: copia o HEX
+            std::wstring hex = HexOf(c);
+            CopyText(hex);
+            Flash((hex + T(L" copiado", L" copied", L" copiado")).c_str());
+        }
+        return 0;
+    }
     case WM_LBUTTONDBLCLK: {
         POINT dp = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         if (int d = PageArrowAt(dp)) { ChangePage(d); return 0; } // cliques rápidos nas setas
@@ -1156,8 +1275,9 @@ static LRESULT CALLBACK AltProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             ui::Painter p(rt, g_dw, g_theme, s);
             p.Stroke(D2D1::RectF(0, 0, sz.width, sz.height), 8 * s, g_theme.stroke);
             size_t n = g_convFiles.size();
-            std::wstring title = n == 1 ? L"Converter “" + std::wstring(PathFindFileNameW(g_convFiles[0].c_str())) + L"”"
-                                        : L"Converter " + std::to_wstring(n) + L" arquivos";
+            std::wstring conv = T(L"Converter", L"Convert", L"Convertir");
+            std::wstring title = n == 1 ? conv + L" “" + std::wstring(PathFindFileNameW(g_convFiles[0].c_str())) + L"”"
+                                        : conv + L" " + std::to_wstring(n) + T(L" arquivos", L" files", L" archivos");
             p.Text(title, D2D1::RectF(16 * s, 6 * s, sz.width - 16 * s, 34 * s), 12, g_theme.text2, DWRITE_FONT_WEIGHT_SEMI_BOLD);
             static const wchar_t* labels[] = {L"PNG", L"JPG", L"PDF"};
             static const wchar_t* icons[] = {L"", L"", L""};
@@ -1170,7 +1290,7 @@ static LRESULT CALLBACK AltProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                 bool sub = i == 2 && n > 1;
                 p.Icon(icons[i], D2D1::RectF(r.left, r.top + 6 * s, r.right, r.top + 28 * s), 16, c);
                 p.Text(labels[i], D2D1::RectF(r.left, r.top + 26 * s, r.right, r.top + (sub ? 44 : 50) * s), 13, c, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
-                if (sub) p.Text(std::to_wstring(n) + L" páginas", D2D1::RectF(r.left, r.top + 42 * s, r.right, r.bottom - 4 * s), 10,
+                if (sub) p.Text(std::to_wstring(n) + T(L" páginas", L" pages", L" páginas"), D2D1::RectF(r.left, r.top + 42 * s, r.right, r.bottom - 4 * s), 10,
                                 hot ? g_theme.onAccent : g_theme.text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
             }
             g_altSurf.End();
@@ -1205,7 +1325,22 @@ static LRESULT CALLBACK ToastProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_MOUSEACTIVATE: return MA_NOACTIVATE;
     case WM_TIMER: KillTimer(h, wp); ShowWindow(h, SW_HIDE); return 0;
     case WM_SETCURSOR: SetCursor(LoadCursor(nullptr, g_converting ? IDC_ARROW : IDC_HAND)); return TRUE;
-    case WM_LBUTTONUP: if (!g_converting) { ShowWindow(h, SW_HIDE); RevealOutputs(); } return 0;
+    case WM_LBUTTONUP:
+        if (g_converting) return 0;
+        ShowWindow(h, SW_HIDE);
+        if (g_toastAction == 1) { // baixa e roda o instalador (ele fecha e reabre o DesignPeek)
+            g_toastAction = 2;
+            g_toastDone = 0; g_toastTotal = 0;
+            ShowToast(T(L"Baixando atualização…", L"Downloading update…", L"Descargando actualización…"), g_release.tag, 0, 0);
+            std::wstring url = g_release.url;
+            HWND wnd = g_wnd;
+            std::thread([url, wnd] {
+                std::wstring path;
+                auto* p = new std::wstring(upd::Download(url, &path) ? path : L"");
+                if (!PostMessage(wnd, WM_UPDATE_READY, 0, (LPARAM)p)) delete p;
+            }).detach();
+        } else if (g_toastAction == 0) RevealOutputs();
+        return 0;
     case WM_RBUTTONUP: if (!g_converting) ShowWindow(h, SW_HIDE); return 0;
     case WM_SIZE: g_toastSurf.Resize(LOWORD(lp), HIWORD(lp)); return 0;
     case WM_ERASEBKGND: return 1;
@@ -1248,17 +1383,46 @@ static LRESULT CALLBACK ToastProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 static void SetAutostart(bool on);
 static bool AutostartEnabled();
 
-enum { kTogSpace = 1, kTogAlt, kDelayMinus, kDelayPlus, kDpi72, kDpi300, kPdfSmall, kPdfRaw, kQualMinus, kQualPlus, kTogAuto, kBtnFolder, kBtnQuit, kBtnClose };
+enum { kTogSpace = 1, kTogAlt, kDelayMinus, kDelayPlus, kDpi72, kDpi300, kPdfSmall, kPdfRaw, kQualMinus, kQualPlus, kTogAuto, kBtnFolder, kBtnQuit, kBtnClose,
+       kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate };
+
+static std::vector<std::wstring> FolderList();
+static std::wstring FolderListPath(bool create);
+static void CheckForUpdates(bool manual);
 
 static const wchar_t* kAbout =
     L"O DesignThumbs ensina o Explorer a entender arquivos de design e fotografia: miniaturas e painel de visualização (Alt+P) "
-    L"para Photoshop, Illustrator, InDesign, EPS, SVG, CorelDRAW, Affinity, XD, Sketch, Krita, Procreate e RAW de câmeras.\n\n"
+    L"para Photoshop, Illustrator, InDesign, PDF, EPS, SVG, CorelDRAW, Affinity, XD, Sketch, Krita, Procreate, fontes, paletas e RAW de câmeras.\n\n"
     L"Preview com Espaço: selecione um arquivo e aperte Espaço. Setas trocam de arquivo, a roda do mouse dá zoom e arrastar move. "
-    L"Z mostra em 100%, 0 ajusta, PgUp/PgDn troca páginas do InDesign, Enter abre no programa e Ctrl+C copia a imagem. "
+    L"Z mostra em 100%, 0 ajusta, PgUp/PgDn troca páginas, Enter abre no programa e Ctrl+C copia a imagem. "
     L"Embaixo aparecem tamanho, DPI, cor, câmera e as fontes usadas (as que faltam ficam em vermelho).\n\n"
     L"Conversão rápida: selecione arquivos e segure Alt para converter em PNG, JPG ou PDF. Com vários arquivos, o PDF segue "
     L"a ordem em que você clicou neles.\n\n"
+    L"Conta-gotas: no preview, passe o mouse para ver o HEX da cor e clique para copiar (ótimo com paletas .ase/.aco).\n\n"
+    L"Novo › Pasta Padrão Maker cria as pastas da lista (edite em Pasta Padrão Maker › Editar).\n\n"
     L"Leve: não escuta o teclado e só trabalha quando você pede.";
+
+static const wchar_t* kAboutEn =
+    L"DesignThumbs teaches File Explorer to understand design and photo files: thumbnails and the preview pane (Alt+P) "
+    L"for Photoshop, Illustrator, InDesign, PDF, EPS, SVG, CorelDRAW, Affinity, XD, Sketch, Krita, Procreate, fonts, palettes and camera RAW.\n\n"
+    L"Space preview: select a file and press Space. Arrows switch files, the mouse wheel zooms and dragging pans. "
+    L"Z shows 100%, 0 fits, PgUp/PgDn change pages, Enter opens the file and Ctrl+C copies the image. "
+    L"The bottom bar shows size, DPI, color, camera and the fonts used (missing ones in red).\n\n"
+    L"Quick convert: select files and hold Alt to convert to PNG, JPG or PDF. With several files, the PDF follows the order you clicked them.\n\n"
+    L"Color picker: in the preview, hover to see the HEX color and click to copy it (great with .ase/.aco palettes).\n\n"
+    L"New › Maker folder set creates the folders on your list (edit it in Maker folder set › Edit).\n\n"
+    L"Lightweight: it doesn't listen to the keyboard and only works when you ask.";
+
+static const wchar_t* kAboutEs =
+    L"DesignThumbs enseña al Explorador a entender archivos de diseño y fotografía: miniaturas y panel de vista previa (Alt+P) "
+    L"para Photoshop, Illustrator, InDesign, PDF, EPS, SVG, CorelDRAW, Affinity, XD, Sketch, Krita, Procreate, fuentes, paletas y RAW de cámaras.\n\n"
+    L"Vista previa con Espacio: selecciona un archivo y pulsa Espacio. Las flechas cambian de archivo, la rueda del ratón hace zoom y arrastrar mueve. "
+    L"Z muestra al 100%, 0 ajusta, RePág/AvPág cambian de página, Enter abre el archivo y Ctrl+C copia la imagen. "
+    L"Abajo aparecen tamaño, DPI, color, cámara y las fuentes usadas (las que faltan en rojo).\n\n"
+    L"Conversión rápida: selecciona archivos y mantén Alt para convertir a PNG, JPG o PDF. Con varios archivos, el PDF sigue el orden en que hiciste clic.\n\n"
+    L"Cuentagotas: en la vista previa, pasa el ratón para ver el color HEX y haz clic para copiarlo (ideal con paletas .ase/.aco).\n\n"
+    L"Nuevo › Carpetas Maker crea las carpetas de tu lista (edítala en Carpetas Maker › Editar).\n\n"
+    L"Ligero: no escucha el teclado y solo trabaja cuando lo pides.";
 
 static std::vector<std::pair<int, D2D1_RECT_F>> g_setHits;
 static int g_setHot;
@@ -1284,6 +1448,16 @@ static void SettingsAction(int id) {
         return;
     }
     case kBtnQuit: DestroyWindow(g_settingsWnd); PostMessage(g_wnd, WM_CLOSE, 0, 0); return;
+    case kTogPicker: g_cfg.picker = !g_cfg.picker; break;
+    case kTogUpdate: g_cfg.autoUpdate = !g_cfg.autoUpdate; break;
+    case kBtnUpdate: CheckForUpdates(true); return;
+    case kBtnFolders: ShellExecuteW(nullptr, L"open", L"notepad.exe", (L"\"" + FolderListPath(true) + L"\"").c_str(), nullptr, SW_SHOWNORMAL); return;
+    case kLangPt: case kLangEn: case kLangEs: {
+        DWORD v = (DWORD)(id - kLangPt + 1);
+        RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\DesignThumbs", L"Language", REG_DWORD, &v, sizeof(v));
+        i18n::Load();
+        return;
+    }
     case kBtnClose: DestroyWindow(g_settingsWnd); return;
     default: return;
     }
@@ -1305,7 +1479,7 @@ static void PaintSettings(HWND h) {
 
     // cabeçalho fixo
     p.Text(L"DesignPeek", D2D1::RectF(28 * s, 22 * s, sz.width - 80 * s, 54 * s), 24, th.text, DWRITE_FONT_WEIGHT_BOLD);
-    p.Text(L"Configurações", D2D1::RectF(28 * s, 52 * s, sz.width - 80 * s, 74 * s), 13, th.text2);
+    p.Text(T(L"Configurações", L"Settings", L"Configuración"), D2D1::RectF(28 * s, 52 * s, sz.width - 80 * s, 74 * s), 13, th.text2);
     D2D1_RECT_F close = D2D1::RectF(sz.width - 52 * s, 22 * s, sz.width - 22 * s, 52 * s);
     p.CircleButton(close, L"", hit(kBtnClose, close));
 
@@ -1336,23 +1510,27 @@ static void PaintSettings(HWND h) {
         return D2D1::RectF(c.right - 16 * s - bw, ry + (rowH - 30 * s) / 2, c.right - 16 * s, ry + (rowH + 30 * s) / 2);
     };
 
-    section(L"PREVIEW");
-    D2D1_RECT_F c = card(1);
-    toggle(kTogSpace, c, label(0, c, L"Preview com a barra de Espaço", L"Selecione um arquivo e aperte Espaço"), g_cfg.space);
+    section(T(L"PREVIEW", L"PREVIEW", L"VISTA PREVIA"));
+    D2D1_RECT_F c = card(2);
+    toggle(kTogSpace, c, label(0, c, T(L"Preview com a barra de Espaço", L"Preview with the Space bar", L"Vista previa con la barra espaciadora"),
+                               T(L"Selecione um arquivo e aperte Espaço", L"Select a file and press Space", L"Selecciona un archivo y pulsa Espacio")), g_cfg.space);
+    toggle(kTogPicker, c, label(1, c, T(L"Conta-gotas", L"Color picker", L"Cuentagotas"),
+                                T(L"Mostra o HEX sob o mouse; clique copia", L"Shows the HEX under the mouse; click copies", L"Muestra el HEX bajo el ratón; clic copia")), g_cfg.picker);
     y = c.bottom + 22 * s;
 
-    section(L"CONVERSÃO RÁPIDA");
+    section(T(L"CONVERSÃO RÁPIDA", L"QUICK CONVERT", L"CONVERSIÓN RÁPIDA"));
     c = card(5);
-    toggle(kTogAlt, c, label(0, c, L"Botões ao segurar Alt", L"PNG, JPG ou PDF sobre o mouse"), g_cfg.alt);
+    toggle(kTogAlt, c, label(0, c, T(L"Botões ao segurar Alt", L"Buttons when holding Alt", L"Botones al mantener Alt"),
+                             T(L"PNG, JPG ou PDF sobre o mouse", L"PNG, JPG or PDF above the mouse", L"PNG, JPG o PDF sobre el ratón")), g_cfg.alt);
     {
-        float ry = label(1, c, L"Tempo segurando");
+        float ry = label(1, c, T(L"Tempo segurando", L"Hold time", L"Tiempo manteniendo"));
         D2D1_RECT_F r = rightBox(c, ry, 150 * s), mi, pl;
         int hot = g_setHot == kDelayMinus ? 0 : g_setHot == kDelayPlus ? 1 : -1;
         p.Stepper(r, std::to_wstring(g_cfg.altDelay) + L" ms", hot, &mi, &pl);
         hit(kDelayMinus, mi); hit(kDelayPlus, pl);
     }
     {
-        float ry = label(2, c, L"Resolução");
+        float ry = label(2, c, T(L"Resolução", L"Resolution", L"Resolución"));
         D2D1_RECT_F r = rightBox(c, ry, 180 * s), parts[2];
         std::wstring l[2] = {L"72 dpi", L"300 dpi"};
         p.Segmented(r, l, 2, g_cfg.dpi300 ? 1 : 0, g_setHot == kDpi72 ? 0 : g_setHot == kDpi300 ? 1 : -1, parts);
@@ -1360,13 +1538,13 @@ static void PaintSettings(HWND h) {
     }
     {
         float ry = label(3, c, L"PDF");
-        D2D1_RECT_F r = rightBox(c, ry, 230 * s), parts[2];
-        std::wstring l[2] = {L"Comprimido", L"Sem compressão"};
+        D2D1_RECT_F r = rightBox(c, ry, 240 * s), parts[2];
+        std::wstring l[2] = {T(L"Comprimido", L"Compressed", L"Comprimido"), T(L"Sem compressão", L"Uncompressed", L"Sin compresión")};
         p.Segmented(r, l, 2, g_cfg.pdfRaw ? 1 : 0, g_setHot == kPdfSmall ? 0 : g_setHot == kPdfRaw ? 1 : -1, parts);
         hit(kPdfSmall, parts[0]); hit(kPdfRaw, parts[1]);
     }
     {
-        float ry = label(4, c, L"Qualidade JPG/PDF");
+        float ry = label(4, c, T(L"Qualidade JPG/PDF", L"JPG/PDF quality", L"Calidad JPG/PDF"));
         D2D1_RECT_F r = rightBox(c, ry, 150 * s), mi, pl;
         int hot = g_setHot == kQualMinus ? 0 : g_setHot == kQualPlus ? 1 : -1;
         p.Stepper(r, std::to_wstring(g_cfg.quality) + L"%", hot, &mi, &pl);
@@ -1374,24 +1552,50 @@ static void PaintSettings(HWND h) {
     }
     y = c.bottom + 22 * s;
 
-    section(L"SISTEMA");
+    section(T(L"PASTA PADRÃO MAKER", L"MAKER FOLDER SET", L"CARPETAS MAKER"));
     c = card(1);
-    toggle(kTogAuto, c, label(0, c, L"Iniciar com o Windows"), AutostartEnabled());
+    {
+        std::wstring names;
+        for (auto& n : FolderList()) names += (names.empty() ? L"" : L", ") + n;
+        float ry = label(0, c, T(L"Pastas criadas em Novo", L"Folders created from New", L"Carpetas creadas desde Nuevo"), names.c_str());
+        D2D1_RECT_F r = rightBox(c, ry, 90 * s);
+        p.Pill(r, T(L"Editar", L"Edit", L"Editar"), hit(kBtnFolders, r));
+    }
+    y = c.bottom + 22 * s;
+
+    section(T(L"SISTEMA", L"SYSTEM", L"SISTEMA"));
+    c = card(3);
+    toggle(kTogAuto, c, label(0, c, T(L"Iniciar com o Windows", L"Start with Windows", L"Iniciar con Windows")), AutostartEnabled());
+    {
+        float ry = label(1, c, T(L"Idioma", L"Language", L"Idioma"));
+        D2D1_RECT_F r = rightBox(c, ry, 270 * s), parts[3];
+        std::wstring l[3] = {L"Português", L"English", L"Español"};
+        int hot = g_setHot >= kLangPt && g_setHot <= kLangEs ? g_setHot - kLangPt : -1;
+        p.Segmented(r, l, 3, i18n::Current(), hot, parts);
+        hit(kLangPt, parts[0]); hit(kLangEn, parts[1]); hit(kLangEs, parts[2]);
+    }
+    {
+        std::wstring ver = std::wstring(T(L"Versão ", L"Version ", L"Versión ")) + upd::kVersion;
+        toggle(kTogUpdate, c, label(2, c, T(L"Atualizar automaticamente", L"Update automatically", L"Actualizar automáticamente"), ver.c_str()), g_cfg.autoUpdate);
+    }
     y = c.bottom + 12 * s;
     {
-        float bw = (w - 10 * s) / 2;
-        D2D1_RECT_F b1 = D2D1::RectF(x, y, x + bw, y + 36 * s), b2 = D2D1::RectF(x + bw + 10 * s, y, x + w, y + 36 * s);
-        p.Pill(b1, L"Abrir pasta do programa", hit(kBtnFolder, b1));
-        p.Pill(b2, L"Encerrar o DesignPeek", hit(kBtnQuit, b2));
+        float bw = (w - 20 * s) / 3;
+        D2D1_RECT_F b1 = D2D1::RectF(x, y, x + bw, y + 36 * s), b2 = D2D1::RectF(x + bw + 10 * s, y, x + 2 * bw + 10 * s, y + 36 * s),
+                    b3 = D2D1::RectF(x + 2 * bw + 20 * s, y, x + w, y + 36 * s);
+        p.Pill(b1, T(L"Pasta do programa", L"Program folder", L"Carpeta del programa"), hit(kBtnFolder, b1));
+        p.Pill(b2, T(L"Procurar atualização", L"Check for updates", L"Buscar actualización"), hit(kBtnUpdate, b2));
+        p.Pill(b3, T(L"Encerrar", L"Quit", L"Salir"), hit(kBtnQuit, b3));
         y = b1.bottom + 22 * s;
     }
 
-    section(L"SOBRE");
+    section(T(L"SOBRE", L"ABOUT", L"ACERCA DE"));
     {
-        float ph = p.Paragraph(kAbout, x + 16 * s, y + 14 * s, w - 32 * s, 12, th.text2, false);
+        const wchar_t* aboutText = T(kAbout, kAboutEn, kAboutEs);
+        float ph = p.Paragraph(aboutText, x + 16 * s, y + 14 * s, w - 32 * s, 12, th.text2, false);
         D2D1_RECT_F about = D2D1::RectF(x, y, x + w, y + ph + 28 * s);
         p.Glass(about, 16 * s);
-        p.Paragraph(kAbout, x + 16 * s, y + 14 * s, w - 32 * s, 12, th.text2);
+        p.Paragraph(aboutText, x + 16 * s, y + 14 * s, w - 32 * s, 12, th.text2);
         y = about.bottom + 20 * s;
     }
     g_setContentH = y + g_setScroll - top;
@@ -1459,10 +1663,10 @@ static void OpenSettings() {
     UINT dpi = 96;
     if (HWND fg = GetForegroundWindow()) dpi = GetDpiForWindow(fg);
     float s = dpi / 96.0f;
-    int w = (int)(540 * s), h = min((int)(760 * s), (int)(mi.rcWork.bottom - mi.rcWork.top - 40));
+    int w = (int)(560 * s), h = min((int)(780 * s), (int)(mi.rcWork.bottom - mi.rcWork.top - 40));
     g_setScroll = 0;
     g_setHot = 0;
-    g_settingsWnd = CreateWindowExW(WS_EX_APPWINDOW, L"DesignPeekSettings", L"DesignPeek — Configurações", WS_POPUP | WS_MINIMIZEBOX | WS_SYSMENU,
+    g_settingsWnd = CreateWindowExW(WS_EX_APPWINDOW, L"DesignPeekSettings", T(L"DesignPeek — Configurações", L"DesignPeek — Settings", L"DesignPeek — Configuración"), WS_POPUP | WS_MINIMIZEBOX | WS_SYSMENU,
                                     mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - w) / 2, mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - h) / 2,
                                     w, h, nullptr, nullptr, g_inst, nullptr);
     ui::EnableGlass(g_settingsWnd, g_theme.dark);
@@ -1511,7 +1715,45 @@ static void SetStartMenu(bool on) {
 
 // ---------- Novo > Pasta Padrão Maker ----------
 
-static const wchar_t* kFolderSet[] = {L"Edit", L"Links", L"Preview"};
+// Lista de pastas em %LOCALAPPDATA%\\DesignThumbs\\pastas.txt (uma por linha; "Links\\Fontes" cria subpasta).
+static std::wstring FolderListPath(bool create = true) {
+    wchar_t dir[MAX_PATH];
+    if (!GetEnvironmentVariableW(L"LOCALAPPDATA", dir, MAX_PATH)) return L"";
+    std::wstring d = std::wstring(dir) + L"\\DesignThumbs";
+    CreateDirectoryW(d.c_str(), nullptr);
+    std::wstring f = d + L"\\pastas.txt";
+    if (create && GetFileAttributesW(f.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        const char def[] = "\xEF\xBB\xBF" "Edit\r\nLinks\r\nPreview\r\n"; // UTF-8 com BOM (o Bloco de Notas abre certo)
+        HANDLE h = CreateFileW(f.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h != INVALID_HANDLE_VALUE) { DWORD w; WriteFile(h, def, sizeof(def) - 1, &w, nullptr); CloseHandle(h); }
+    }
+    return f;
+}
+
+static std::vector<std::wstring> FolderList() {
+    std::vector<std::wstring> out;
+    std::wstring f = FolderListPath();
+    HANDLE h = CreateFileW(f.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (h != INVALID_HANDLE_VALUE) {
+        char buf[16384]; DWORD n = 0;
+        ReadFile(h, buf, sizeof(buf) - 1, &n, nullptr);
+        CloseHandle(h);
+        std::string txt(buf, n);
+        if (txt.compare(0, 3, "\xEF\xBB\xBF") == 0) txt.erase(0, 3);
+        std::wstring w = fmt::Widen(txt), line;
+        for (wchar_t c : w + L"\n") {
+            if (c == L'\n' || c == L'\r') {
+                line.erase(0, line.find_first_not_of(L" \t\\/"));
+                line.erase(line.find_last_not_of(L" \t\\/") + 1);
+                bool ok = !line.empty() && line.find_first_of(L":*?\"<>|") == std::wstring::npos && line.find(L"..") == std::wstring::npos;
+                if (ok) out.push_back(line);
+                line.clear();
+            } else line += c;
+        }
+    }
+    if (out.empty()) out = {L"Edit", L"Links", L"Preview"};
+    return out;
+}
 // O Explorer ordena o menu Novo pela extensão: começar com "0" deixa o item logo depois de Pasta e Atalho.
 static const wchar_t* kNewExt = L"Software\\Classes\\.0pastapadraomaker";
 static const wchar_t* kNewExtOld = L"Software\\Classes\\.designpeekfolders"; // v6
@@ -1531,7 +1773,7 @@ static void SetNewMenu(bool on) {
         };
         set(kNewExt, nullptr, L"DesignThumbs.PastaPadraoMaker");
         set(std::wstring(kNewExt) + L"\\ShellNew", L"Command", cmd);
-        set(kNewProgId, nullptr, L"Pasta Padrão Maker");
+        set(kNewProgId, nullptr, T(L"Pasta Padrão Maker", L"Maker folder set", L"Carpetas Maker"));
         set(std::wstring(kNewProgId) + L"\\DefaultIcon", nullptr, L"%SystemRoot%\\System32\\imageres.dll,3");
     }
     // o Explorer guarda a lista do menu Novo em cache
@@ -1545,13 +1787,17 @@ static void CreateFolderSet(const std::wstring& newItemPath) {
     if (GetFileAttributesW(newItemPath.c_str()) != INVALID_FILE_ATTRIBUTES && !(GetFileAttributesW(newItemPath.c_str()) & FILE_ATTRIBUTE_DIRECTORY))
         DeleteFileW(newItemPath.c_str()); // caso o Explorer tenha criado o arquivo vazio
     std::vector<PIDLIST_ABSOLUTE> items;
-    for (auto name : kFolderSet) {
+    std::set<std::wstring> selected;
+    for (auto& name : FolderList()) {
         std::wstring f = dir + L"\\" + name;
-        if (CreateDirectoryW(f.c_str(), nullptr) || GetLastError() == ERROR_ALREADY_EXISTS) {
-            SHChangeNotify(SHCNE_MKDIR, SHCNF_PATHW, f.c_str(), nullptr);
-            PIDLIST_ABSOLUTE p = nullptr;
-            if (SUCCEEDED(SHParseDisplayName(f.c_str(), nullptr, &p, 0, nullptr))) items.push_back(p);
-        }
+        for (auto& c : f) if (c == L'/') c = L'\\';
+        int r = SHCreateDirectoryExW(nullptr, f.c_str(), nullptr); // cria subpastas também
+        if (r != ERROR_SUCCESS && r != ERROR_ALREADY_EXISTS && r != ERROR_FILE_EXISTS) continue;
+        std::wstring top = dir + L"\\" + name.substr(0, name.find_first_of(L"\\/")); // seleciona a pasta de primeiro nível
+        if (!selected.insert(Lower(top)).second) continue;
+        SHChangeNotify(SHCNE_MKDIR, SHCNF_PATHW, top.c_str(), nullptr);
+        PIDLIST_ABSOLUTE p = nullptr;
+        if (SUCCEEDED(SHParseDisplayName(top.c_str(), nullptr, &p, 0, nullptr))) items.push_back(p);
     }
     PIDLIST_ABSOLUTE folder = nullptr;
     if (!items.empty() && SUCCEEDED(SHParseDisplayName(dir.c_str(), nullptr, &folder, 0, nullptr))) {
@@ -1568,7 +1814,7 @@ static void Diagnose(const std::wstring& path) {
     std::wstring r;
     wchar_t t[512];
     auto line = [&](const wchar_t* fmtStr, ...) { va_list ap; va_start(ap, fmtStr); vswprintf(t, 512, fmtStr, ap); va_end(ap); r += t; r += L"\r\n"; };
-    line(L"DesignPeek 7.2  ·  %ls", path.c_str());
+    line(L"DesignPeek %ls  ·  %ls", upd::kVersion, path.c_str());
     std::wstring ext = conv::ExtOf(path);
     line(L"Extensão: %ls  ·  tratada pelo DesignThumbs: %ls", ext.c_str(), fmt::Handles(ext) ? L"sim" : L"NÃO");
     IStream* s = nullptr;
@@ -1619,6 +1865,7 @@ static void Diagnose(const std::wstring& path) {
 
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     g_inst = inst;
+    i18n::Load();
     std::wstring args = cmd ? cmd : L"";
     if (args.find(L"/autostart") != std::wstring::npos || args.find(L"/noautostart") != std::wstring::npos) {
         CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -1659,6 +1906,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     LoadConfig();
+    i18n::Load();
     if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &g_d2d)) ||
         FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), (IUnknown**)&g_dw)))
         return 1;
@@ -1689,6 +1937,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     g_fgHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr, FocusEvent, 0, 0, WINEVENT_OUTOFCONTEXT);
     UpdateHotkeys();
     if (args.find(L"/settings") != std::wstring::npos) OpenSettings();
+    SetTimer(g_wnd, kUpdateTimer, 60 * 1000, nullptr); // primeira verificação um minuto depois de iniciar
     size_t peek = args.find(L"/peek ");
     if (peek != std::wstring::npos) { // abre um arquivo direto (útil em "Abrir com")
         std::wstring f = args.substr(peek + 6);
