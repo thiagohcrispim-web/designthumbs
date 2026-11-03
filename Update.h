@@ -9,6 +9,8 @@ namespace upd {
 
 static const wchar_t* kVersion = L"8.0.0";
 static const wchar_t* kRepoApi = L"/repos/thiagohcrispim-web/designthumbs/releases/latest";
+// Alternativa às Releases: arquivo no próprio repositório com a versão e o link do instalador.
+static const wchar_t* kLatestJson = L"/thiagohcrispim-web/designthumbs/main/latest.json";
 
 // "v8.1.2" -> {8,1,2}; compara versões.
 inline int Compare(const std::wstring& a, const std::wstring& b) {
@@ -59,8 +61,15 @@ inline std::string JsonString(const std::string& j, const char* key, size_t from
 
 struct Release { std::wstring tag, url; };
 
-// Última release publicada e o link do instalador (arquivo que termina em "Setup.exe").
+// Última versão publicada e o link do instalador: latest.json do repositório (ou a última Release).
 inline bool Latest(Release* out) {
+    std::string lj = HttpsGet(L"raw.githubusercontent.com", kLatestJson);
+    std::string ver = JsonString(lj, "version"), link = JsonString(lj, "url");
+    if (!ver.empty() && !link.empty()) {
+        out->tag.assign(ver.begin(), ver.end());
+        out->url.assign(link.begin(), link.end());
+        return true;
+    }
     std::string j = HttpsGet(L"api.github.com", kRepoApi);
     if (j.empty()) return false;
     std::string tag = JsonString(j, "tag_name");

@@ -1,5 +1,7 @@
 # DesignThumbs
 
+**[⬇ Baixar o instalador (DesignThumbs-Setup.exe)](https://github.com/thiagohcrispim-web/designthumbs/raw/main/dist/DesignThumbs-Setup.exe)**
+
 Ferramentas leves para o Explorer do Windows 10/11 trabalhar com arquivos de design e fotografia.
 
 - **DesignThumbs.dll** — miniaturas no Explorer.
@@ -75,7 +77,7 @@ aparece em **Configurações › Aplicativos** (onde também se desinstala) e at
 Os scripts `install.bat`/`uninstall.bat` continuam disponíveis para uso manual.
 
 ## Atualização automática
-O DesignPeek procura versões novas nas Releases de `thiagohcrispim-web/designthumbs` uma vez por dia. Quando encontra,
+O DesignPeek procura versões novas uma vez por dia em `latest.json` deste repositório (ou nas Releases). Quando encontra,
 mostra um aviso; um clique baixa e instala em segundo plano. Dá para desligar ou procurar na hora nas configurações.
 
 ## Compilar
