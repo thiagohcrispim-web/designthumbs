@@ -83,8 +83,28 @@ Linha de comando: `DesignThumbs-Setup.exe /install /S` (silencioso) · `DesignPe
 O DesignPeek procura versões novas nas Releases de `thiagohcrispim-web/designthumbs` uma vez por dia. Quando encontra,
 mostra um aviso; um clique baixa e instala em segundo plano. Dá para desligar ou procurar na hora nas configurações.
 
+## Licença
+[MIT](LICENSE) — grátis para usar, modificar e redistribuir, mantendo o aviso de autoria.
+
+## Code signing policy (política de assinatura de código)
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+*(Em processo de inscrição — enquanto não for aprovado, os binários ainda não são assinados.)*
+
+- Committers and reviewers: [Thiago Crispim](https://github.com/thiagohcrispim-web)
+- Approvers: [Thiago Crispim](https://github.com/thiagohcrispim-web)
+
+Os binários são compilados automaticamente pelo GitHub Actions a partir deste repositório (`.github/workflows/build.yml`)
+e cada versão é aprovada manualmente antes da assinatura.
+
+## Privacidade
+Este programa não envia informação a outros sistemas em rede, exceto quando solicitado pelo usuário ou por quem o instala ou opera:
+uma vez por dia ele consulta este repositório no GitHub (`latest.json`) para saber se há versão nova, sem enviar dados pessoais.
+A verificação pode ser desligada em **Configurações › Atualizar automaticamente**. A política de privacidade do GitHub
+se aplica a essa consulta: https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement
+
 ## Compilar
-- Linux: `build.sh` (MinGW + headers Direct2D recentes do mingw-w64 em `$D2D_INC`).
+- Linux: `./build.sh` (MinGW `g++-mingw-w64-x86-64-posix`; os headers mais novos do mingw-w64 já estão em `third_party/`).
+- Automático: o GitHub Actions compila a cada envio e publica o `DesignThumbs-Setup.exe` como artefato.
 
 ## Diagnóstico
 `DesignPeek.exe /diag "arquivo"` (ou arraste um arquivo para cima de `diagnostico.bat`) mostra, passo a passo, como ele é lido
