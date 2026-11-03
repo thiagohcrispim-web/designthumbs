@@ -1,7 +1,12 @@
 
 # DesignThumbs
 
-**[⬇ Baixar o instalador (DesignThumbs-Setup.exe)](https://github.com/thiagohcrispim-web/designthumbs/raw/main/dist/DesignThumbs-Setup.exe)**
+**[⬇ Baixar o DesignThumbs (.zip)](https://github.com/thiagohcrispim-web/designthumbs/raw/main/dist/DesignThumbs.zip)** — extraia e execute `DesignThumbs-Setup.exe`.
+Ou o instalador direto: [DesignThumbs-Setup.exe](https://github.com/thiagohcrispim-web/designthumbs/raw/main/dist/DesignThumbs-Setup.exe)
+
+> **Aviso de vírus ao baixar?** É um alarme falso: o programa ainda não tem assinatura digital e é novo, então o Chrome,
+> o SmartScreen e alguns antivírus desconfiam dele. No Chrome, abra `chrome://downloads` e clique em **Manter** / **Baixar arquivo suspeito**;
+> no Windows, clique em **Mais informações › Executar assim mesmo**. O código é aberto e é compilado pelo GitHub Actions a partir deste repositório.
 
 Ferramentas leves para o Explorer do Windows 10/11 trabalhar com arquivos de design e fotografia.
 
