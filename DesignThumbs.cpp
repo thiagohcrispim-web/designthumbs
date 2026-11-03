@@ -95,18 +95,65 @@ class Preview : public IPreviewHandler, public IInitializeWithStream, public IOb
     COLORREF bg_ = RGB(255, 255, 255);
     std::wstring ext_;
 
+    int page_ = 0, pages_ = 1, hot_ = 0;   // hot_: -1 seta esquerda, 1 seta direita
+    ID2D1Factory* d2d_ = nullptr;
+
     static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         auto* self = (Preview*)GetWindowLongPtrW(h, GWLP_USERDATA);
-        if (msg == WM_ERASEBKGND) return 1;
-        if (msg == WM_PAINT && self) { self->Paint(h); return 0; }
+        if (!self) return DefWindowProcW(h, msg, wp, lp);
+        switch (msg) {
+        case WM_ERASEBKGND: return 1;
+        case WM_PAINT: self->Paint(h); return 0;
+        case WM_MOUSEMOVE: {
+            POINT pt = {(short)LOWORD(lp), (short)HIWORD(lp)};
+            int hot = self->ArrowAt(pt);
+            if (hot != self->hot_) { self->hot_ = hot; InvalidateRect(h, nullptr, FALSE); }
+            TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, h, 0};
+            TrackMouseEvent(&tme);
+            return 0;
+        }
+        case WM_MOUSELEAVE: if (self->hot_) { self->hot_ = 0; InvalidateRect(h, nullptr, FALSE); } return 0;
+        case WM_SETCURSOR: SetCursor(LoadCursor(nullptr, self->hot_ ? IDC_HAND : IDC_ARROW)); return TRUE;
+        case WM_LBUTTONUP: {
+            POINT pt = {(short)LOWORD(lp), (short)HIWORD(lp)};
+            if (int d = self->ArrowAt(pt)) self->GoPage(self->page_ + d);
+            return 0;
+        }
+        }
         return DefWindowProcW(h, msg, wp, lp);
+    }
+
+    // Setas de página: círculos nas laterais, no meio da altura.
+    D2D1_ELLIPSE Arrow(int dir) {
+        RECT rc; GetClientRect(wnd_, &rc);
+        float r = 16, m = 10 + r;
+        return D2D1::Ellipse(D2D1::Point2F(dir < 0 ? m : rc.right - m, rc.bottom / 2.0f), r, r);
+    }
+    int ArrowAt(POINT pt) {
+        if (pages_ <= 1) return 0;
+        for (int d : {-1, 1}) {
+            D2D1_ELLIPSE e = Arrow(d);
+            float dx = pt.x - e.point.x, dy = pt.y - e.point.y;
+            if (dx * dx + dy * dy <= (e.radiusX + 4) * (e.radiusX + 4) && ((d < 0 && page_ > 0) || (d > 0 && page_ < pages_ - 1))) return d;
+        }
+        return 0;
+    }
+    void GoPage(int p) {
+        p = max(0, min(pages_ - 1, p));
+        if (p == page_) return;
+        page_ = p;
+        if (bmp_) { DeleteObject(bmp_); bmp_ = nullptr; }
+        Render();
+        InvalidateRect(wnd_, nullptr, FALSE);
     }
 
     void Render() {
         UINT want = (UINT)max(256L, max(rect_.right - rect_.left, rect_.bottom - rect_.top));
         if (bmp_ && max(bw_, bh_) * 5 >= want * 4) return; // ainda nítido o bastante
         HBITMAP b = nullptr; bool alpha = false;
-        if (!stream_ || FAILED(fmt::Render(stream_, ext_, want, 0, &b, &alpha))) return;
+        int pages = 1;
+        if (!stream_ || FAILED(fmt::Render(stream_, ext_, want, page_, &b, &alpha, &pages))) return;
+        pages_ = pages;
         DIBSECTION ds;
         GetObject(b, sizeof(ds), &ds);
         BYTE* p = (BYTE*)ds.dsBm.bmBits;
@@ -117,15 +164,67 @@ class Preview : public IPreviewHandler, public IInitializeWithStream, public IOb
         bmp_ = b; bw_ = ds.dsBm.bmWidth; bh_ = std::abs(ds.dsBm.bmHeight);
     }
 
+    // Setas de vidro escuro e indicador "2 / 5" desenhados com Direct2D (antisserrilhado).
+    void PaintPager(HDC dc, const RECT& rc) {
+        if (pages_ <= 1) return;
+        if (!d2d_ && FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &d2d_))) return;
+        ID2D1DCRenderTarget* rt = nullptr;
+        D2D1_RENDER_TARGET_PROPERTIES p = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE), 96, 96);
+        if (FAILED(d2d_->CreateDCRenderTarget(&p, &rt))) return;
+        rt->BindDC(dc, &rc);
+        rt->BeginDraw();
+        ID2D1SolidColorBrush *glass = nullptr, *glassHot = nullptr, *white = nullptr, *ring = nullptr;
+        rt->CreateSolidColorBrush(D2D1::ColorF(0x1C1C1E, 0.55f), &glass);
+        rt->CreateSolidColorBrush(D2D1::ColorF(0x1C1C1E, 0.8f), &glassHot);
+        rt->CreateSolidColorBrush(D2D1::ColorF(0xFFFFFF, 0.95f), &white);
+        rt->CreateSolidColorBrush(D2D1::ColorF(0xFFFFFF, 0.22f), &ring);
+        ID2D1StrokeStyle* round = nullptr;
+        d2d_->CreateStrokeStyle(D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND, D2D1_LINE_JOIN_ROUND), nullptr, 0, &round);
+        for (int d : {-1, 1}) {
+            bool enabled = d < 0 ? page_ > 0 : page_ < pages_ - 1;
+            D2D1_ELLIPSE e = Arrow(d);
+            rt->FillEllipse(e, hot_ == d ? glassHot : glass);
+            rt->DrawEllipse(e, ring, 1);
+            float cx = e.point.x + d * 1.5f, cy = e.point.y, k = 5.5f; // chevron < ou >
+            white->SetOpacity(enabled ? 0.95f : 0.3f);
+            rt->DrawLine(D2D1::Point2F(cx - d * k * 0.6f, cy - k), D2D1::Point2F(cx + d * k * 0.6f, cy), white, 2.2f, round);
+            rt->DrawLine(D2D1::Point2F(cx + d * k * 0.6f, cy), D2D1::Point2F(cx - d * k * 0.6f, cy + k), white, 2.2f, round);
+        }
+        white->SetOpacity(1);
+        // cápsula com a página atual, embaixo
+        float pw = 58, ph = 22, py = rc.bottom - 12 - ph;
+        D2D1_ROUNDED_RECT pill = D2D1::RoundedRect(D2D1::RectF((rc.right - pw) / 2, py, (rc.right + pw) / 2, py + ph), ph / 2, ph / 2);
+        rt->FillRoundedRectangle(pill, glass);
+        rt->DrawRoundedRectangle(pill, ring, 1);
+        rt->EndDraw();
+        if (round) round->Release();
+        glass->Release(); glassHot->Release(); white->Release(); ring->Release();
+        rt->Release();
+        wchar_t t[32];
+        swprintf(t, 32, L"%d / %d", page_ + 1, pages_);
+        HFONT f = CreateFontW(-12, 0, 0, 0, FW_SEMIBOLD, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+        HGDIOBJ of = SelectObject(dc, f);
+        ::SetBkMode(dc, TRANSPARENT);
+        ::SetTextColor(dc, RGB(255, 255, 255));
+        RECT tr = {(LONG)((rc.right - pw) / 2), (LONG)py, (LONG)((rc.right + pw) / 2), (LONG)(py + ph)};
+        DrawTextW(dc, t, -1, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        SelectObject(dc, of);
+        DeleteObject(f);
+    }
+
     void Paint(HWND h) {
         PAINTSTRUCT ps;
-        HDC dc = BeginPaint(h, &ps);
+        HDC wdc = BeginPaint(h, &ps);
         RECT rc; GetClientRect(h, &rc);
+        HDC dc = CreateCompatibleDC(wdc); // sem piscar
+        HBITMAP buf = CreateCompatibleBitmap(wdc, rc.right, rc.bottom);
+        HGDIOBJ oldBuf = SelectObject(dc, buf);
         HBRUSH br = CreateSolidBrush(bg_);
         FillRect(dc, &rc, br);
         DeleteObject(br);
         if (bmp_) {
-            int pad = 8, aw = rc.right - 2 * pad, ah = rc.bottom - 2 * pad;
+            int pad = pages_ > 1 ? 52 : 8, aw = rc.right - 2 * pad, ah = rc.bottom - 2 * (pages_ > 1 ? 40 : 8);
             double k = min(min((double)aw / bw_, (double)ah / bh_), 1.0);
             int w = max(1, (int)(bw_ * k)), hh = max(1, (int)(bh_ * k));
             HDC mem = CreateCompatibleDC(dc);
@@ -136,12 +235,17 @@ class Preview : public IPreviewHandler, public IInitializeWithStream, public IOb
             SelectObject(mem, old);
             DeleteDC(mem);
         }
+        PaintPager(dc, rc);
+        BitBlt(wdc, 0, 0, rc.right, rc.bottom, dc, 0, 0, SRCCOPY);
+        SelectObject(dc, oldBuf);
+        DeleteObject(buf);
+        DeleteDC(dc);
         EndPaint(h, &ps);
     }
 
 public:
     Preview() { InterlockedIncrement(&g_refs); }
-    ~Preview() { Unload(); if (site_) site_->Release(); InterlockedDecrement(&g_refs); }
+    ~Preview() { Unload(); if (site_) site_->Release(); if (d2d_) d2d_->Release(); InterlockedDecrement(&g_refs); }
 
     IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) {
         static const QITAB qit[] = {QITABENT(Preview, IPreviewHandler), QITABENT(Preview, IInitializeWithStream), QITABENT(Preview, IObjectWithSite),

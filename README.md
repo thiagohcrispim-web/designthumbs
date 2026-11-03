@@ -3,7 +3,7 @@
 Ferramentas leves para o Explorer do Windows 10/11 trabalhar com arquivos de design e fotografia.
 
 - **DesignThumbs.dll** — miniaturas no Explorer.
-- **Painel de visualização** do Explorer (`Alt+P`) para os mesmos formatos.
+- **Painel de visualização** do Explorer (`Alt+P`) para os mesmos formatos, com setas ‹ › para folhear as páginas do InDesign.
 - **DesignPeek.exe** — selecione um arquivo e aperte **Espaço** para um preview grande (estilo Quick Look do Mac).
 - **Converter com Alt** — selecione arquivos e segure **Alt**: botões para PNG, JPG ou PDF aparecem sobre o mouse.
 
@@ -31,7 +31,7 @@ usa um fundo sólido com o mesmo visual.
 | Roda do mouse, + / - | zoom no cursor |
 | Arrastar | mover |
 | Z / 0 / duplo clique | 100% / ajustar / alternar |
-| PgUp / PgDn | páginas (InDesign) |
+| PgUp / PgDn ou setas ‹ › na imagem | páginas (InDesign) |
 | Enter | abre no programa padrão |
 | Ctrl+C | copia a imagem (PNG com transparência) |
 | ⚙ (canto superior esquerdo) | configurações e ajuda |
@@ -52,6 +52,10 @@ PDF **comprimido** (JPEG, arquivo pequeno) ou **normal, sem compressão** (sem p
 
 Um aviso no canto da tela mostra o progresso; clique nele para abrir a pasta com os arquivos gerados.
 
+## Menu Novo › Pasta Padrão Maker
+Botão direito numa pasta › **Novo › Pasta Padrão Maker** cria as pastas **Edit**, **Links** e **Preview** de uma vez
+e deixa as três selecionadas.
+
 ## Configurações
 Clique na engrenagem do preview, rode `DesignPeek.exe` de novo ou use o atalho "DesignPeek" do menu Iniciar:
 preview com Espaço, botões do Alt (e tempo), qualidade do JPG/PDF, 72/300 dpi, PDF comprimido ou sem compressão, iniciar com o Windows.
@@ -64,6 +68,7 @@ Extraia numa pasta fixa e rode `install.bat` (não precisa de administrador). `u
 - Linux: `build.sh` (MinGW + headers Direct2D recentes do mingw-w64 em `$D2D_INC`).
 
 ## Versões
+- **v6** — setas de página no painel Alt+P e no preview; Novo › Pasta Padrão Maker (Edit, Links, Preview).
 - **v5** — nova interface de vidro (preview, botões do Alt, aviso e configurações), tema claro/escuro do Windows,
   animação de abertura, `DesignPeek.exe /peek arquivo` para abrir um arquivo direto.
 - **v4.2** — botões de conversão no Alt; 72/300 dpi; PDF comprimido ou sem compressão; ordem do PDF = ordem dos cliques.

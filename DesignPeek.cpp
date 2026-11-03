@@ -86,6 +86,7 @@ static bool g_alpha, g_full, g_loading, g_firstFull;
 // visualização: escala em pixels de tela por pixel "nativo" (g_nw x g_nh)
 static float g_nw = 1, g_nh = 1, g_scale = 1, g_ox, g_oy, g_ui = 1;
 static bool g_fitMode = true, g_nativeKnown, g_dragging, g_gearHot;
+static int g_arrowHot;            // seta de página sob o mouse (-1/1)
 static POINT g_dragFrom;
 
 // Direct2D / DirectWrite
@@ -801,6 +802,19 @@ static void CreateDeviceResources() {
 static void DiscardDeviceResources() { SafeRelease(g_gpuBmp); SafeRelease(g_checker); SafeRelease(g_rt); }
 
 static D2D1_RECT_F GearRectF() { return D2D1::RectF(14 * g_ui, 12 * g_ui, 46 * g_ui, 44 * g_ui); }
+// Setas de página nas laterais da imagem (InDesign e outros com várias páginas).
+static D2D1_RECT_F PageArrow(int dir) {
+    D2D1_RECT_F a = ImageArea();
+    float d = 40 * g_ui, cy = (a.top + a.bottom) / 2, x = dir < 0 ? a.left + 10 * g_ui : a.right - 10 * g_ui - d;
+    return D2D1::RectF(x, cy - d / 2, x + d, cy + d / 2);
+}
+static int PageArrowAt(POINT pt) {
+    if (g_pages <= 1) return 0;
+    if (g_page > 0 && ui::Hit(PageArrow(-1), pt)) return -1;
+    if (g_page < g_pages - 1 && ui::Hit(PageArrow(1), pt)) return 1;
+    return 0;
+}
+
 static RECT GearRect() { D2D1_RECT_F r = GearRectF(); return {(LONG)r.left, (LONG)r.top, (LONG)r.right, (LONG)r.bottom}; }
 
 // Informações em "chips" na cápsula flutuante de baixo.
@@ -877,6 +891,17 @@ static void Paint() {
         if (g_fitMode) p.Stroke(dst, radius, th.stroke);
     } else p.Text(L"Carregando…", a, 13, th.text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
 
+    // setas de página
+    if (g_pages > 1)
+        for (int d : {-1, 1}) {
+            D2D1_RECT_F r = PageArrow(d);
+            bool enabled = d < 0 ? g_page > 0 : g_page < g_pages - 1;
+            float rad = (r.bottom - r.top) / 2;
+            p.Fill(r, rad, th.dark ? ui::Rgba(0x1C1C1E, g_arrowHot == d ? 0.85f : 0.6f) : ui::Rgba(0xFFFFFF, g_arrowHot == d ? 0.95f : 0.75f));
+            p.Stroke(r, rad, th.stroke);
+            p.Icon(d < 0 ? L"\uE76B" : L"\uE76C", r, 14, enabled ? th.text : th.text2);
+        }
+
     // barra de cima: engrenagem, nome, zoom/página
     p.CircleButton(GearRectF(), L"", g_gearHot);
     float side = 170 * s;
@@ -938,7 +963,7 @@ static void Paint() {
             l2 += g_info.fonts[i];
             if (!ok) l2 += L" ⚠";
         }
-        float fw = min(p.Measure(l2, 11.5f) * 1.08f + 2 * padX, maxW), fh = 30 * s; // folga para os nomes em negrito
+        float fw = min(p.Measure(l2, 11.5f) * 1.15f + 2 * padX, maxW), fh = 30 * s; // folga para os nomes em negrito
         D2D1_RECT_F fr = D2D1::RectF((size.width - fw) / 2, orn.top - 8 * s - fh, (size.width + fw) / 2, orn.top - 8 * s);
         p.Glass(fr, fh / 2);
         IDWriteTextFormat* f = p.Format(11.5f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -1015,7 +1040,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_SETCURSOR: {
         POINT pt; GetCursorPos(&pt); ScreenToClient(h, &pt);
         RECT gr = GearRect();
-        if (PtInRect(&gr, pt)) { SetCursor(LoadCursor(nullptr, IDC_HAND)); return TRUE; }
+        if (PtInRect(&gr, pt) || PageArrowAt(pt)) { SetCursor(LoadCursor(nullptr, IDC_HAND)); return TRUE; }
         break;
     }
     case WM_MOUSEWHEEL: {
@@ -1028,6 +1053,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         RECT gr = GearRect();
         if (PtInRect(&gr, pt)) { ClosePreview(); OpenSettings(); return 0; }
+        if (int d = PageArrowAt(pt)) { ChangePage(d); return 0; }
         g_dragging = true;
         g_dragFrom = pt;
         SetCapture(h);
@@ -1037,8 +1063,10 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         RECT gr = GearRect();
         bool hotNow = PtInRect(&gr, p) != 0;
-        if (hotNow != g_gearHot) {
+        int arrow = g_dragging ? 0 : PageArrowAt(p);
+        if (hotNow != g_gearHot || arrow != g_arrowHot) {
             g_gearHot = hotNow;
+            g_arrowHot = arrow;
             TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, h, 0};
             TrackMouseEvent(&tme);
             InvalidateRect(h, nullptr, FALSE);
@@ -1051,9 +1079,11 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         }
         return 0;
     }
-    case WM_MOUSELEAVE: if (g_gearHot) { g_gearHot = false; InvalidateRect(h, nullptr, FALSE); } return 0;
+    case WM_MOUSELEAVE: if (g_gearHot || g_arrowHot) { g_gearHot = false; g_arrowHot = 0; InvalidateRect(h, nullptr, FALSE); } return 0;
     case WM_LBUTTONUP: g_dragging = false; ReleaseCapture(); return 0;
     case WM_LBUTTONDBLCLK: {
+        POINT dp = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+        if (int d = PageArrowAt(dp)) { ChangePage(d); return 0; } // cliques rápidos nas setas
         if (g_fitMode) {
             float one = g_nativeKnown ? 1.0f : g_bw / g_nw;
             SetZoom(max(one, FitScale() * 2), (float)GET_X_LPARAM(lp), (float)GET_Y_LPARAM(lp));
@@ -1479,6 +1509,57 @@ static void SetStartMenu(bool on) {
     if (on) CreateLink(lnk, L"/settings", L"DesignPeek - configurações"); else DeleteFileW(lnk.c_str());
 }
 
+// ---------- Novo > Pasta Padrão Maker ----------
+
+static const wchar_t* kFolderSet[] = {L"Edit", L"Links", L"Preview"};
+static const wchar_t* kNewExt = L"Software\\Classes\\.designpeekfolders";
+static const wchar_t* kNewProgId = L"Software\\Classes\\DesignThumbs.PastaPadraoMaker";
+
+// Entrada no menu Novo do Explorer (por usuário). O Explorer chama "DesignPeek.exe /newfolders <arquivo novo>".
+static void SetNewMenu(bool on) {
+    RegDeleteTreeW(HKEY_CURRENT_USER, kNewExt);
+    RegDeleteTreeW(HKEY_CURRENT_USER, kNewProgId);
+    if (on) {
+        wchar_t exe[MAX_PATH];
+        GetModuleFileNameW(nullptr, exe, MAX_PATH);
+        std::wstring cmd = L"\"" + std::wstring(exe) + L"\" /newfolders \"%1\"";
+        auto set = [](const std::wstring& key, const wchar_t* name, const std::wstring& v) {
+            RegSetKeyValueW(HKEY_CURRENT_USER, key.c_str(), name, REG_SZ, v.c_str(), (DWORD)((v.size() + 1) * sizeof(wchar_t)));
+        };
+        set(kNewExt, nullptr, L"DesignThumbs.PastaPadraoMaker");
+        set(std::wstring(kNewExt) + L"\\ShellNew", L"Command", cmd);
+        set(kNewProgId, nullptr, L"Pasta Padrão Maker");
+        set(std::wstring(kNewProgId) + L"\\DefaultIcon", nullptr, L"%SystemRoot%\\System32\\imageres.dll,3");
+    }
+    // o Explorer guarda a lista do menu Novo em cache
+    RegDeleteTreeW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Discardable\\PostSetup\\ShellNew");
+    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+}
+
+// Cria Edit, Links e Preview na pasta onde o usuário clicou e deixa as três selecionadas.
+static void CreateFolderSet(const std::wstring& newItemPath) {
+    std::wstring dir = conv::DirOf(newItemPath);
+    if (GetFileAttributesW(newItemPath.c_str()) != INVALID_FILE_ATTRIBUTES && !(GetFileAttributesW(newItemPath.c_str()) & FILE_ATTRIBUTE_DIRECTORY))
+        DeleteFileW(newItemPath.c_str()); // caso o Explorer tenha criado o arquivo vazio
+    std::vector<PIDLIST_ABSOLUTE> items;
+    for (auto name : kFolderSet) {
+        std::wstring f = dir + L"\\" + name;
+        if (CreateDirectoryW(f.c_str(), nullptr) || GetLastError() == ERROR_ALREADY_EXISTS) {
+            SHChangeNotify(SHCNE_MKDIR, SHCNF_PATHW, f.c_str(), nullptr);
+            PIDLIST_ABSOLUTE p = nullptr;
+            if (SUCCEEDED(SHParseDisplayName(f.c_str(), nullptr, &p, 0, nullptr))) items.push_back(p);
+        }
+    }
+    PIDLIST_ABSOLUTE folder = nullptr;
+    if (!items.empty() && SUCCEEDED(SHParseDisplayName(dir.c_str(), nullptr, &folder, 0, nullptr))) {
+        std::vector<PCUITEMID_CHILD> children;
+        for (auto p : items) children.push_back(ILFindLastID(p));
+        SHOpenFolderAndSelectItems(folder, (UINT)children.size(), children.data(), 0);
+        CoTaskMemFree(folder);
+    }
+    for (auto p : items) CoTaskMemFree(p);
+}
+
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     g_inst = inst;
     std::wstring args = cmd ? cmd : L"";
@@ -1487,6 +1568,16 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
         bool on = args.find(L"/noautostart") == std::wstring::npos;
         SetAutostart(on);
         SetStartMenu(on);
+        SetNewMenu(on);
+        CoUninitialize();
+        return 0;
+    }
+    size_t nf = args.find(L"/newfolders");
+    if (nf != std::wstring::npos) {
+        std::wstring f = args.substr(nf + 11);
+        f.erase(0, f.find_first_not_of(L" \"")); f.erase(f.find_last_not_of(L" \"") + 1);
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        CreateFolderSet(f);
         CoUninitialize();
         return 0;
     }
