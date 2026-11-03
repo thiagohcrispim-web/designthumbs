@@ -68,7 +68,12 @@ Extraia numa pasta fixa e rode `install.bat` (não precisa de administrador). `u
 - Windows: `build.bat` no "x64 Native Tools Command Prompt for VS".
 - Linux: `build.sh` (MinGW + headers Direct2D recentes do mingw-w64 em `$D2D_INC`).
 
+## Diagnóstico
+Arraste um arquivo para cima de `diagnostico.bat`: uma janela mostra, passo a passo, como ele é lido
+(leitor de PDF, páginas, registro do painel Alt+P). Ctrl+C copia o texto da janela.
+
 ## Versões
+- **v7.2** — ferramenta de diagnóstico (`diagnostico.bat`).
 - **v7.1** — corrige o PDF travando até o tempo-limite (o arquivo é copiado para a memória antes de ir ao leitor de PDF);
   registro de diagnóstico em `%LOCALAPPDATA%\DesignThumbs\pdf.log`.
 - **v7** — PDF e pranchetas do Illustrator página a página (leitor de PDF nativo do Windows); setas discretas no canto

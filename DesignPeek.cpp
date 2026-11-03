@@ -1563,6 +1563,60 @@ static void CreateFolderSet(const std::wstring& newItemPath) {
     for (auto p : items) CoTaskMemFree(p);
 }
 
+// Diagnóstico: "DesignPeek.exe /diag arquivo" mostra, passo a passo, como o arquivo é lido.
+static void Diagnose(const std::wstring& path) {
+    std::wstring r;
+    wchar_t t[512];
+    auto line = [&](const wchar_t* fmtStr, ...) { va_list ap; va_start(ap, fmtStr); vswprintf(t, 512, fmtStr, ap); va_end(ap); r += t; r += L"\r\n"; };
+    line(L"DesignPeek 7.2  ·  %ls", path.c_str());
+    std::wstring ext = conv::ExtOf(path);
+    line(L"Extensão: %ls  ·  tratada pelo DesignThumbs: %ls", ext.c_str(), fmt::Handles(ext) ? L"sim" : L"NÃO");
+    IStream* s = nullptr;
+    HRESULT hr = SHCreateStreamOnFileEx(path.c_str(), STGM_READ | STGM_SHARE_DENY_NONE, 0, FALSE, nullptr, &s);
+    line(L"Abrir arquivo: 0x%08X", (unsigned)hr);
+    if (s) {
+        BYTE magic[8] = {};
+        fmt::ReadAt(s, 0, magic, 8);
+        line(L"Começo do arquivo: %.4hs", (const char*)magic);
+        DWORD t0 = GetTickCount();
+        pdfrt::Document doc;
+        bool ok = doc.Open(s);
+        line(L"Leitor de PDF do Windows: %ls (%u ms)  ·  páginas: %u", ok ? L"OK" : L"FALHOU", GetTickCount() - t0, ok ? doc.Pages() : 0);
+        if (ok) {
+            t0 = GetTickCount();
+            IStream* png = doc.RenderPng(0, 512);
+            line(L"Renderizar página 1: %ls (%u ms)", png ? L"OK" : L"FALHOU", GetTickCount() - t0);
+            if (png) png->Release();
+        }
+        HBITMAP b = nullptr; bool a; int pages = 0;
+        t0 = GetTickCount();
+        hr = fmt::Render(s, ext, 512, 1, &b, &a, &pages, true);
+        BITMAP bm = {}; if (b) GetObject(b, sizeof(bm), &bm);
+        line(L"Render (página 2): 0x%08X  ·  %dx%d  ·  páginas: %d  (%u ms)", (unsigned)hr, bm.bmWidth, std::abs(bm.bmHeight), pages, GetTickCount() - t0);
+        if (b) DeleteObject(b);
+        fmt::Info in;
+        fmt::GetInfo(s, ext, &in);
+        line(L"Informações: páginas %u  ·  %ls", in.pages, in.pageSize.c_str());
+        s->Release();
+    }
+    HBITMAP b = nullptr; bool a; int pages = 0;
+    DWORD t0 = GetTickCount();
+    bool ok = conv::RenderFile(path, 512, 0, &b, &a, &pages);
+    line(L"RenderFile (usado pelo preview): %ls  ·  páginas: %d  (%u ms)", ok ? L"OK" : L"FALHOU", pages, GetTickCount() - t0);
+    if (b) DeleteObject(b);
+    wchar_t v[128] = {}; DWORD sz = sizeof(v);
+    RegGetValueW(HKEY_CLASSES_ROOT, (ext + L"\\ShellEx\\{8895b1c6-b41f-4c1c-a562-0d564250836f}").c_str(), nullptr, RRF_RT_REG_SZ, nullptr, v, &sz);
+    line(L"Painel Alt+P registrado para %ls: %ls", ext.c_str(), v[0] ? v : L"(nenhum)");
+    wchar_t prog[128] = {}; sz = sizeof(prog);
+    RegGetValueW(HKEY_CLASSES_ROOT, ext.c_str(), nullptr, RRF_RT_REG_SZ, nullptr, prog, &sz);
+    v[0] = 0; sz = sizeof(v);
+    if (prog[0]) RegGetValueW(HKEY_CLASSES_ROOT, (std::wstring(prog) + L"\\ShellEx\\{8895b1c6-b41f-4c1c-a562-0d564250836f}").c_str(), nullptr, RRF_RT_REG_SZ, nullptr, v, &sz);
+    line(L"Programa padrão: %ls  ·  painel dele: %ls", prog[0] ? prog : L"(nenhum)", v[0] ? v : L"(nenhum)");
+    line(L"");
+    line(L"Ctrl+C copia este texto.");
+    MessageBoxW(nullptr, r.c_str(), L"DesignPeek — diagnóstico", MB_OK | MB_ICONINFORMATION);
+}
+
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     g_inst = inst;
     std::wstring args = cmd ? cmd : L"";
@@ -1572,6 +1626,15 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
         SetAutostart(on);
         SetStartMenu(on);
         SetNewMenu(on);
+        CoUninitialize();
+        return 0;
+    }
+    size_t dg = args.find(L"/diag");
+    if (dg != std::wstring::npos) {
+        std::wstring f = args.substr(dg + 5);
+        f.erase(0, f.find_first_not_of(L" \"")); f.erase(f.find_last_not_of(L" \"") + 1);
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        Diagnose(f);
         CoUninitialize();
         return 0;
     }
