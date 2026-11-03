@@ -1863,6 +1863,139 @@ static void Diagnose(const std::wstring& path) {
     MessageBoxW(nullptr, r.c_str(), L"DesignPeek — diagnóstico", MB_OK | MB_ICONINFORMATION);
 }
 
+// ---------- instalação (o próprio DesignPeek.exe é o instalador; a DLL vai embutida) ----------
+// Sem derrubar o Explorer: DLL/EXE em uso são renomeados para *.old e apagados depois.
+
+static const wchar_t* kUninstKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DesignThumbs";
+
+static std::wstring InstallDir() {
+    wchar_t d[MAX_PATH];
+    GetEnvironmentVariableW(L"LOCALAPPDATA", d, MAX_PATH);
+    return std::wstring(d) + L"\\Programs\\DesignThumbs";
+}
+static std::wstring SelfPath() { wchar_t p[MAX_PATH]; GetModuleFileNameW(nullptr, p, MAX_PATH); return p; }
+static bool RunningInstalled() { return !_wcsicmp(conv::DirOf(SelfPath()).c_str(), InstallDir().c_str()); }
+
+// Escreve `data` em `path`; se o arquivo estiver em uso (DLL no Explorer), renomeia o antigo antes.
+static bool ReplaceFile(const std::wstring& path, const void* data, DWORD size, const std::wstring& copyFrom = L"") {
+    auto write = [&]() -> bool {
+        if (!copyFrom.empty()) return CopyFileW(copyFrom.c_str(), path.c_str(), FALSE) != 0;
+        HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h == INVALID_HANDLE_VALUE) return false;
+        DWORD w = 0;
+        bool ok = WriteFile(h, data, size, &w, nullptr) && w == size;
+        CloseHandle(h);
+        return ok;
+    };
+    if (write()) return true;
+    std::wstring old = path + L"." + std::to_wstring(GetTickCount()) + L".old";
+    return MoveFileExW(path.c_str(), old.c_str(), MOVEFILE_REPLACE_EXISTING) && write();
+}
+
+static void CleanupOld(const std::wstring& dir) {
+    WIN32_FIND_DATAW fd;
+    HANDLE f = FindFirstFileW((dir + L"\\*.old").c_str(), &fd);
+    if (f == INVALID_HANDLE_VALUE) return;
+    do DeleteFileW((dir + L"\\" + fd.cFileName).c_str()); while (FindNextFileW(f, &fd));
+    FindClose(f);
+}
+
+static bool CallDll(const std::wstring& dll, const char* fn) {
+    HMODULE m = LoadLibraryW(dll.c_str());
+    if (!m) return false;
+    typedef HRESULT(STDAPICALLTYPE * Fn)();
+    Fn f = (Fn)(void*)GetProcAddress(m, fn);
+    bool ok = f && SUCCEEDED(f());
+    FreeLibrary(m);
+    return ok;
+}
+
+static void QuitRunning() {
+    if (HWND w = FindWindowW(L"DesignPeekWnd", nullptr)) {
+        DWORD pid = 0; GetWindowThreadProcessId(w, &pid);
+        HANDLE p = OpenProcess(SYNCHRONIZE, FALSE, pid);
+        PostMessage(w, WM_CLOSE, 0, 0);
+        if (p) { WaitForSingleObject(p, 4000); CloseHandle(p); }
+    }
+}
+
+static void SetAutostart(bool on);
+static void SetStartMenu(bool on);
+static void SetNewMenu(bool on);
+
+static int Install(bool silent) {
+    if (!silent && MessageBoxW(nullptr, T(L"Instalar o DesignThumbs?\n\nMiniaturas, painel de visualização e preview com Espaço para arquivos de design. Não precisa de administrador.",
+                                         L"Install DesignThumbs?\n\nThumbnails, preview pane and Space preview for design files. No administrator needed.",
+                                         L"¿Instalar DesignThumbs?\n\nMiniaturas, panel de vista previa y vista previa con Espacio para archivos de diseño. No requiere administrador."),
+                               L"DesignThumbs", MB_YESNO | MB_ICONQUESTION) != IDYES)
+        return 0;
+    std::wstring dir = InstallDir();
+    SHCreateDirectoryExW(nullptr, dir.c_str(), nullptr);
+    QuitRunning();
+    std::wstring exe = dir + L"\\DesignPeek.exe", dll = dir + L"\\DesignThumbs.dll";
+    HRSRC r = FindResourceW(nullptr, MAKEINTRESOURCEW(2), RT_RCDATA);
+    HGLOBAL g = r ? LoadResource(nullptr, r) : nullptr;
+    bool ok = g && ReplaceFile(dll, LockResource(g), SizeofResource(nullptr, r)) && ReplaceFile(exe, nullptr, 0, SelfPath());
+    DeleteFileW((dir + L"\\Uninstall.exe").c_str()); // sobra do instalador antigo
+    ok = ok && CallDll(dll, "DllRegisterServer");
+    if (!ok) {
+        if (!silent) MessageBoxW(nullptr, T(L"Não foi possível instalar.", L"Installation failed.", L"No se pudo instalar."), L"DesignThumbs", MB_ICONERROR);
+        return 1;
+    }
+    // atalhos (Inicializar, menu Iniciar) e menu Novo, apontando para o EXE instalado
+    STARTUPINFOW si = {sizeof(si)}; PROCESS_INFORMATION pi;
+    std::wstring cmd = L"\"" + exe + L"\" /autostart";
+    if (CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        WaitForSingleObject(pi.hProcess, 10000); CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+    }
+    auto sz = [](const std::wstring& v) { return (DWORD)((v.size() + 1) * sizeof(wchar_t)); };
+    std::wstring un = L"\"" + exe + L"\" /uninstall", quiet = un + L" /S";
+    RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"DisplayName", REG_SZ, L"DesignThumbs", 26);
+    RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"DisplayVersion", REG_SZ, upd::kVersion, sz(upd::kVersion));
+    RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"Publisher", REG_SZ, L"Thiago Crispim", 30);
+    RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"DisplayIcon", REG_SZ, exe.c_str(), sz(exe));
+    RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"InstallLocation", REG_SZ, dir.c_str(), sz(dir));
+    RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"UninstallString", REG_SZ, un.c_str(), sz(un));
+    RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"QuietUninstallString", REG_SZ, quiet.c_str(), sz(quiet));
+    DWORD one = 1, size = 1100;
+    RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"NoModify", REG_DWORD, &one, 4);
+    RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"NoRepair", REG_DWORD, &one, 4);
+    RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"EstimatedSize", REG_DWORD, &size, 4);
+    // inicia o DesignPeek instalado (com as configurações abertas na primeira instalação)
+    std::wstring run = L"\"" + exe + L"\"" + (silent ? L"" : L" /settings");
+    STARTUPINFOW si2 = {sizeof(si2)};
+    if (CreateProcessW(nullptr, &run[0], nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si2, &pi)) { CloseHandle(pi.hProcess); CloseHandle(pi.hThread); }
+    if (!silent)
+        MessageBoxW(nullptr, T(L"DesignThumbs instalado!\n\nAs miniaturas novas aparecem conforme você navega pelas pastas. Para desinstalar: Configurações › Aplicativos.",
+                               L"DesignThumbs installed!\n\nNew thumbnails appear as you browse your folders. To uninstall: Settings › Apps.",
+                               L"¡DesignThumbs instalado!\n\nLas miniaturas nuevas aparecen al navegar por las carpetas. Para desinstalar: Configuración › Aplicaciones."),
+                    L"DesignThumbs", MB_ICONINFORMATION);
+    return 0;
+}
+
+static int Uninstall(bool silent) {
+    if (!silent && MessageBoxW(nullptr, T(L"Desinstalar o DesignThumbs?", L"Uninstall DesignThumbs?", L"¿Desinstalar DesignThumbs?"), L"DesignThumbs",
+                               MB_YESNO | MB_ICONQUESTION) != IDYES)
+        return 0;
+    std::wstring dir = InstallDir();
+    QuitRunning();
+    SetAutostart(false); SetStartMenu(false); SetNewMenu(false);
+    CallDll(dir + L"\\DesignThumbs.dll", "DllUnregisterServer");
+    RegDeleteTreeW(HKEY_CURRENT_USER, kUninstKey);
+    // Arquivos em uso (a DLL no Explorer e este EXE) vão para a pasta temporária; a pasta do programa some.
+    wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp);
+    for (const wchar_t* f : {L"DesignThumbs.dll", L"DesignPeek.exe"}) {
+        std::wstring src = dir + L"\\" + f;
+        if (!DeleteFileW(src.c_str()))
+            MoveFileExW(src.c_str(), (std::wstring(tmp) + L"DesignThumbs-" + std::to_wstring(GetTickCount()) + L"-" + f + L".old").c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED);
+    }
+    CleanupOld(dir);
+    for (const wchar_t* f : {L"DesignPeek.ico", L"diagnostico.bat", L"README.md", L"Uninstall.exe"}) DeleteFileW((dir + L"\\" + f).c_str());
+    RemoveDirectoryW(dir.c_str());
+    if (!silent) MessageBoxW(nullptr, T(L"DesignThumbs removido.", L"DesignThumbs removed.", L"DesignThumbs eliminado."), L"DesignThumbs", MB_ICONINFORMATION);
+    return 0;
+}
+
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     g_inst = inst;
     i18n::Load();
@@ -1876,6 +2009,14 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
         CoUninitialize();
         return 0;
     }
+    bool silent = args.find(L"/S") != std::wstring::npos;
+    if (args.find(L"/uninstall") != std::wstring::npos) { CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED); return Uninstall(silent); }
+    // Rodando de fora da pasta de instalação (o instalador baixado), sem comandos: instala.
+    if (args.find(L"/install") != std::wstring::npos || (!RunningInstalled() && (args.empty() || args.find(L"/update") != std::wstring::npos))) {
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        return Install(silent);
+    }
+    if (RunningInstalled()) CleanupOld(InstallDir());
     size_t dg = args.find(L"/diag");
     if (dg != std::wstring::npos) {
         std::wstring f = args.substr(dg + 5);
