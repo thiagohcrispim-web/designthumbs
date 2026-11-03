@@ -73,6 +73,7 @@ Arraste um arquivo para cima de `diagnostico.bat`: uma janela mostra, passo a pa
 (leitor de PDF, páginas, registro do painel Alt+P). Ctrl+C copia o texto da janela.
 
 ## Versões
+- **v7.3** — ícone do programa.
 - **v7.2** — ferramenta de diagnóstico (`diagnostico.bat`).
 - **v7.1** — corrige o PDF travando até o tempo-limite (o arquivo é copiado para a memória antes de ir ao leitor de PDF);
   registro de diagnóstico em `%LOCALAPPDATA%\DesignThumbs\pdf.log`.

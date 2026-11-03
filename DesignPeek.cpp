@@ -1674,7 +1674,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     wc.lpfnWndProc = AltProc; wc.lpszClassName = L"DesignPeekAlt"; RegisterClassW(&wc);
     wc.lpfnWndProc = ToastProc; wc.lpszClassName = L"DesignPeekToast"; RegisterClassW(&wc);
     wc.lpfnWndProc = SettingsProc; wc.lpszClassName = L"DesignPeekSettings";
-    wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
+    wc.hIcon = LoadIcon(inst, MAKEINTRESOURCE(1)); // ícone do programa
     RegisterClassW(&wc);
 
     DWORD exStyle = WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE;
