@@ -70,23 +70,25 @@ Clique na engrenagem do preview, rode `DesignPeek.exe` de novo ou use o atalho "
 preview com Espaço, botões do Alt (e tempo), qualidade do JPG/PDF, 72/300 dpi, PDF comprimido ou sem compressão, iniciar com o Windows.
 
 ## Instalar
-Rode **DesignThumbs-Setup.exe** (não precisa de administrador). Ele instala em `%LOCALAPPDATA%\Programs\DesignThumbs`,
-aparece em **Configurações › Aplicativos** (onde também se desinstala) e atualiza versões anteriores sozinho.
-Os scripts `install.bat`/`uninstall.bat` continuam disponíveis para uso manual.
+Baixe e rode **DesignThumbs-Setup.exe** (não precisa de administrador). É o próprio DesignPeek com a DLL embutida:
+ele se copia para `%LOCALAPPDATA%\Programs\DesignThumbs`, registra as miniaturas e aparece em
+**Configurações › Aplicativos**, onde também se desinstala. Rodar uma versão nova por cima atualiza, sem reiniciar o Explorer.
+
+Linha de comando: `DesignThumbs-Setup.exe /install /S` (silencioso) · `DesignPeek.exe /uninstall [/S]`.
 
 ## Atualização automática
 O DesignPeek procura versões novas nas Releases de `thiagohcrispim-web/designthumbs` uma vez por dia. Quando encontra,
 mostra um aviso; um clique baixa e instala em segundo plano. Dá para desligar ou procurar na hora nas configurações.
 
 ## Compilar
-- Windows: `build.bat` no "x64 Native Tools Command Prompt for VS".
 - Linux: `build.sh` (MinGW + headers Direct2D recentes do mingw-w64 em `$D2D_INC`).
 
 ## Diagnóstico
-Arraste um arquivo para cima de `diagnostico.bat`: uma janela mostra, passo a passo, como ele é lido
+`DesignPeek.exe /diag "arquivo"` (ou arraste um arquivo para cima de `diagnostico.bat`) mostra, passo a passo, como ele é lido
 (leitor de PDF, páginas, registro do painel Alt+P). Ctrl+C copia o texto da janela.
 
 ## Versões
+- **v8.1** — instalador próprio (o DesignPeek se instala; sem NSIS), que não reinicia o Explorer; evita o alarme falso de "PUP" de antivírus.
 - **v8** — instalador (DesignThumbs-Setup.exe) com desinstalação pelo Windows; atualização automática; paletas .ase/.aco;
   fontes .ttf/.otf; conta-gotas no preview; Pasta Padrão Maker configurável; português, inglês e espanhol.
 - **v7.3** — ícone do programa.
