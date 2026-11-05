@@ -20,6 +20,8 @@
 #include <shobjidl.h>
 #include <dwmapi.h>
 #include <commctrl.h>
+#include <commdlg.h>
+#include <algorithm>
 #include "Convert.h" // antes do dwrite.h (ordem dos headers do MinGW)
 #include "Jobs.h"
 #include <dwrite.h>
@@ -40,7 +42,7 @@ enum {
 
 // ---------- configurações (HKCU\Software\DesignThumbs) ----------
 
-struct Config { DWORD themeMode = 0, webpQuality = 75; bool tray = true; bool space = true, alt = true, picker = true, autoUpdate = true, dpi300 = false, pdfRaw = false, tempPermanent = false; DWORD altDelay = 500, quality = 92; };
+struct Config { DWORD themeMode = 0, webpQuality = 75, neon = 0xFF6633; bool tray = true; bool space = true, alt = true, picker = true, autoUpdate = true, dpi300 = false, pdfRaw = false, tempPermanent = false; DWORD altDelay = 500, quality = 92; };
 static Config g_cfg;
 static const wchar_t* kCfgKey = L"Software\\DesignThumbs";
 
@@ -66,11 +68,12 @@ static void LoadConfig() {
     g_cfg.autoUpdate = ReadDword(L"AutoUpdate", 1) != 0;
     g_cfg.pdfRaw = ReadDword(L"PdfUncompressed", 0) != 0;
     g_cfg.tempPermanent = ReadDword(L"TempPermanent", 0) != 0;
+    g_cfg.neon = ReadDword(L"NeonColor", 0xFF6633) & 0xFFFFFF; ui::NeonColor() = g_cfg.neon;
 }
 static void SaveConfig() {
     WriteDword(L"SpacePreview", g_cfg.space); WriteDword(L"AltButtons", g_cfg.alt);
     WriteDword(L"AltDelay", g_cfg.altDelay); WriteDword(L"JpgQuality", g_cfg.quality);
-    WriteDword(L"ConvertDpi", g_cfg.dpi300 ? 300 : 72); WriteDword(L"ColorPicker", g_cfg.picker); WriteDword(L"Theme2", g_cfg.themeMode); WriteDword(L"WebpQuality", g_cfg.webpQuality); WriteDword(L"TrayIcon", g_cfg.tray); WriteDword(L"AutoUpdate", g_cfg.autoUpdate); WriteDword(L"PdfUncompressed", g_cfg.pdfRaw); WriteDword(L"TempPermanent", g_cfg.tempPermanent);
+    WriteDword(L"ConvertDpi", g_cfg.dpi300 ? 300 : 72); WriteDword(L"ColorPicker", g_cfg.picker); WriteDword(L"Theme2", g_cfg.themeMode); WriteDword(L"WebpQuality", g_cfg.webpQuality); WriteDword(L"TrayIcon", g_cfg.tray); WriteDword(L"AutoUpdate", g_cfg.autoUpdate); WriteDword(L"PdfUncompressed", g_cfg.pdfRaw); WriteDword(L"TempPermanent", g_cfg.tempPermanent); WriteDword(L"NeonColor", g_cfg.neon);
 }
 
 // ---------- estado ----------
@@ -1493,7 +1496,7 @@ static void RenderRing() {
     ID2D1SolidColorBrush* br = nullptr;
     auto solid = [&](D2D1_COLOR_F col) { if (br) br->Release(); rt->CreateSolidColorBrush(col, &br); return br; };
     bool crispy = th.neon;
-    D2D1_COLOR_F orange = ui::Rgba(0xFF6633);
+    D2D1_COLOR_F orange = ui::Rgba(ui::NeonColor());
 
     // sombra suave
     for (int i = 5; i >= 1; --i) rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(c, c + 3 * s), rOut + i * 3.5f * s, rOut + i * 3.5f * s), solid(ui::Rgba(0x000000, th.dark ? 0.07f : 0.035f)));
@@ -1513,6 +1516,9 @@ static void RenderRing() {
         float cstep = 2 * 3.14159265f / max<size_t>(1, cn), hotA0 = 0, hotA1 = 0;
         if (g_ringHot >= 0) { hotA0 = -3.14159265f / 2 - cstep / 2 + g_ringHot * cstep; hotA1 = hotA0 + cstep; }
         float well = rIn - 6 * s;   // raio do centro
+        UINT nc = ui::NeonColor();
+        float nR = (float)(nc >> 16 & 255), nG = (float)(nc >> 8 & 255), nB = (float)(nc & 255);
+        float lR = nR + (255 - nR) * 0.35f, lG = nG + (255 - nG) * 0.35f, lB = nB + (255 - nB) * 0.35f; // neon mais claro
         auto CrispyPixel = [&](float dx, float dy, float r, float rO) -> UINT32 {
             float ang = atan2f(dy, dx);
             // base: cinza-chumbo no alto à esquerda até preto embaixo à direita
@@ -1544,7 +1550,7 @@ static void RenderRing() {
                 // luz laranja na borda do centro, virada para a fatia ativa
                 if (g_ringHot >= 0 && r > inner - 16 * s) {
                     float am = (hotA0 + hotA1) / 2, c = cosf(ang - am);
-                    if (c > 0) { float k = powf(c, 5) * max(0.0f, 1 - fabsf(r - inner + 3 * s) / (13 * s)); mix(255, 122, 10, k * 0.95f); }
+                    if (c > 0) { float k = powf(c, 5) * max(0.0f, 1 - fabsf(r - inner + 3 * s) / (13 * s)); mix(nR, nG, nB, k * 0.95f); }
                 }
             }
             // fatia ativa: vidro neon com cantos arredondados
@@ -1562,12 +1568,11 @@ static void RenderRing() {
                     float tt = (r - ri) / (ro - ri);                          // 0 perto do centro
                     float edge = min(1.0f, dist / (26 * s));                   // brilho junto às bordas
                     float hot = powf(1 - tt, 2.2f) * 1.0f + (1 - edge) * 0.12f;
-                    float gr = 12 + 140 * min(1.0f, hot * 1.15f);
-                    R = 14 + 241 * min(1.0f, hot * 1.2f); G = 8 + gr - 12; B = 4 + 10 * hot;
-                    R = R * 0.92f + 8; A = 0.99f;
-                    if (dist < 1.6f * s) mix(255, 150, 40, (1 - dist / (1.6f * s)) * (0.55f + 0.45f * (1 - tt)));
+                    float hh = min(1.0f, hot * 1.2f);
+                    R = 12 + (nR - 12) * hh; G = 10 + (nG - 10) * hh; B = 12 + (nB - 12) * hh; A = 0.99f;
+                    if (dist < 1.6f * s) mix(lR, lG, lB, (1 - dist / (1.6f * s)) * (0.55f + 0.45f * (1 - tt)));
                 } else if (dist > -16 * s) { // halo neon fora da fatia
-                    float k = 1 + dist / (16 * s); mix(255, 110, 0, k * k * 0.35f);
+                    float k = 1 + dist / (16 * s); mix(nR, nG, nB, k * k * 0.35f);
                 }
             }
             UINT32 hsh = ((UINT32)(dx + 1000) * 73856093u) ^ ((UINT32)(dy + 1000) * 19349663u); hsh ^= hsh >> 13; hsh *= 0x5bd1e995u; hsh ^= hsh >> 15;
@@ -1592,7 +1597,7 @@ static void RenderRing() {
                 float rim = fabsf(r - (rOut - 1.2f * s));
                 if (rim < 1.1f * s) { // borda de luz: forte em cima, fraca embaixo
                     float t = 0.5f - 0.5f * dy / max(r, 1.0f), ra = (1 - rim / (1.1f * s)) * (0.15f + 0.6f * t);
-                    if (crispy) blend(255, 102, 51, ra * 0.9f); else blend(255, 255, 255, ra * (th.dark ? 0.55f : 1.0f));
+                    if (crispy) blend(nR, nG, nB, ra * 0.9f); else blend(255, 255, 255, ra * (th.dark ? 0.55f : 1.0f));
                 }
                 UINT32 hsh = (x * 73856093u) ^ (y * 19349663u); hsh ^= hsh >> 13; hsh *= 0x5bd1e995u; hsh ^= hsh >> 15;
                 float nz = ((hsh & 255) / 255.0f - 0.5f) * 2 * noiseAmp;          // granulado
@@ -1620,16 +1625,16 @@ static void RenderRing() {
         float rm = (rIn + rOut) / 2 + 3 * s, cx = c + rm * cosf(am), cy = c + rm * sinf(am);
         if (hot && !crispy) { // destaque: um disco de vidro macio com halo, sem cantos duros
             float pr = min(36 * s, rm * sinf(step / 2) - 2 * s);
-            D2D1_COLOR_F halo = crispy ? ui::Rgba(0xFF6633) : g_cfg.themeMode == ui::kThemeWindows ? th.accent : th.dark ? ui::Rgba(0xFFFFFF) : ui::Rgba(0x000000);
+            D2D1_COLOR_F halo = crispy ? ui::Rgba(ui::NeonColor()) : g_cfg.themeMode == ui::kThemeWindows ? th.accent : th.dark ? ui::Rgba(0xFFFFFF) : ui::Rgba(0x000000);
             for (int q = 10; q >= 1; --q) { // halo difuso
                 float hr = pr + q * 1.6f * s; halo.a = (crispy ? 0.05f : 0.018f) * (11 - q) / 10;
                 rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), hr, hr), solid(halo));
             }
             D2D1_ELLIPSE pk = D2D1::Ellipse(D2D1::Point2F(cx, cy), pr, pr);
-            rt->FillEllipse(pk, solid(crispy ? ui::Rgba(0xFF6633, 0.18f) : g_cfg.themeMode == ui::kThemeWindows ? D2D1::ColorF(th.accent.r, th.accent.g, th.accent.b, 0.18f) : th.dark ? ui::Rgba(0xFFFFFF, 0.10f) : ui::Rgba(0xFFFFFF, 0.85f)));
+            rt->FillEllipse(pk, solid(crispy ? ui::Rgba(ui::NeonColor(), 0.18f) : g_cfg.themeMode == ui::kThemeWindows ? D2D1::ColorF(th.accent.r, th.accent.g, th.accent.b, 0.18f) : th.dark ? ui::Rgba(0xFFFFFF, 0.10f) : ui::Rgba(0xFFFFFF, 0.85f)));
             D2D1_ELLIPSE top = D2D1::Ellipse(D2D1::Point2F(cx, cy - pr * 0.35f), pr * 0.75f, pr * 0.5f); // reflexo no alto
             rt->FillEllipse(top, solid(ui::Rgba(0xFFFFFF, th.dark ? 0.04f : 0.35f)));
-            rt->DrawEllipse(pk, solid(crispy ? ui::Rgba(0xFF6633, 0.55f) : th.dark ? ui::Rgba(0xFFFFFF, 0.16f) : ui::Rgba(0x000000, 0.08f)), 1 * s);
+            rt->DrawEllipse(pk, solid(crispy ? ui::Rgba(ui::NeonColor(), 0.55f) : th.dark ? ui::Rgba(0xFFFFFF, 0.16f) : ui::Rgba(0x000000, 0.08f)), 1 * s);
         }
         D2D1_COLOR_F col = hot && crispy ? ui::Rgba(0xFFFFFF) : crispy ? ui::Rgba(0x8E8E95) : th.text;
         float bw = min(rm * step * 0.95f, 96 * s);
@@ -1642,9 +1647,9 @@ static void RenderRing() {
     }
     // centro: lente de vidro com o nome do lado
     D2D1_ELLIPSE lens = D2D1::Ellipse(C, rIn - 8 * s, rIn - 8 * s);
-    if (!crispy) rt->FillEllipse(lens, solid(g_ringHot == -1 ? (crispy ? ui::Rgba(0xFF6633, 0.16f) : th.panelHot) : (th.dark ? ui::Rgba(0xFFFFFF, 0.04f) : ui::Rgba(0xFFFFFF, 0.65f))));
-    if (!crispy) rt->DrawEllipse(lens, solid(crispy ? ui::Rgba(0xFF6633, 0.55f) : th.dark ? ui::Rgba(0xFFFFFF, 0.16f) : ui::Rgba(0x000000, 0.08f)), 1 * s);
-    if (crispy && g_ringHot == -1) { rt->DrawEllipse(lens, solid(ui::Rgba(0xFF7A00, 0.9f)), 1.5f * s); rt->DrawEllipse(lens, solid(ui::Rgba(0xFF7A00, 0.25f)), 5 * s); }
+    if (!crispy) rt->FillEllipse(lens, solid(g_ringHot == -1 ? (crispy ? ui::Rgba(ui::NeonColor(), 0.16f) : th.panelHot) : (th.dark ? ui::Rgba(0xFFFFFF, 0.04f) : ui::Rgba(0xFFFFFF, 0.65f))));
+    if (!crispy) rt->DrawEllipse(lens, solid(crispy ? ui::Rgba(ui::NeonColor(), 0.55f) : th.dark ? ui::Rgba(0xFFFFFF, 0.16f) : ui::Rgba(0x000000, 0.08f)), 1 * s);
+    if (crispy && g_ringHot == -1) { rt->DrawEllipse(lens, solid(ui::Rgba(ui::NeonColor(), 0.9f)), 1.5f * s); rt->DrawEllipse(lens, solid(ui::Rgba(ui::NeonColor(), 0.25f)), 5 * s); }
     p.Text(side.name, D2D1::RectF(c - rIn, c - 20 * s, c + rIn, c - 1 * s), 12.5f, crispy ? orange : th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
     std::wstring cnt = std::to_wstring(g_convFiles.size()) + (g_convFiles.size() == 1 ? T(L" arquivo", L" file", L" archivo") : T(L" arquivos", L" files", L" archivos"));
     p.Text(cnt, D2D1::RectF(c - rIn, c - 1 * s, c + rIn, c + 14 * s), 10, th.text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -2219,7 +2224,8 @@ static void SetAutostart(bool on);
 static bool AutostartEnabled();
 
 enum { kTogSpace = 1, kTogAlt, kDelayMinus, kDelayPlus, kDpi72, kDpi300, kPdfSmall, kPdfRaw, kQualMinus, kQualPlus, kTogAuto, kBtnFolder, kBtnQuit, kBtnClose,
-       kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate, kBtnPresets, kTheme0, kTheme1, kTheme2, kTheme3, kWebpMinus, kWebpPlus, kTogTray, kTogTempDel };
+       kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate, kBtnPresets, kTheme0, kTheme1, kTheme2, kTheme3, kWebpMinus, kWebpPlus, kTogTray, kTogTempDel, kNeon0, kNeon1, kNeon2, kNeon3, kNeon4, kNeon5, kNeonRgb };
+static const UINT kNeonPresets[6] = {0xFF6633, 0xFF2D95, 0x00E5FF, 0xB6FF3B, 0xA855F7, 0xFFD400};
 
 static std::wstring PresetsPath();
 
@@ -2291,6 +2297,20 @@ static void SettingsAction(int id) {
     }
     case kBtnQuit: DestroyWindow(g_settingsWnd); PostMessage(g_wnd, WM_CLOSE, 0, 0); return;
     case kTogPicker: g_cfg.picker = !g_cfg.picker; break;
+    case kNeon0: case kNeon1: case kNeon2: case kNeon3: case kNeon4: case kNeon5:
+        g_cfg.neon = kNeonPresets[id - kNeon0]; ui::NeonColor() = g_cfg.neon; SaveConfig(); ApplyTheme(); return;
+    case kNeonRgb: {
+        static COLORREF custom[16];
+        for (int i = 0; i < 6; ++i) custom[i] = RGB(kNeonPresets[i] >> 16, kNeonPresets[i] >> 8 & 255, kNeonPresets[i] & 255);
+        CHOOSECOLORW cc = {sizeof(cc)};
+        cc.hwndOwner = g_settingsWnd; cc.lpCustColors = custom; cc.Flags = CC_FULLOPEN | CC_RGBINIT;
+        cc.rgbResult = RGB(g_cfg.neon >> 16, g_cfg.neon >> 8 & 255, g_cfg.neon & 255);
+        if (ChooseColorW(&cc)) {
+            g_cfg.neon = GetRValue(cc.rgbResult) << 16 | GetGValue(cc.rgbResult) << 8 | GetBValue(cc.rgbResult);
+            ui::NeonColor() = g_cfg.neon; SaveConfig(); ApplyTheme();
+        }
+        return;
+    }
     case kTogTempDel: g_cfg.tempPermanent = !g_cfg.tempPermanent; break;
     case kTheme0: case kTheme1: case kTheme2: case kTheme3:
         g_cfg.themeMode = id - kTheme0; SaveConfig(); ApplyTheme();
@@ -2434,7 +2454,9 @@ static void PaintSettings(HWND h) {
     y = c.bottom + 22 * s;
 
     section(T(L"SISTEMA", L"SYSTEM", L"SISTEMA"));
-    c = card(5);
+    bool crispyOn = g_cfg.themeMode == ui::kThemeCrispy;
+    int o = crispyOn ? 1 : 0;
+    c = card(5 + o);
     {
         float ry = label(0, c, T(L"Tema", L"Theme", L"Tema"));
         D2D1_RECT_F r = rightBox(c, ry, 300 * s), parts[4];
@@ -2443,11 +2465,31 @@ static void PaintSettings(HWND h) {
         p.Segmented(r, l, 4, (int)g_cfg.themeMode, hot, parts);
         for (int i = 0; i < 4; ++i) hit(kTheme0 + i, parts[i]);
     }
-    toggle(kTogAuto, c, label(1, c, T(L"Iniciar com o Windows", L"Start with Windows", L"Iniciar con Windows")), AutostartEnabled());
-    toggle(kTogTray, c, label(2, c, T(L"Ícone na área de notificação", L"Notification area icon", L"Icono en el área de notificación"),
+    if (crispyOn) { // cor do neon: amostras + RGB personalizado
+        float ry = label(1, c, T(L"Cor do neon", L"Neon color", L"Color del neón"), T(L"Muda o destaque de toda a interface", L"Changes the accent of the whole interface", L"Cambia el acento de toda la interfaz"));
+        D2D1_RECT_F box = rightBox(c, ry, 7 * 30 * s + 24 * s);
+        float d = 22 * s, cy = (box.top + box.bottom) / 2;
+        for (int i = 0; i < 7; ++i) {
+            float cx = box.left + 6 * s + i * 30 * s + d / 2;
+            D2D1_RECT_F r = D2D1::RectF(cx - d / 2, cy - d / 2, cx + d / 2, cy + d / 2);
+            bool h = hit(i < 6 ? kNeon0 + i : kNeonRgb, D2D1::RectF(r.left - 4 * s, r.top - 4 * s, r.right + 4 * s, r.bottom + 4 * s));
+            bool sel = i < 6 ? g_cfg.neon == kNeonPresets[i] : std::find(kNeonPresets, kNeonPresets + 6, (UINT)g_cfg.neon) == kNeonPresets + 6;
+            if (i < 6) p.Fill(r, d / 2, ui::Rgba(kNeonPresets[i]));
+            else { // personalizado: mostra a cor atual + "RGB"
+                p.Fill(r, d / 2, sel ? ui::Rgba(g_cfg.neon) : ui::Rgba(0xFFFFFF, 0.08f));
+                p.Text(L"RGB", D2D1::RectF(r.left - 6 * s, r.top, r.right + 6 * s, r.bottom), 8.5f, sel ? ui::Rgba(0x0B0B0C) : th.text, DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+            }
+            if (sel || h) {
+                D2D1_RECT_F g = D2D1::RectF(r.left - 4 * s, r.top - 4 * s, r.right + 4 * s, r.bottom + 4 * s);
+                p.Stroke(g, d / 2 + 4 * s, sel ? ui::Rgba(0xFFFFFF, 0.9f) : ui::Rgba(0xFFFFFF, 0.35f), 1.4f * s);
+            }
+        }
+    }
+    toggle(kTogAuto, c, label(1 + o, c, T(L"Iniciar com o Windows", L"Start with Windows", L"Iniciar con Windows")), AutostartEnabled());
+    toggle(kTogTray, c, label(2 + o, c, T(L"Ícone na área de notificação", L"Notification area icon", L"Icono en el área de notificación"),
                               T(L"Reiniciar ou encerrar com um clique", L"Restart or quit in one click", L"Reiniciar o salir con un clic")), g_cfg.tray);
     {
-        float ry = label(3, c, T(L"Idioma", L"Language", L"Idioma"));
+        float ry = label(3 + o, c, T(L"Idioma", L"Language", L"Idioma"));
         D2D1_RECT_F r = rightBox(c, ry, 270 * s), parts[3];
         std::wstring l[3] = {L"Português", L"English", L"Español"};
         int hot = g_setHot >= kLangPt && g_setHot <= kLangEs ? g_setHot - kLangPt : -1;
@@ -2456,7 +2498,7 @@ static void PaintSettings(HWND h) {
     }
     {
         std::wstring ver = std::wstring(T(L"Versão ", L"Version ", L"Versión ")) + upd::kVersion;
-        toggle(kTogUpdate, c, label(4, c, T(L"Atualizar automaticamente", L"Update automatically", L"Actualizar automáticamente"), ver.c_str()), g_cfg.autoUpdate);
+        toggle(kTogUpdate, c, label(4 + o, c, T(L"Atualizar automaticamente", L"Update automatically", L"Actualizar automáticamente"), ver.c_str()), g_cfg.autoUpdate);
     }
     y = c.bottom + 12 * s;
     {

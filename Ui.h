@@ -27,6 +27,9 @@ struct Theme {
 
 inline D2D1_COLOR_F Rgba(UINT rgb, float a = 1) { return D2D1::ColorF(rgb, a); }
 
+// Cor do neon do tema Crispy (escolhida pelo usuário).
+inline UINT& NeonColor() { static UINT c = 0xFF6633; return c; }
+
 inline bool SystemDark() {
     DWORD v = 1, sz = sizeof(v);
     RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", L"AppsUseLightTheme",
@@ -48,11 +51,11 @@ inline Theme CrispyTheme(bool glass) {
     t.dark = true; t.glass = glass; t.neon = true;
     t.font = L"Bahnschrift";
     t.tint = glass ? Rgba(0x0A0A0B, 0.88f) : Rgba(0x0A0A0B);
-    t.panel = Rgba(0xFFFFFF, 0.045f); t.panelHot = Rgba(0xFF6633, 0.16f); t.stroke = Rgba(0xFF6633, 0.32f);
+    t.panel = Rgba(0xFFFFFF, 0.045f); t.panelHot = Rgba(NeonColor(), 0.16f); t.stroke = Rgba(NeonColor(), 0.32f);
     t.text = Rgba(0xF2F2F2); t.text2 = Rgba(0x9A9AA1);
-    t.accent = Rgba(0xFF6633); t.onAccent = Rgba(0x0E0E10); t.danger = Rgba(0xFF3B5C);
+    t.accent = Rgba(NeonColor()); t.onAccent = Rgba(0x0E0E10); t.danger = Rgba(0xFF3B5C);
     t.track = Rgba(0xFFFFFF, 0.10f); t.knob = Rgba(0xF2F2F2); t.knobOn = Rgba(0xF2F2F2);
-    t.glow = 0xFF703C; t.glowA = 0.40f;
+    t.glow = NeonColor(); t.glowA = 0.40f;
     return t;
 }
 
@@ -91,9 +94,9 @@ inline Theme MakeTheme(int mode, bool glass) {
 // Fundo de vidro: halos suaves de luz (no Crispy, degradê neon laranja sobre preto).
 inline void Backdrop(ID2D1RenderTarget* rt, const Theme& th, float w, float h) {
     struct B { float x, y, r; UINT c; float a; };
-    B bl[3] = {{w * 0.05f, h * 0.0f, (w > h ? w : h) * 0.55f, th.neon ? 0xFF6633u : th.dark ? 0x5A5A62u : 0xFFFFFFu, th.neon ? 0.22f : th.dark ? 0.16f : 0.55f},
-               {w * 1.0f, h * 1.05f, (w > h ? w : h) * 0.55f, th.neon ? 0xFF285Au : th.dark ? 0x3A3A40u : 0xD0D4DCu, th.neon ? 0.05f : th.dark ? 0.14f : 0.35f},
-               {w * 0.85f, h * 0.1f, (w > h ? w : h) * 0.30f, th.neon ? 0xFF6633u : th.glow, th.neon ? 0.10f : th.dark ? 0.04f : 0.10f}};
+    B bl[3] = {{w * 0.05f, h * 0.0f, (w > h ? w : h) * 0.55f, th.neon ? NeonColor() : th.dark ? 0x5A5A62u : 0xFFFFFFu, th.neon ? 0.22f : th.dark ? 0.16f : 0.55f},
+               {w * 1.0f, h * 1.05f, (w > h ? w : h) * 0.55f, th.neon ? NeonColor() : th.dark ? 0x3A3A40u : 0xD0D4DCu, th.neon ? 0.05f : th.dark ? 0.14f : 0.35f},
+               {w * 0.85f, h * 0.1f, (w > h ? w : h) * 0.30f, th.neon ? NeonColor() : th.glow, th.neon ? 0.10f : th.dark ? 0.04f : 0.10f}};
     ID2D1SolidColorBrush* b = nullptr;
     for (auto& x : bl) {
         const int steps = 24; // anéis concêntricos com pouca opacidade = degradê radial suave
@@ -187,7 +190,7 @@ public:
     void Glow(const D2D1_RECT_F& r, float radius) {
         for (int i = 3; i >= 1; --i) {
             float g = i * 1.6f * s;
-            Stroke(D2D1::RectF(r.left - g, r.top - g, r.right + g, r.bottom + g), radius + g, ui::Rgba(0xFF6633, 0.07f * (4 - i)), 1.4f * s);
+            Stroke(D2D1::RectF(r.left - g, r.top - g, r.right + g, r.bottom + g), radius + g, Rgba(NeonColor(), 0.07f * (4 - i)), 1.4f * s);
         }
     }
     // Sombra suave barata (camadas translúcidas).
@@ -279,7 +282,7 @@ public:
             D2D1_RECT_F p = D2D1::RectF(r.left + 2 * s + i * w, r.top + 2 * s, r.left + 2 * s + (i + 1) * w, r.bottom - 2 * s);
             parts[i] = p;
             if (i == sel) {
-                Fill(p, (h - 4 * s) / 2, th.neon ? Rgba(0xFF6633, 0.18f) : th.dark ? Rgba(0xFFFFFF, 0.14f) : Rgba(0xFFFFFF));
+                Fill(p, (h - 4 * s) / 2, th.neon ? Rgba(NeonColor(), 0.18f) : th.dark ? Rgba(0xFFFFFF, 0.14f) : Rgba(0xFFFFFF));
                 Stroke(p, (h - 4 * s) / 2, th.neon ? th.accent : th.stroke);
             }
             else if (i == hot) Fill(p, (h - 4 * s) / 2, Rgba(th.dark ? 0xFFFFFF : 0x000000, 0.06f));
