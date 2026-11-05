@@ -10,8 +10,11 @@ namespace ui {
 
 // ---------- tema ----------
 
+enum { kThemeAuto = 0, kThemeLight, kThemeDark, kThemeCrispy };
+
 struct Theme {
-    bool dark = true, glass = false;
+    bool dark = true, glass = false, neon = false; // neon: brilho laranja (tema Crispy)
+    const wchar_t* font = L"Segoe UI Variable Text";
     D2D1_COLOR_F tint;        // fundo da janela (sobre o desfoque)
     D2D1_COLOR_F panel;       // cartões / cápsulas
     D2D1_COLOR_F panelHot;    // cartão sob o mouse
@@ -27,6 +30,19 @@ inline bool SystemDark() {
     RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", L"AppsUseLightTheme",
                  RRF_RT_REG_DWORD, nullptr, &v, &sz);
     return v == 0;
+}
+
+// Crispy: preto chumbo minimalista, detalhes #FF6633 com um leve neon e fonte Bahnschrift (técnica, de linhas retas).
+inline Theme CrispyTheme(bool glass) {
+    Theme t;
+    t.dark = true; t.glass = glass; t.neon = true;
+    t.font = L"Bahnschrift";
+    t.tint = glass ? Rgba(0x111113, 0.86f) : Rgba(0x111113);
+    t.panel = Rgba(0xFFFFFF, 0.045f); t.panelHot = Rgba(0xFF6633, 0.16f); t.stroke = Rgba(0xFF6633, 0.30f);
+    t.text = Rgba(0xF2F2F2); t.text2 = Rgba(0x8E8E95);
+    t.accent = Rgba(0xFF6633); t.onAccent = Rgba(0x0E0E10); t.danger = Rgba(0xFF3B5C);
+    t.track = Rgba(0xFFFFFF, 0.10f); t.knob = Rgba(0xF2F2F2);
+    return t;
 }
 
 inline Theme MakeTheme(bool dark, bool glass) {
@@ -121,10 +137,18 @@ public:
         D2D1_RECT_F in = D2D1::RectF(r.left + w / 2, r.top + w / 2, r.right - w / 2, r.bottom - w / 2);
         if (SUCCEEDED(rt->CreateSolidColorBrush(c, &b))) { rt->DrawRoundedRectangle(D2D1::RoundedRect(in, radius, radius), b, w); b->Release(); }
     }
-    // Cartão de vidro: preenchimento translúcido + borda de luz.
+    // Cartão de vidro: preenchimento translúcido + borda de luz (no Crispy, borda laranja com leve brilho).
     void Glass(const D2D1_RECT_F& r, float radius, bool hot = false) {
         Fill(r, radius, hot ? th.panelHot : th.panel);
+        if (th.neon && hot) Glow(r, radius);
         Stroke(r, radius, th.stroke);
+    }
+    // Brilho neon discreto em volta de um retângulo arredondado.
+    void Glow(const D2D1_RECT_F& r, float radius) {
+        for (int i = 3; i >= 1; --i) {
+            float g = i * 1.6f * s;
+            Stroke(D2D1::RectF(r.left - g, r.top - g, r.right + g, r.bottom + g), radius + g, ui::Rgba(0xFF6633, 0.07f * (4 - i)), 1.4f * s);
+        }
     }
     // Sombra suave barata (camadas translúcidas).
     void Shadow(const D2D1_RECT_F& r, float radius) {
@@ -134,8 +158,9 @@ public:
         }
     }
 
-    IDWriteTextFormat* Format(float size, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT align, const wchar_t* family = L"Segoe UI Variable Text", bool wrap = false) {
+    IDWriteTextFormat* Format(float size, DWRITE_FONT_WEIGHT weight, DWRITE_TEXT_ALIGNMENT align, const wchar_t* family = nullptr, bool wrap = false) {
         IDWriteTextFormat* f = nullptr;
+        if (!family) family = th.font;
         if (FAILED(dw->CreateTextFormat(family, nullptr, weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, size * s, L"pt-br", &f))) return nullptr;
         f->SetTextAlignment(align);
         f->SetParagraphAlignment(wrap ? DWRITE_PARAGRAPH_ALIGNMENT_NEAR : DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -156,7 +181,7 @@ public:
     }
     // Texto com quebra de linha; retorna a altura usada.
     float Paragraph(const std::wstring& t, float x, float y, float width, float size, D2D1_COLOR_F c, bool draw = true) {
-        IDWriteTextFormat* f = Format(size, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_LEADING, L"Segoe UI Variable Text", true);
+        IDWriteTextFormat* f = Format(size, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_LEADING, nullptr, true);
         IDWriteTextLayout* lay = nullptr;
         float h = 0;
         if (f && SUCCEEDED(dw->CreateTextLayout(t.c_str(), (UINT32)t.size(), f, width, 10000, &lay))) {
@@ -189,13 +214,15 @@ public:
     // Botão redondo de vidro com ícone.
     void CircleButton(const D2D1_RECT_F& r, const wchar_t* glyph, bool hot) {
         float rad = (r.bottom - r.top) / 2;
-        Fill(r, rad, hot ? th.panelHot : th.panel);
-        Stroke(r, rad, th.stroke);
-        Icon(glyph, r, 14, hot ? th.text : th.text2);
+        if (hot) Fill(r, rad, th.panelHot);
+        if (hot && th.neon) Glow(r, rad);
+        Stroke(r, rad, hot ? (th.neon ? th.accent : th.stroke) : th.stroke);
+        Icon(glyph, r, 13, hot ? (th.neon ? th.accent : th.text) : th.text2);
     }
     // Interruptor estilo iOS.
     void Toggle(const D2D1_RECT_F& r, bool on, bool hot) {
         float h = r.bottom - r.top;
+        if (on && th.neon) Glow(r, h / 2);
         Fill(r, h / 2, on ? th.accent : th.track);
         if (hot) Fill(r, h / 2, Rgba(0xFFFFFF, 0.10f));
         float k = h - 4 * s, x = on ? r.right - 2 * s - k : r.left + 2 * s;
@@ -211,9 +238,12 @@ public:
         for (int i = 0; i < n; ++i) {
             D2D1_RECT_F p = D2D1::RectF(r.left + 2 * s + i * w, r.top + 2 * s, r.left + 2 * s + (i + 1) * w, r.bottom - 2 * s);
             parts[i] = p;
-            if (i == sel) { Fill(p, (h - 4 * s) / 2, th.dark ? Rgba(0x636366) : Rgba(0xFFFFFF)); Stroke(p, (h - 4 * s) / 2, th.stroke); }
+            if (i == sel) {
+                Fill(p, (h - 4 * s) / 2, th.neon ? Rgba(0xFF6633, 0.18f) : th.dark ? Rgba(0x636366) : Rgba(0xFFFFFF));
+                Stroke(p, (h - 4 * s) / 2, th.neon ? th.accent : th.stroke);
+            }
             else if (i == hot) Fill(p, (h - 4 * s) / 2, Rgba(th.dark ? 0xFFFFFF : 0x000000, 0.06f));
-            Text(labels[i], p, 12.5f, i == sel ? th.text : th.text2, i == sel ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
+            Text(labels[i], p, 12.5f, i == sel ? (th.neon ? th.accent : th.text) : th.text2, i == sel ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
         }
     }
     // [ − valor + ]; minus/plus recebem os retângulos clicáveis.
@@ -231,10 +261,13 @@ public:
     // Botão "pílula" com texto.
     void Pill(const D2D1_RECT_F& r, const std::wstring& label, bool hot, bool primary = false) {
         float h = r.bottom - r.top;
-        Fill(r, h / 2, primary ? th.accent : hot ? th.panelHot : th.panel);
-        if (!primary) Stroke(r, h / 2, th.stroke);
-        if (primary && hot) Fill(r, h / 2, Rgba(0xFFFFFF, 0.12f));
-        Text(label, r, 12.5f, primary ? th.onAccent : th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+        if (primary) { if (th.neon) Glow(r, h / 2); Fill(r, h / 2, th.accent); if (hot) Fill(r, h / 2, Rgba(0xFFFFFF, 0.14f)); }
+        else {
+            if (hot) Fill(r, h / 2, th.panelHot);
+            if (hot && th.neon) Glow(r, h / 2);
+            Stroke(r, h / 2, hot && th.neon ? th.accent : th.stroke);
+        }
+        Text(label, r, 12.5f, primary ? th.onAccent : (hot && th.neon ? th.accent : th.text), DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
     }
 };
 
