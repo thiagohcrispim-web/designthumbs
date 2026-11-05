@@ -16,7 +16,7 @@ Ferramentas leves para o Explorer do Windows 10/11 trabalhar com arquivos de des
 
 ## Visual
 Temas: **Minimalista Claro**, **Minimalista Escuro** (preto × chumbo), **Padrão Windows** (segue o claro/escuro e a
-cor de destaque do sistema) e **Crispy** — neon cyberpunk laranja #FF6633 sobre preto, fonte Bahnschrift. Escolha em Configurações › Sistema › Tema.
+cor de destaque do sistema) e **Crispy** — neon cyberpunk sobre preto (cor do neon à sua escolha), fonte Bahnschrift. Escolha em Configurações › Sistema › Tema.
 
 Ícone na área de notificação (ao lado do relógio): clique para **Configurações**, **Reiniciar** (se algo parar de
 responder) ou **Encerrar**.
@@ -124,6 +124,8 @@ se aplica a essa consulta: https://docs.github.com/site-policy/privacy-policies/
 (leitor de PDF, páginas, registro do painel Alt+P). Ctrl+C copia o texto da janela.
 
 ## Versões
+- **v9.3** — Crispy cyberpunk: menu circular com disco preto fosco, vincos entre as fatias, centro rebaixado e
+  fatia de vidro neon; **cor do neon escolhível** (6 cores prontas ou qualquer RGB) em Configurações › Sistema.
 - **v9.2** — temas Minimalista Claro, Minimalista Escuro (preto × chumbo), Padrão Windows (cor de destaque do
   sistema) e Crispy (neon); destaque do menu circular em disco de vidro macio; preview com fundo de vidro;
   controles minimalistas; Pasta Padrão Maker cria "_Morto" dentro de cada pasta; botão direito ›
