@@ -331,76 +331,11 @@ inline bool JpegBytes(HBITMAP bmp, float quality, std::vector<BYTE>& out) {
     return ok;
 }
 
-// ---------- conversão em lote ----------
-
-enum Kind { kPng, kJpg, kPdf };
-
-struct Options {
-    float quality = 0.92f;  // JPG e PDF comprimido
-    UINT dpi = 72;          // 72 ou 300
-    bool pdfRaw = false;    // PDF sem compressão (pixels RGB)
-};
-
-// Pixels a gerar: documentos com tamanho físico (INDD, AI, SVG) seguem o DPI escolhido;
+// Pixels a gerar: documentos com tamanho físico (INDD, AI, SVG, PDF) seguem o DPI escolhido;
 // imagens (PSD, JPG, RAW...) usam a resolução nativa.
 inline UINT TargetSize(const fmt::Info& in, UINT dpi) {
     if (in.pageWmm > 0 && in.pageHmm > 0) return max(256u, min(16384u, (UINT)(max(in.pageWmm, in.pageHmm) / 25.4 * dpi + 0.5)));
     return ExportSize(in);
-}
-
-struct Result { std::vector<std::wstring> outputs; int failed = 0; };
-
-// Converte arquivos na ordem recebida. progress(feito, total) é chamado a cada arquivo.
-inline Result Convert(const std::vector<std::wstring>& files, Kind kind, const Options& opt, const std::function<void(size_t, size_t)>& progress) {
-    Result r;
-    // Um único .ai para PDF: ele já é um PDF, basta copiar (mantém o vetor)
-    if (kind == kPdf && files.size() == 1 && ExtOf(files[0]) == L".ai") {
-        std::wstring out = UniquePath(DirOf(files[0]), BaseOf(files[0]), L".pdf");
-        if (CopyFileW(files[0].c_str(), out.c_str(), TRUE)) r.outputs.push_back(out); else r.failed++;
-        progress(1, 1);
-        return r;
-    }
-    PdfWriter pdf;
-    for (size_t i = 0; i < files.size(); ++i) {
-        const std::wstring& f = files[i];
-        fmt::Info in;
-        FileInfo(f, &in);
-        UINT cx = TargetSize(in, opt.dpi);
-        int pages = 1;
-        bool any = false;
-        for (int page = 0; page < pages; ++page) {
-            HBITMAP bmp = nullptr; bool alpha;
-            if (!RenderFile(f, cx, page, &bmp, &alpha, &pages)) break;
-            BYTE* px; UINT w, h;
-            PixelsOf(bmp, &px, &w, &h);
-            if (kind == kPdf) {
-                std::vector<BYTE> data;
-                if (opt.pdfRaw ? RgbBytes(bmp, data) : JpegBytes(bmp, opt.quality, data)) {
-                    // tamanho físico: página do INDD/AI/SVG; senão pixels no DPI escolhido
-                    double ptW, ptH;
-                    if (in.pageWmm > 0 && in.pageHmm > 0) { ptW = in.pageWmm / 25.4 * 72; ptH = ptW * h / w; }
-                    else { ptW = w * 72.0 / opt.dpi; ptH = h * 72.0 / opt.dpi; }
-                    pdf.AddImagePage(data, w, h, ptW, ptH, !opt.pdfRaw);
-                    any = true;
-                }
-            } else {
-                std::wstring base = BaseOf(f) + (pages > 1 ? L" - p" + std::to_wstring(page + 1) : L"");
-                std::wstring out = UniquePath(DirOf(f), base, kind == kJpg ? L".jpg" : L".png");
-                if (SaveImage(bmp, out, kind == kJpg, opt.quality, opt.dpi)) { r.outputs.push_back(out); any = true; }
-            }
-            DeleteObject(bmp);
-        }
-        if (!any) r.failed++;
-        progress(i + 1, files.size());
-    }
-    if (kind == kPdf && pdf.PageCount()) {
-        // nome automático: "primeiro arquivo.pdf" ou "primeiro arquivo (+N).pdf"
-        std::wstring base = BaseOf(files[0]);
-        if (files.size() > 1) base += L" (+" + std::to_wstring(files.size() - 1) + L")";
-        std::wstring out = UniquePath(DirOf(files[0]), base, L".pdf");
-        if (pdf.Save(out)) r.outputs.push_back(out); else r.failed = (int)files.size();
-    }
-    return r;
 }
 
 } // namespace conv

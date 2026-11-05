@@ -7,3 +7,4 @@ DesignThumbs-*.zip
 *.res
 DesignThumbs-Setup.exe
 *.res.o
+build/
