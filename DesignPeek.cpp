@@ -40,7 +40,7 @@ enum {
 
 // ---------- configurações (HKCU\Software\DesignThumbs) ----------
 
-struct Config { DWORD themeMode = 0, webpQuality = 75; bool tray = true; bool space = true, alt = true, picker = true, autoUpdate = true, dpi300 = false, pdfRaw = false; DWORD altDelay = 500, quality = 92; };
+struct Config { DWORD themeMode = 0, webpQuality = 75; bool tray = true; bool space = true, alt = true, picker = true, autoUpdate = true, dpi300 = false, pdfRaw = false, tempPermanent = false; DWORD altDelay = 500, quality = 92; };
 static Config g_cfg;
 static const wchar_t* kCfgKey = L"Software\\DesignThumbs";
 
@@ -57,16 +57,20 @@ static void LoadConfig() {
     g_cfg.quality = max(50ul, min(100ul, (unsigned long)ReadDword(L"JpgQuality", 92)));
     g_cfg.dpi300 = ReadDword(L"ConvertDpi", 72) == 300;
     g_cfg.picker = ReadDword(L"ColorPicker", 1) != 0;
-    g_cfg.themeMode = min(3ul, (unsigned long)ReadDword(L"Theme", 0));
+    { // v9.2: novos temas (Minimalista Claro/Escuro, Padrão Windows, Crispy); migra o valor antigo
+        DWORD old = ReadDword(L"Theme", 0), mig[4] = {ui::kThemeWindows, ui::kThemeLight, ui::kThemeDark, ui::kThemeCrispy};
+        g_cfg.themeMode = min(3ul, (unsigned long)ReadDword(L"Theme2", mig[min(3ul, (unsigned long)old)]));
+    }
     g_cfg.webpQuality = max(30ul, min(100ul, (unsigned long)ReadDword(L"WebpQuality", 75)));
     g_cfg.tray = ReadDword(L"TrayIcon", 1) != 0;
     g_cfg.autoUpdate = ReadDword(L"AutoUpdate", 1) != 0;
     g_cfg.pdfRaw = ReadDword(L"PdfUncompressed", 0) != 0;
+    g_cfg.tempPermanent = ReadDword(L"TempPermanent", 0) != 0;
 }
 static void SaveConfig() {
     WriteDword(L"SpacePreview", g_cfg.space); WriteDword(L"AltButtons", g_cfg.alt);
     WriteDword(L"AltDelay", g_cfg.altDelay); WriteDword(L"JpgQuality", g_cfg.quality);
-    WriteDword(L"ConvertDpi", g_cfg.dpi300 ? 300 : 72); WriteDword(L"ColorPicker", g_cfg.picker); WriteDword(L"Theme", g_cfg.themeMode); WriteDword(L"WebpQuality", g_cfg.webpQuality); WriteDword(L"TrayIcon", g_cfg.tray); WriteDword(L"AutoUpdate", g_cfg.autoUpdate); WriteDword(L"PdfUncompressed", g_cfg.pdfRaw);
+    WriteDword(L"ConvertDpi", g_cfg.dpi300 ? 300 : 72); WriteDword(L"ColorPicker", g_cfg.picker); WriteDword(L"Theme2", g_cfg.themeMode); WriteDword(L"WebpQuality", g_cfg.webpQuality); WriteDword(L"TrayIcon", g_cfg.tray); WriteDword(L"AutoUpdate", g_cfg.autoUpdate); WriteDword(L"PdfUncompressed", g_cfg.pdfRaw); WriteDword(L"TempPermanent", g_cfg.tempPermanent);
 }
 
 // ---------- estado ----------
@@ -115,7 +119,7 @@ static const struct { int id; UINT mod, vk; } kOpenKeys[] = {
 };
 enum { kRefreshTimer = 1, kFlashTimer, kAltTimer, kToastTimer, kSelTimer, kAnimTimer, kUpdateTimer };
 static const float kCaption = 56, kPad = 18;
-static ui::Theme g_theme = ui::MakeTheme(true, false);
+static ui::Theme g_theme = ui::MakeTheme(ui::kThemeDark, false);
 static DWORD g_animStart;
 
 static std::wstring ClassOf(HWND h) {
@@ -893,6 +897,7 @@ static void Paint() {
     float s = g_ui, anim = Ease((GetTickCount() - g_animStart) / 160.0f);
     g_rt->BeginDraw();
     g_rt->Clear(th.tint);
+    ui::Backdrop(g_rt, th, size.width, size.height);
     ui::Painter p(g_rt, g_dw, th, s);
 
     // imagem flutuando, com cantos arredondados
@@ -1042,11 +1047,11 @@ static void SetMenuDarkMode(bool dark) {
 
 // Tema: segue o Windows, claro, escuro ou Crispy. Reaplica o vidro e redesenha tudo.
 static void ApplyTheme() {
-    bool dark = g_cfg.themeMode == ui::kThemeAuto ? ui::SystemDark() : g_cfg.themeMode != ui::kThemeLight;
+    bool dark = g_cfg.themeMode == ui::kThemeWindows ? ui::SystemDark() : g_cfg.themeMode != ui::kThemeLight;
     bool glass = true;
     for (HWND w : {g_wnd, g_toastWnd, g_settingsWnd})
         if (w) glass &= ui::EnableGlass(w, dark);
-    g_theme = g_cfg.themeMode == ui::kThemeCrispy ? ui::CrispyTheme(glass) : ui::MakeTheme(dark, glass);
+    g_theme = ui::MakeTheme((int)g_cfg.themeMode, glass);
     SetMenuDarkMode(dark);
     SafeRelease(g_checker);
     for (HWND w : {g_wnd, g_toastWnd, g_settingsWnd}) if (w) InvalidateRect(w, nullptr, FALSE);
@@ -1496,11 +1501,12 @@ static void RenderRing() {
     // o mouse, reflexo no alto, borda de luz e granulado fino.
     {
         float baseR, baseG, baseB, baseA;
-        if (crispy) { baseR = 17; baseG = 17; baseB = 19; baseA = 0.95f; }
+        if (crispy) { baseR = 14; baseG = 14; baseB = 16; baseA = 0.95f; }
+        else if (g_cfg.themeMode == ui::kThemeDark) { baseR = 18; baseG = 18; baseB = 20; baseA = 0.90f; }
         else if (th.dark) { baseR = 28; baseG = 28; baseB = 30; baseA = 0.88f; }
         else { baseR = 246; baseG = 246; baseB = 248; baseA = 0.92f; }
         float gx = g_ringMouse.x >= 0 ? (float)g_ringMouse.x : c, gy = g_ringMouse.x >= 0 ? (float)g_ringMouse.y : c - rOut * 0.55f;
-        float ga = crispy ? 0.40f : th.dark ? 0.34f : 0.24f, glowR = rOut * 1.05f;
+        float ga = th.glowA, glowR = rOut * 1.05f;
         float hiA = th.dark ? 0.09f : 0.40f, noiseAmp = th.dark ? 7.0f : 5.0f;
         std::vector<UINT32> px((size_t)S * S, 0);
         for (UINT y = 0; y < S; ++y)
@@ -1512,7 +1518,7 @@ static void RenderRing() {
                 auto blend = [&](float cr, float cg, float cb, float a) { R += (cr - R) * a; G += (cg - G) * a; B += (cb - B) * a; A += (1 - A) * a * 0.6f; };
                 float gd = sqrtf((x - gx) * (x - gx) + (y - gy) * (y - gy)) / glowR, f = max(0.0f, 1 - gd);
                 f = f * f * (3 - 2 * f);
-                if (f > 0) { blend(255, 112, 60, ga * f); }                       // brilho laranja
+                if (f > 0) { blend((float)(th.glow >> 16 & 255), (float)(th.glow >> 8 & 255), (float)(th.glow & 255), ga * f); }                       // brilho laranja
                 if (dy < 0) blend(255, 255, 255, hiA * (-dy / rOut) * (-dy / rOut)); // reflexo no alto
                 float rim = fabsf(r - (rOut - 1.2f * s));
                 if (rim < 1.1f * s) { // borda de luz: forte em cima, fraca embaixo
@@ -1542,24 +1548,21 @@ static void RenderRing() {
     for (size_t i = 0; i < n; ++i) {
         float a0 = -3.14159265f / 2 - step / 2 + i * step, a1 = a0 + step, am = (a0 + a1) / 2;
         bool hot = (int)i == g_ringHot;
-        if (hot) { // fatia destacada: vidro laranja com degradê e borda fina
-            ID2D1PathGeometry* g = nullptr; ID2D1GeometrySink* k = nullptr;
-            fac->CreatePathGeometry(&g); g->Open(&k);
-            float gap = 3.0f * s / rOut;
-            auto pt = [&](float r, float a) { return D2D1::Point2F(c + r * cosf(a), c + r * sinf(a)); };
-            float ri = rIn + 4 * s, ro = rOut - 7 * s;
-            k->BeginFigure(pt(ri, a0 + gap), D2D1_FIGURE_BEGIN_FILLED);
-            const int seg = 24; // arcos aproximados por segmentos (mesmo resultado em qualquer renderizador)
-            for (int q = 0; q <= seg; ++q) k->AddLine(pt(ro, a0 + gap + (step - 2 * gap) * q / seg));
-            for (int q = seg; q >= 0; --q) k->AddLine(pt(ri, a0 + gap + (step - 2 * gap) * q / seg));
-            k->EndFigure(D2D1_FIGURE_END_CLOSED); k->Close();
-            rt->FillGeometry(g, solid(ui::Rgba(0xFF6633, crispy ? 0.30f : 0.82f)));
-            rt->DrawGeometry(g, solid(crispy ? ui::Rgba(0xFF6633, 0.95f) : ui::Rgba(0xFFFFFF, 0.35f)), 1 * s);
-            if (crispy) rt->DrawGeometry(g, solid(ui::Rgba(0xFF6633, 0.22f)), 4 * s);
-            k->Release(); g->Release();
-        }
         float rm = (rIn + rOut) / 2 + 3 * s, cx = c + rm * cosf(am), cy = c + rm * sinf(am);
-        D2D1_COLOR_F col = hot ? (crispy ? ui::Rgba(0xFFFFFF) : ui::Rgba(0xFFFFFF)) : th.text;
+        if (hot) { // destaque: um disco de vidro macio com halo, sem cantos duros
+            float pr = min(36 * s, rm * sinf(step / 2) - 2 * s);
+            D2D1_COLOR_F halo = crispy ? ui::Rgba(0xFF6633) : g_cfg.themeMode == ui::kThemeWindows ? th.accent : th.dark ? ui::Rgba(0xFFFFFF) : ui::Rgba(0x000000);
+            for (int q = 10; q >= 1; --q) { // halo difuso
+                float hr = pr + q * 1.6f * s; halo.a = (crispy ? 0.05f : 0.018f) * (11 - q) / 10;
+                rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), hr, hr), solid(halo));
+            }
+            D2D1_ELLIPSE pk = D2D1::Ellipse(D2D1::Point2F(cx, cy), pr, pr);
+            rt->FillEllipse(pk, solid(crispy ? ui::Rgba(0xFF6633, 0.18f) : g_cfg.themeMode == ui::kThemeWindows ? D2D1::ColorF(th.accent.r, th.accent.g, th.accent.b, 0.18f) : th.dark ? ui::Rgba(0xFFFFFF, 0.10f) : ui::Rgba(0xFFFFFF, 0.85f)));
+            D2D1_ELLIPSE top = D2D1::Ellipse(D2D1::Point2F(cx, cy - pr * 0.35f), pr * 0.75f, pr * 0.5f); // reflexo no alto
+            rt->FillEllipse(top, solid(ui::Rgba(0xFFFFFF, th.dark ? 0.04f : 0.35f)));
+            rt->DrawEllipse(pk, solid(crispy ? ui::Rgba(0xFF6633, 0.55f) : th.dark ? ui::Rgba(0xFFFFFF, 0.16f) : ui::Rgba(0x000000, 0.08f)), 1 * s);
+        }
+        D2D1_COLOR_F col = hot && crispy ? ui::Rgba(0xFFB38F) : th.text;
         float bw = min(rm * step * 0.95f, 96 * s);
         if (formats) // só o nome do formato: limpo e grande
             p.Text(side.items[i].label, D2D1::RectF(cx - bw / 2, cy - 11 * s, cx + bw / 2, cy + 11 * s), 14, col, hot ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -1570,7 +1573,7 @@ static void RenderRing() {
     }
     // centro: lente de vidro com o nome do lado
     D2D1_ELLIPSE lens = D2D1::Ellipse(C, rIn - 8 * s, rIn - 8 * s);
-    rt->FillEllipse(lens, solid(g_ringHot == -1 ? (crispy ? ui::Rgba(0xFF6633, 0.16f) : th.panelHot) : (th.dark ? ui::Rgba(0xFFFFFF, 0.06f) : ui::Rgba(0xFFFFFF, 0.65f))));
+    rt->FillEllipse(lens, solid(g_ringHot == -1 ? (crispy ? ui::Rgba(0xFF6633, 0.16f) : th.panelHot) : (th.dark ? ui::Rgba(0xFFFFFF, 0.04f) : ui::Rgba(0xFFFFFF, 0.65f))));
     rt->DrawEllipse(lens, solid(crispy ? ui::Rgba(0xFF6633, 0.55f) : th.dark ? ui::Rgba(0xFFFFFF, 0.16f) : ui::Rgba(0x000000, 0.08f)), 1 * s);
     p.Text(side.name, D2D1::RectF(c - rIn, c - 20 * s, c + rIn, c - 1 * s), 12.5f, crispy ? orange : th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
     std::wstring cnt = std::to_wstring(g_convFiles.size()) + (g_convFiles.size() == 1 ? T(L" arquivo", L" file", L" archivo") : T(L" arquivos", L" files", L" archivos"));
@@ -1579,7 +1582,7 @@ static void RenderRing() {
         float dw = 7 * s, gapd = 4 * s, total = g_sides.size() * dw + (g_sides.size() - 1) * gapd, x = c - total / 2;
         for (size_t i = 0; i < g_sides.size(); ++i, x += dw + gapd)
             rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(x, c + 23 * s, x + dw, c + 25.5f * s), 1.5f * s, 1.5f * s),
-                                     solid((int)i == g_side ? orange : th.track));
+                                     solid((int)i == g_side ? th.accent : th.track));
     }
     if (br) br->Release();
     fac->Release();
@@ -2146,7 +2149,7 @@ static void SetAutostart(bool on);
 static bool AutostartEnabled();
 
 enum { kTogSpace = 1, kTogAlt, kDelayMinus, kDelayPlus, kDpi72, kDpi300, kPdfSmall, kPdfRaw, kQualMinus, kQualPlus, kTogAuto, kBtnFolder, kBtnQuit, kBtnClose,
-       kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate, kBtnPresets, kTheme0, kTheme1, kTheme2, kTheme3, kWebpMinus, kWebpPlus, kTogTray };
+       kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate, kBtnPresets, kTheme0, kTheme1, kTheme2, kTheme3, kWebpMinus, kWebpPlus, kTogTray, kTogTempDel };
 
 static std::wstring PresetsPath();
 
@@ -2218,6 +2221,7 @@ static void SettingsAction(int id) {
     }
     case kBtnQuit: DestroyWindow(g_settingsWnd); PostMessage(g_wnd, WM_CLOSE, 0, 0); return;
     case kTogPicker: g_cfg.picker = !g_cfg.picker; break;
+    case kTogTempDel: g_cfg.tempPermanent = !g_cfg.tempPermanent; break;
     case kTheme0: case kTheme1: case kTheme2: case kTheme3:
         g_cfg.themeMode = id - kTheme0; SaveConfig(); ApplyTheme();
         if (g_settingsWnd) ui::EnableGlass(g_settingsWnd, g_theme.dark);
@@ -2353,12 +2357,18 @@ static void PaintSettings(HWND h) {
     }
     y = c.bottom + 22 * s;
 
+    section(T(L"LIMPEZA", L"CLEANUP", L"LIMPIEZA"));
+    c = card(1);
+    toggle(kTogTempDel, c, label(0, c, T(L"Excluir temporários direto", L"Delete temp files permanently", L"Eliminar temporales directamente"),
+                                    T(L"Sem passar pela Lixeira, como Shift+Del", L"Skip the Recycle Bin, like Shift+Del", L"Sin pasar por la Papelera, como Mayús+Supr")), g_cfg.tempPermanent);
+    y = c.bottom + 22 * s;
+
     section(T(L"SISTEMA", L"SYSTEM", L"SISTEMA"));
     c = card(5);
     {
         float ry = label(0, c, T(L"Tema", L"Theme", L"Tema"));
         D2D1_RECT_F r = rightBox(c, ry, 300 * s), parts[4];
-        std::wstring l[4] = {L"Windows", T(L"Claro", L"Light", L"Claro"), T(L"Escuro", L"Dark", L"Oscuro"), L"Crispy"};
+        std::wstring l[4] = {T(L"Claro", L"Light", L"Claro"), T(L"Escuro", L"Dark", L"Oscuro"), L"Windows", L"Crispy"};
         int hot = g_setHot >= kTheme0 && g_setHot <= kTheme3 ? g_setHot - kTheme0 : -1;
         p.Segmented(r, l, 4, (int)g_cfg.themeMode, hot, parts);
         for (int i = 0; i < 4; ++i) hit(kTheme0 + i, parts[i]);
@@ -2624,6 +2634,18 @@ static void SetNewMenu(bool on) {
         set(kNewProgId, nullptr, T(L"Pasta Padrão Maker", L"Maker folder set", L"Carpetas Maker"));
         set(std::wstring(kNewProgId) + L"\\DefaultIcon", nullptr, L"%SystemRoot%\\System32\\imageres.dll,3");
     }
+    // Botão direito no fundo de uma pasta / na área de trabalho: "Limpar arquivos temporários"
+    for (const wchar_t* bg : {L"Software\\Classes\\Directory\\Background\\shell\\DesignThumbs.LimparTemp", L"Software\\Classes\\DesktopBackground\\shell\\DesignThumbs.LimparTemp"}) {
+        RegDeleteTreeW(HKEY_CURRENT_USER, bg);
+        if (!on) continue;
+        wchar_t exe[MAX_PATH];
+        GetModuleFileNameW(nullptr, exe, MAX_PATH);
+        std::wstring k = bg, verb = T(L"Limpar arquivos temporários", L"Clean temporary files", L"Limpiar archivos temporales"),
+                     icon = L"%SystemRoot%\\System32\\imageres.dll,-54", cmd = L"\"" + std::wstring(exe) + L"\" /cleantemp";
+        RegSetKeyValueW(HKEY_CURRENT_USER, k.c_str(), L"MUIVerb", REG_SZ, verb.c_str(), (DWORD)((verb.size() + 1) * 2));
+        RegSetKeyValueW(HKEY_CURRENT_USER, k.c_str(), L"Icon", REG_EXPAND_SZ, icon.c_str(), (DWORD)((icon.size() + 1) * 2));
+        RegSetKeyValueW(HKEY_CURRENT_USER, (k + L"\\command").c_str(), nullptr, REG_SZ, cmd.c_str(), (DWORD)((cmd.size() + 1) * 2));
+    }
     // o Explorer guarda a lista do menu Novo em cache
     RegDeleteTreeW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Discardable\\PostSetup\\ShellNew");
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
@@ -2641,6 +2663,7 @@ static void CreateFolderSet(const std::wstring& newItemPath) {
         for (auto& c : f) if (c == L'/') c = L'\\';
         int r = SHCreateDirectoryExW(nullptr, f.c_str(), nullptr); // cria subpastas também
         if (r != ERROR_SUCCESS && r != ERROR_ALREADY_EXISTS && r != ERROR_FILE_EXISTS) continue;
+        if (Lower(f).size() < 6 || Lower(f).compare(Lower(f).size() - 6, 6, L"_morto")) CreateDirectoryW((f + L"\\_Morto").c_str(), nullptr); // v9.2: pasta "_Morto" em cada uma
         std::wstring top = dir + L"\\" + name.substr(0, name.find_first_of(L"\\/")); // seleciona a pasta de primeiro nível
         if (!selected.insert(Lower(top)).second) continue;
         SHChangeNotify(SHCNE_MKDIR, SHCNF_PATHW, top.c_str(), nullptr);
@@ -2655,6 +2678,122 @@ static void CreateFolderSet(const std::wstring& newItemPath) {
         CoTaskMemFree(folder);
     }
     for (auto p : items) CoTaskMemFree(p);
+}
+
+// ---------- Limpar arquivos temporários ----------
+// Pega o que está na pasta TEMP do usuário e não foi mexido há mais de 24 h; o que estiver em uso fica.
+static void TempScan(const std::wstring& dir, ULONGLONG* bytes, size_t* files) {
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileExW((dir + L"\\*").c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr, FIND_FIRST_EX_LARGE_FETCH);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) continue;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) TempScan(dir + L"\\" + fd.cFileName, bytes, files);
+        else { *bytes += (ULONGLONG)fd.nFileSizeHigh << 32 | fd.nFileSizeLow; ++*files; }
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
+
+static void DeleteTree(const std::wstring& path, bool dir) { // exclusão definitiva; ignora o que estiver em uso
+    if (dir) {
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileExW((path + L"\\*").c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr, 0);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
+                std::wstring c = path + L"\\" + fd.cFileName;
+                if (fd.dwFileAttributes & FILE_ATTRIBUTE_READONLY) SetFileAttributesW(c.c_str(), fd.dwFileAttributes & ~FILE_ATTRIBUTE_READONLY);
+                if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) RemoveDirectoryW(c.c_str()) || DeleteFileW(c.c_str());
+                else DeleteTree(c, (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0);
+            } while (FindNextFileW(h, &fd));
+            FindClose(h);
+        }
+        RemoveDirectoryW(path.c_str());
+    } else DeleteFileW(path.c_str());
+}
+
+static std::wstring SizeText(ULONGLONG b) {
+    wchar_t t[64];
+    if (b >= 1ull << 30) swprintf(t, 64, L"%.1f GB", b / 1073741824.0);
+    else if (b >= 1ull << 20) swprintf(t, 64, L"%.0f MB", b / 1048576.0);
+    else swprintf(t, 64, L"%.0f KB", b / 1024.0);
+    return t;
+}
+
+static ULONGLONG TempUsage(const std::wstring& tmp) { ULONGLONG b = 0; size_t n = 0; TempScan(tmp, &b, &n); return b; }
+
+static void CleanTemp() {
+    wchar_t buf[MAX_PATH + 1];
+    DWORD n = GetTempPathW(MAX_PATH + 1, buf);
+    if (!n) return;
+    std::wstring tmp(buf, n);
+    while (!tmp.empty() && tmp.back() == L'\\') tmp.pop_back();
+    if (tmp.size() < 4) return; // segurança: nunca a raiz de um disco
+    FILETIME nowFt; GetSystemTimeAsFileTime(&nowFt);
+    ULONGLONG now = (ULONGLONG)nowFt.dwHighDateTime << 32 | nowFt.dwLowDateTime, day = 24ull * 3600 * 10000000;
+    struct Item { std::wstring path; bool dir; };
+    std::vector<Item> items;
+    ULONGLONG bytes = 0; size_t files = 0;
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileExW((tmp + L"\\*").c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr, 0);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
+            ULONGLONG w = (ULONGLONG)fd.ftLastWriteTime.dwHighDateTime << 32 | fd.ftLastWriteTime.dwLowDateTime;
+            if (now - w < day) continue; // recente: pode estar em uso por algum programa
+            std::wstring p = tmp + L"\\" + fd.cFileName;
+            bool dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+            if (dir && !(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) TempScan(p, &bytes, &files);
+            else if (!dir) { bytes += (ULONGLONG)fd.nFileSizeHigh << 32 | fd.nFileSizeLow; ++files; }
+            items.push_back({p, dir});
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    const wchar_t* title = T(L"Limpar arquivos temporários", L"Clean temporary files", L"Limpiar archivos temporales");
+    if (items.empty()) {
+        MessageBoxW(nullptr, T(L"Não há arquivos temporários antigos para limpar.", L"There are no old temporary files to clean.", L"No hay archivos temporales antiguos para limpiar."), title, MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    bool perm = g_cfg.tempPermanent;
+    wchar_t msg[512];
+    swprintf(msg, 512, T(L"Encontrados %zu arquivos inúteis (%ls) na pasta TEMP, sem uso há mais de 1 dia.\n\n%ls",
+                         L"Found %zu useless files (%ls) in the TEMP folder, unused for more than 1 day.\n\n%ls",
+                         L"Se encontraron %zu archivos inútiles (%ls) en la carpeta TEMP, sin uso hace más de 1 día.\n\n%ls"),
+             files, SizeText(bytes).c_str(),
+             perm ? T(L"Excluir definitivamente (sem Lixeira)?", L"Delete permanently (no Recycle Bin)?", L"¿Eliminar definitivamente (sin Papelera)?")
+                  : T(L"Mover para a Lixeira?", L"Move to the Recycle Bin?", L"¿Mover a la Papelera?"));
+    if (MessageBoxW(nullptr, msg, title, MB_OKCANCEL | (perm ? MB_ICONWARNING : MB_ICONQUESTION)) != IDOK) return;
+    ULONGLONG before = TempUsage(tmp);
+    HCURSOR old = SetCursor(LoadCursor(nullptr, IDC_WAIT));
+    if (perm) for (auto& it : items) DeleteTree(it.path, it.dir);
+    else {
+        IFileOperation* op = nullptr;
+        if (SUCCEEDED(CoCreateInstance(CLSID_FileOperation, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&op)))) {
+            op->SetOperationFlags(FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT | FOFX_RECYCLEONDELETE | FOFX_ADDUNDORECORD);
+            for (auto& it : items) {
+                IShellItem* si = nullptr;
+                if (SUCCEEDED(SHCreateItemFromParsingName(it.path.c_str(), nullptr, IID_PPV_ARGS(&si)))) { op->DeleteItem(si, nullptr); si->Release(); }
+            }
+            op->PerformOperations(); // o que estiver em uso é pulado
+            op->Release();
+        }
+    }
+    SetCursor(old);
+    ULONGLONG after = TempUsage(tmp), freed = before > after ? before - after : 0;
+    if (perm) {
+        swprintf(msg, 512, T(L"Pronto: %ls liberados.", L"Done: %ls freed.", L"Listo: %ls liberados."), SizeText(freed).c_str());
+        MessageBoxW(nullptr, msg, title, MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    SHQUERYRBINFO rb = {sizeof(rb)};
+    SHQueryRecycleBinW(nullptr, &rb);
+    swprintf(msg, 512, T(L"%ls foram para a Lixeira (o que estava em uso ficou).\n\nA Lixeira tem %ls no total. Esvaziar a Lixeira agora?",
+                         L"%ls went to the Recycle Bin (files in use were kept).\n\nThe Recycle Bin holds %ls in total. Empty the Recycle Bin now?",
+                         L"%ls fueron a la Papelera (lo que estaba en uso se quedó).\n\nLa Papelera tiene %ls en total. ¿Vaciar la Papelera ahora?"),
+             SizeText(freed).c_str(), SizeText((ULONGLONG)rb.i64Size).c_str());
+    if (MessageBoxW(nullptr, msg, title, MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES)
+        SHEmptyRecycleBinW(nullptr, nullptr, SHERB_NOCONFIRMATION);
 }
 
 // Diagnóstico: "DesignPeek.exe /diag arquivo" mostra, passo a passo, como o arquivo é lido.
@@ -2915,6 +3054,13 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
         f.erase(0, f.find_first_not_of(L" \"")); f.erase(f.find_last_not_of(L" \"") + 1);
         CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
         Diagnose(f);
+        CoUninitialize();
+        return 0;
+    }
+    if (args.find(L"/cleantemp") != std::wstring::npos) {
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        LoadConfig();
+        CleanTemp();
         CoUninitialize();
         return 0;
     }

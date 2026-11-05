@@ -8,8 +8,8 @@ Ferramentas leves para o Explorer do Windows 10/11 trabalhar com arquivos de des
 - **Converter com Alt** — selecione arquivos e segure **Alt**: botões para PNG, JPG ou PDF aparecem sobre o mouse.
 
 ## Visual
-Temas: **Windows** (segue o claro/escuro do sistema), **Claro**, **Escuro** e **Crispy** — preto chumbo minimalista
-com detalhes laranja #FF6633, um toque de neon e a fonte Bahnschrift. Escolha em Configurações › Sistema › Tema.
+Temas: **Minimalista Claro**, **Minimalista Escuro** (preto × chumbo), **Padrão Windows** (segue o claro/escuro e a
+cor de destaque do sistema) e **Crispy** — neon cyberpunk laranja #FF6633 sobre preto, fonte Bahnschrift. Escolha em Configurações › Sistema › Tema.
 
 Ícone na área de notificação (ao lado do relógio): clique para **Configurações**, **Reiniciar** (se algo parar de
 responder) ou **Encerrar**.
@@ -117,6 +117,11 @@ se aplica a essa consulta: https://docs.github.com/site-policy/privacy-policies/
 (leitor de PDF, páginas, registro do painel Alt+P). Ctrl+C copia o texto da janela.
 
 ## Versões
+- **v9.2** — temas Minimalista Claro, Minimalista Escuro (preto × chumbo), Padrão Windows (cor de destaque do
+  sistema) e Crispy (neon); destaque do menu circular em disco de vidro macio; preview com fundo de vidro;
+  controles minimalistas; Pasta Padrão Maker cria "_Morto" dentro de cada pasta; botão direito ›
+  **Limpar arquivos temporários** (TEMP com mais de 1 dia → Lixeira, depois oferece esvaziar a Lixeira;
+  opção de excluir direto em Configurações › Limpeza).
 - **v9.1** — WEBP com compressão máxima (método 6, YUV nítido; gráficos tentam sem perdas e fica o menor arquivo);
   menu circular em vidro líquido com brilho laranja que segue o mouse e granulado; ícones e botões minimalistas;
   temas Windows / Claro / Escuro / **Crispy** (preto chumbo, #FF6633, toque neon, fonte Bahnschrift);

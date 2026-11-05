@@ -3,8 +3,8 @@
 1 24 "DesignPeek.manifest"
 2 RCDATA "DesignThumbs.dll"
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 9,1,0,0
-PRODUCTVERSION 9,1,0,0
+FILEVERSION 9,2,0,0
+PRODUCTVERSION 9,2,0,0
 FILEOS VOS_NT_WINDOWS32
 FILETYPE VFT_APP
 BEGIN
@@ -14,12 +14,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "Thiago Crispim"
       VALUE "FileDescription", "DesignPeek - preview de arquivos de design com Espaço"
-      VALUE "FileVersion", "9.1.0"
+      VALUE "FileVersion", "9.2.0"
       VALUE "InternalName", "DesignPeek"
       VALUE "OriginalFilename", "DesignPeek.exe"
       VALUE "LegalCopyright", "MIT License - Thiago Crispim"
       VALUE "ProductName", "DesignThumbs"
-      VALUE "ProductVersion", "9.1.0"
+      VALUE "ProductVersion", "9.2.0"
     END
   END
   BLOCK "VarFileInfo"
