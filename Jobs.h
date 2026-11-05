@@ -29,6 +29,7 @@ struct Job {
     ops::Format format = ops::kPng;
     ops::Edit edit;
     float quality = 0.92f;
+    float webpQuality = 0.75f; // WEBP: compressão forte (como os conversores online)
     UINT dpi = 72;
     bool pdfRaw = false;
     std::wstring pages;    // intervalo ("1-3, 5"); vazio = todas
@@ -149,6 +150,7 @@ inline Result Run(const std::vector<std::wstring>& files, const Job& j, const st
             ops::Format of = j.action == kEditSame ? SameFormat(f) : j.format;
             fmt::Info in;
             std::vector<HBITMAP> fr = Frames(f, j, of, &in);
+            float q = of == ops::kWebp ? j.webpQuality : j.quality;
             if (of == ops::kTiff && fr.size() > 1) { // TIFF de várias páginas
                 std::wstring out = UniquePath(dir, Named(base, j.suffix), ops::Ext(of));
                 if (ops::Save(fr, out, of, j.quality, j.dpi)) { r.outputs.push_back(out); ok = true; }
@@ -156,7 +158,7 @@ inline Result Run(const std::vector<std::wstring>& files, const Job& j, const st
                 for (size_t k = 0; k < fr.size(); ++k) {
                     std::wstring name = Named(base, j.suffix) + (fr.size() > 1 ? L" - p" + std::to_wstring(k + 1) : L"");
                     std::wstring out = UniquePath(dir, name, ops::Ext(of));
-                    if (ops::Save({fr[k]}, out, of, j.quality, j.dpi)) { r.outputs.push_back(out); ok = true; }
+                    if (ops::Save({fr[k]}, out, of, q, j.dpi)) { r.outputs.push_back(out); ok = true; }
                 }
             for (HBITMAP b : fr) DeleteObject(b);
             break;

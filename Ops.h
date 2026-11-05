@@ -2,6 +2,7 @@
 // em PNG, JPG, WEBP, TIFF (várias páginas), BMP, GIF e ICO. Bitmaps: DIB 32bpp top-down, pré-multiplicado.
 #pragma once
 #include <wincodec.h>
+#include <algorithm>
 #include <vector>
 #include <string>
 #include "Formats.h"
@@ -136,16 +137,59 @@ inline bool WriteFileBytes(const std::wstring& path, const void* data, size_t n)
     return ok;
 }
 
-// WEBP: qualidade 100 = sem perdas.
+// WEBP otimizado para o menor arquivo (como os compressores online): método 6 (mais lento, menor),
+// filtro automático e YUV "sharp". Em gráficos (poucas cores: logos, ícones, prints) também tenta sem perdas
+// e fica com o que for menor. qualidade >= 0,995 = sempre sem perdas.
+inline bool EncodeWebp(const std::vector<BYTE>& rgba, UINT w, UINT h, bool lossless, float quality, WebPMemoryWriter* mw) {
+    WebPConfig cfg;
+    if (!WebPConfigInit(&cfg)) return false;
+    if (lossless) { WebPConfigLosslessPreset(&cfg, w * h > 4000000 ? 4 : 6); }
+    else {
+        WebPConfigPreset(&cfg, WEBP_PRESET_PHOTO, quality * 100);
+        cfg.method = 6;
+        cfg.autofilter = 1;
+        cfg.use_sharp_yuv = 1;
+        cfg.alpha_quality = 85;
+    }
+    cfg.thread_level = 1;
+    if (!WebPValidateConfig(&cfg)) return false;
+    WebPPicture pic;
+    if (!WebPPictureInit(&pic)) return false;
+    pic.width = w; pic.height = h;
+    pic.use_argb = lossless ? 1 : 0;
+    bool ok = WebPPictureImportRGBA(&pic, rgba.data(), w * 4) != 0;
+    WebPMemoryWriterInit(mw);
+    pic.writer = WebPMemoryWrite;
+    pic.custom_ptr = mw;
+    ok = ok && WebPEncode(&cfg, &pic);
+    WebPPictureFree(&pic);
+    return ok;
+}
+
 inline bool SaveWebp(HBITMAP b, const std::wstring& path, float quality) {
     BYTE* px; UINT w, h;
     if (!Pixels(b, &px, &w, &h)) return false;
     std::vector<BYTE> rgba = Straight(px, (size_t)w * h, true);
-    uint8_t* out = nullptr;
-    size_t n = quality >= 0.995f ? WebPEncodeLosslessRGBA(rgba.data(), w, h, w * 4, &out)
-                                 : WebPEncodeRGBA(rgba.data(), w, h, w * 4, quality * 100, &out);
-    bool ok = n && WriteFileBytes(path, out, n);
-    WebPFree(out);
+    bool forceLossless = quality >= 0.995f;
+    // poucas cores = gráfico: sem perdas costuma ser menor e mais nítido
+    bool graphic = false;
+    if (!forceLossless && (size_t)w * h <= 16000000) {
+        std::vector<UINT32> seen;
+        seen.reserve(4097);
+        graphic = true;
+        for (size_t i = 0; i < (size_t)w * h && graphic; i += 1 + (size_t)w * h / 400000) {
+            UINT32 c; memcpy(&c, &rgba[i * 4], 4);
+            if (std::find(seen.begin(), seen.end(), c) == seen.end()) { seen.push_back(c); if (seen.size() > 1024) graphic = false; }
+        }
+    }
+    WebPMemoryWriter best, alt;
+    bool ok = EncodeWebp(rgba, w, h, forceLossless, quality, &best);
+    if (ok && graphic && !forceLossless && EncodeWebp(rgba, w, h, true, quality, &alt)) {
+        if (alt.size < best.size) std::swap(best, alt);
+        WebPMemoryWriterClear(&alt);
+    }
+    ok = ok && best.size && WriteFileBytes(path, best.mem, best.size);
+    WebPMemoryWriterClear(&best);
     return ok;
 }
 

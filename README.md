@@ -8,6 +8,12 @@ Ferramentas leves para o Explorer do Windows 10/11 trabalhar com arquivos de des
 - **Converter com Alt** — selecione arquivos e segure **Alt**: botões para PNG, JPG ou PDF aparecem sobre o mouse.
 
 ## Visual
+Temas: **Windows** (segue o claro/escuro do sistema), **Claro**, **Escuro** e **Crispy** — preto chumbo minimalista
+com detalhes laranja #FF6633, um toque de neon e a fonte Bahnschrift. Escolha em Configurações › Sistema › Tema.
+
+Ícone na área de notificação (ao lado do relógio): clique para **Configurações**, **Reiniciar** (se algo parar de
+responder) ou **Encerrar**.
+
 Interface de vidro inspirada no visionOS: desfoque acrylic do Windows, cantos arredondados, cápsulas flutuantes e
 controles no estilo iOS, seguindo automaticamente o tema claro/escuro do Windows. Sem o efeito de vidro (Windows antigo),
 usa um fundo sólido com o mesmo visual.
@@ -111,6 +117,10 @@ se aplica a essa consulta: https://docs.github.com/site-policy/privacy-policies/
 (leitor de PDF, páginas, registro do painel Alt+P). Ctrl+C copia o texto da janela.
 
 ## Versões
+- **v9.1** — WEBP com compressão máxima (método 6, YUV nítido; gráficos tentam sem perdas e fica o menor arquivo);
+  menu circular em vidro líquido com brilho laranja que segue o mouse e granulado; ícones e botões minimalistas;
+  temas Windows / Claro / Escuro / **Crispy** (preto chumbo, #FF6633, toque neon, fonte Bahnschrift);
+  ícone na área de notificação com Configurações, Reiniciar e Encerrar.
 - **v9** — menu circular com lados (converter, ferramentas, PDF, extras, predefinições); WEBP, TIFF, ICO, GIF, BMP;
   redimensionar, recortar, girar, espelhar, cinza, sem metadados; juntar/dividir/extrair PDF mantendo o original; comprimir PDF;
   camadas do PSD, paletas (folha, HEX/CSS, ASE⇄ACO), amostra de fonte; instalador oferece desinstalar ao ser reaberto.
