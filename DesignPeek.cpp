@@ -1508,11 +1508,80 @@ static void RenderRing() {
         float gx = g_ringMouse.x >= 0 ? (float)g_ringMouse.x : c, gy = g_ringMouse.x >= 0 ? (float)g_ringMouse.y : c - rOut * 0.55f;
         float ga = th.glowA, glowR = rOut * 1.05f;
         float hiA = th.dark ? 0.09f : 0.40f, noiseAmp = th.dark ? 7.0f : 5.0f;
+        // Crispy: disco preto fosco, vincos entre fatias, centro rebaixado com luz laranja e fatia de vidro neon.
+        size_t cn = g_sides[g_side].items.size();
+        float cstep = 2 * 3.14159265f / max<size_t>(1, cn), hotA0 = 0, hotA1 = 0;
+        if (g_ringHot >= 0) { hotA0 = -3.14159265f / 2 - cstep / 2 + g_ringHot * cstep; hotA1 = hotA0 + cstep; }
+        float well = rIn - 6 * s;   // raio do centro
+        auto CrispyPixel = [&](float dx, float dy, float r, float rO) -> UINT32 {
+            float ang = atan2f(dy, dx);
+            // base: cinza-chumbo no alto à esquerda até preto embaixo à direita
+            float t = 0.5f + 0.35f * (dy / rO) + 0.15f * (dx / rO);
+            float L = 30 - 24 * max(0.0f, min(1.0f, t));
+            float R = L, G = L, B = L + 1, A = 0.98f;
+            auto mix = [&](float cr, float cg, float cb, float a) { a = max(0.0f, min(1.0f, a)); R += (cr - R) * a; G += (cg - G) * a; B += (cb - B) * a; };
+            // borda externa de luz cinza
+            float rim = fabsf(r - (rO - 1.0f * s));
+            if (rim < 1.3f * s) mix(92, 92, 96, (1 - rim / (1.3f * s)) * (0.25f + 0.45f * (0.5f - 0.5f * dy / max(r, 1.0f))));
+            // vincos afilados nas divisões das fatias
+            if (cn > 1 && r > well) {
+                float rel = (r - well) / ((rO - well) * 0.62f);
+                if (rel < 1) {
+                    float a = ang + 3.14159265f / 2 + cstep / 2;
+                    a = fmodf(a + 8 * 3.14159265f, cstep);
+                    float da = min(a, cstep - a) * r, w = (4.5f * s) * (1 - rel) + 0.6f * s;
+                    float d = expf(-(da * da) / (w * w)) * (1 - rel * rel);
+                    R *= 1 - 0.85f * d; G *= 1 - 0.85f * d; B *= 1 - 0.85f * d;
+                }
+            }
+            // anel do centro (patamar) com sombra em volta
+            if (r < well + 14 * s && r >= well) { float k = (r - well) / (14 * s); R *= 0.45f + 0.55f * k; G *= 0.45f + 0.55f * k; B *= 0.45f + 0.55f * k; }
+            if (r < well) {
+                float inner = well - 10 * s;
+                if (r >= inner) { float k = (r - inner) / (10 * s); float v = 24 + 10 * (1 - k) - 6 * (dy / max(r, 1.0f)); R = G = v; B = v + 1; }
+                else { float k = r / inner; float v = 2 + 14 * k * k * k * (0.6f + 0.4f * (-dy / max(r, 1.0f) * 0.5f + 0.5f)); R = G = v; B = v + 1; }
+                if (fabsf(r - inner) < 1.0f * s) mix(70, 70, 74, 0.5f);
+                // luz laranja na borda do centro, virada para a fatia ativa
+                if (g_ringHot >= 0 && r > inner - 16 * s) {
+                    float am = (hotA0 + hotA1) / 2, c = cosf(ang - am);
+                    if (c > 0) { float k = powf(c, 5) * max(0.0f, 1 - fabsf(r - inner + 3 * s) / (13 * s)); mix(255, 122, 10, k * 0.95f); }
+                }
+            }
+            // fatia ativa: vidro neon com cantos arredondados
+            if (g_ringHot >= 0) {
+                float ri = well + 16 * s, ro = rO - 10 * s, gap = 4 * s, rad = 12 * s;
+                float a = ang; while (a < hotA0 - 3.14159265f) a += 2 * 3.14159265f; while (a > hotA0 + 3 * 3.14159265f) a -= 2 * 3.14159265f;
+                float dA0 = r * sinf(a - hotA0) - gap, dA1 = r * sinf(hotA1 - a) - gap;
+                if (cosf(a - (hotA0 + hotA1) / 2) < 0) dA0 = dA1 = -999;
+                float ex = min(dA0, dA1), ey = min(r - ri, ro - r), dist;
+                if (ex < rad && ey < rad && ex > -rad && ey > -rad && ex < rad && ey < rad && min(ex, ey) > -999) {
+                    float qx = rad - ex, qy = rad - ey;
+                    dist = (qx > 0 && qy > 0) ? rad - sqrtf(qx * qx + qy * qy) : min(ex, ey);
+                } else dist = min(ex, ey);
+                if (dist > 0) {
+                    float tt = (r - ri) / (ro - ri);                          // 0 perto do centro
+                    float edge = min(1.0f, dist / (26 * s));                   // brilho junto às bordas
+                    float hot = powf(1 - tt, 2.2f) * 1.0f + (1 - edge) * 0.12f;
+                    float gr = 12 + 140 * min(1.0f, hot * 1.15f);
+                    R = 14 + 241 * min(1.0f, hot * 1.2f); G = 8 + gr - 12; B = 4 + 10 * hot;
+                    R = R * 0.92f + 8; A = 0.99f;
+                    if (dist < 1.6f * s) mix(255, 150, 40, (1 - dist / (1.6f * s)) * (0.55f + 0.45f * (1 - tt)));
+                } else if (dist > -16 * s) { // halo neon fora da fatia
+                    float k = 1 + dist / (16 * s); mix(255, 110, 0, k * k * 0.35f);
+                }
+            }
+            UINT32 hsh = ((UINT32)(dx + 1000) * 73856093u) ^ ((UINT32)(dy + 1000) * 19349663u); hsh ^= hsh >> 13; hsh *= 0x5bd1e995u; hsh ^= hsh >> 15;
+            float nz = ((hsh & 255) / 255.0f - 0.5f) * 5;
+            R = max(0.0f, min(255.0f, R + nz)); G = max(0.0f, min(255.0f, G + nz)); B = max(0.0f, min(255.0f, B + nz));
+            float cov = max(0.0f, min(1.0f, rO + 0.5f - r)); A *= cov;
+            return (UINT32)(A * 255) << 24 | (UINT32)(R * A) << 16 | (UINT32)(G * A) << 8 | (UINT32)(B * A);
+        };
         std::vector<UINT32> px((size_t)S * S, 0);
         for (UINT y = 0; y < S; ++y)
             for (UINT x = 0; x < S; ++x) {
                 float dx = x + 0.5f - c, dy = y + 0.5f - c, r = sqrtf(dx * dx + dy * dy);
                 if (r > rOut + 1) continue;
+                if (crispy) { px[(size_t)y * S + x] = CrispyPixel(dx, dy, r, rOut); continue; }
                 float cov = max(0.0f, min(1.0f, rOut + 0.5f - r)); // borda suavizada
                 float R = baseR, G = baseG, B = baseB, A = baseA;
                 auto blend = [&](float cr, float cg, float cb, float a) { R += (cr - R) * a; G += (cg - G) * a; B += (cb - B) * a; A += (1 - A) * a * 0.6f; };
@@ -1537,7 +1606,7 @@ static void RenderRing() {
             bg->Release();
         }
     }
-    if (crispy) for (int i = 1; i <= 3; ++i) rt->DrawEllipse(D2D1::Ellipse(C, rOut + i * 1.5f * s, rOut + i * 1.5f * s), solid(ui::Rgba(0xFF6633, 0.10f / i)), 1.2f * s); // neon
+    if (crispy) {}
     else if (!th.dark) rt->DrawEllipse(disc, solid(ui::Rgba(0x000000, 0.07f)), 1 * s);
 
     const Side& side = g_sides[g_side];
@@ -1549,7 +1618,7 @@ static void RenderRing() {
         float a0 = -3.14159265f / 2 - step / 2 + i * step, a1 = a0 + step, am = (a0 + a1) / 2;
         bool hot = (int)i == g_ringHot;
         float rm = (rIn + rOut) / 2 + 3 * s, cx = c + rm * cosf(am), cy = c + rm * sinf(am);
-        if (hot) { // destaque: um disco de vidro macio com halo, sem cantos duros
+        if (hot && !crispy) { // destaque: um disco de vidro macio com halo, sem cantos duros
             float pr = min(36 * s, rm * sinf(step / 2) - 2 * s);
             D2D1_COLOR_F halo = crispy ? ui::Rgba(0xFF6633) : g_cfg.themeMode == ui::kThemeWindows ? th.accent : th.dark ? ui::Rgba(0xFFFFFF) : ui::Rgba(0x000000);
             for (int q = 10; q >= 1; --q) { // halo difuso
@@ -1562,7 +1631,7 @@ static void RenderRing() {
             rt->FillEllipse(top, solid(ui::Rgba(0xFFFFFF, th.dark ? 0.04f : 0.35f)));
             rt->DrawEllipse(pk, solid(crispy ? ui::Rgba(0xFF6633, 0.55f) : th.dark ? ui::Rgba(0xFFFFFF, 0.16f) : ui::Rgba(0x000000, 0.08f)), 1 * s);
         }
-        D2D1_COLOR_F col = hot && crispy ? ui::Rgba(0xFFB38F) : th.text;
+        D2D1_COLOR_F col = hot && crispy ? ui::Rgba(0xFFFFFF) : crispy ? ui::Rgba(0x8E8E95) : th.text;
         float bw = min(rm * step * 0.95f, 96 * s);
         if (formats) // só o nome do formato: limpo e grande
             p.Text(side.items[i].label, D2D1::RectF(cx - bw / 2, cy - 11 * s, cx + bw / 2, cy + 11 * s), 14, col, hot ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -1573,8 +1642,9 @@ static void RenderRing() {
     }
     // centro: lente de vidro com o nome do lado
     D2D1_ELLIPSE lens = D2D1::Ellipse(C, rIn - 8 * s, rIn - 8 * s);
-    rt->FillEllipse(lens, solid(g_ringHot == -1 ? (crispy ? ui::Rgba(0xFF6633, 0.16f) : th.panelHot) : (th.dark ? ui::Rgba(0xFFFFFF, 0.04f) : ui::Rgba(0xFFFFFF, 0.65f))));
-    rt->DrawEllipse(lens, solid(crispy ? ui::Rgba(0xFF6633, 0.55f) : th.dark ? ui::Rgba(0xFFFFFF, 0.16f) : ui::Rgba(0x000000, 0.08f)), 1 * s);
+    if (!crispy) rt->FillEllipse(lens, solid(g_ringHot == -1 ? (crispy ? ui::Rgba(0xFF6633, 0.16f) : th.panelHot) : (th.dark ? ui::Rgba(0xFFFFFF, 0.04f) : ui::Rgba(0xFFFFFF, 0.65f))));
+    if (!crispy) rt->DrawEllipse(lens, solid(crispy ? ui::Rgba(0xFF6633, 0.55f) : th.dark ? ui::Rgba(0xFFFFFF, 0.16f) : ui::Rgba(0x000000, 0.08f)), 1 * s);
+    if (crispy && g_ringHot == -1) { rt->DrawEllipse(lens, solid(ui::Rgba(0xFF7A00, 0.9f)), 1.5f * s); rt->DrawEllipse(lens, solid(ui::Rgba(0xFF7A00, 0.25f)), 5 * s); }
     p.Text(side.name, D2D1::RectF(c - rIn, c - 20 * s, c + rIn, c - 1 * s), 12.5f, crispy ? orange : th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
     std::wstring cnt = std::to_wstring(g_convFiles.size()) + (g_convFiles.size() == 1 ? T(L" arquivo", L" file", L" archivo") : T(L" arquivos", L" files", L" archivos"));
     p.Text(cnt, D2D1::RectF(c - rIn, c - 1 * s, c + rIn, c + 14 * s), 10, th.text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
