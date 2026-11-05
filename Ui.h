@@ -10,7 +10,7 @@ namespace ui {
 
 // ---------- tema ----------
 
-enum { kThemeAuto = 0, kThemeLight, kThemeDark, kThemeCrispy };
+enum { kThemeLight = 0, kThemeDark, kThemeWindows, kThemeCrispy }; // Minimalista Claro/Escuro, Padrão Windows, Crispy
 
 struct Theme {
     bool dark = true, glass = false, neon = false; // neon: brilho laranja (tema Crispy)
@@ -20,7 +20,9 @@ struct Theme {
     D2D1_COLOR_F panelHot;    // cartão sob o mouse
     D2D1_COLOR_F stroke;      // borda de luz
     D2D1_COLOR_F text, text2; // texto principal / secundário
-    D2D1_COLOR_F accent, onAccent, danger, track, knob;
+    D2D1_COLOR_F accent, onAccent, danger, track, knob, knobOn;
+    UINT glow = 0xFFFFFF;     // cor do brilho que segue o mouse no anel
+    float glowA = 0.10f;
 };
 
 inline D2D1_COLOR_F Rgba(UINT rgb, float a = 1) { return D2D1::ColorF(rgb, a); }
@@ -32,36 +34,74 @@ inline bool SystemDark() {
     return v == 0;
 }
 
-// Crispy: preto chumbo minimalista, detalhes #FF6633 com um leve neon e fonte Bahnschrift (técnica, de linhas retas).
+// Cor de destaque do Windows (Configurações > Personalização > Cores).
+inline UINT SystemAccent() {
+    DWORD v = 0, sz = sizeof(v);
+    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\DWM", L"AccentColor", RRF_RT_REG_DWORD, nullptr, &v, &sz) == ERROR_SUCCESS)
+        return (v & 0xFF) << 16 | (v & 0xFF00) | (v >> 16 & 0xFF); // ABGR -> RGB
+    return 0x0067C0;
+}
+
+// Crispy: preto, neon cyberpunk #FF6633 e fonte Bahnschrift.
 inline Theme CrispyTheme(bool glass) {
     Theme t;
     t.dark = true; t.glass = glass; t.neon = true;
     t.font = L"Bahnschrift";
-    t.tint = glass ? Rgba(0x111113, 0.86f) : Rgba(0x111113);
-    t.panel = Rgba(0xFFFFFF, 0.045f); t.panelHot = Rgba(0xFF6633, 0.16f); t.stroke = Rgba(0xFF6633, 0.30f);
-    t.text = Rgba(0xF2F2F2); t.text2 = Rgba(0x8E8E95);
+    t.tint = glass ? Rgba(0x0A0A0B, 0.88f) : Rgba(0x0A0A0B);
+    t.panel = Rgba(0xFFFFFF, 0.045f); t.panelHot = Rgba(0xFF6633, 0.16f); t.stroke = Rgba(0xFF6633, 0.32f);
+    t.text = Rgba(0xF2F2F2); t.text2 = Rgba(0x9A9AA1);
     t.accent = Rgba(0xFF6633); t.onAccent = Rgba(0x0E0E10); t.danger = Rgba(0xFF3B5C);
-    t.track = Rgba(0xFFFFFF, 0.10f); t.knob = Rgba(0xF2F2F2);
+    t.track = Rgba(0xFFFFFF, 0.10f); t.knob = Rgba(0xF2F2F2); t.knobOn = Rgba(0xF2F2F2);
+    t.glow = 0xFF703C; t.glowA = 0.40f;
     return t;
 }
 
-inline Theme MakeTheme(bool dark, bool glass) {
+inline Theme MakeTheme(int mode, bool glass) {
+    if (mode == kThemeCrispy) return CrispyTheme(glass);
     Theme t;
+    bool dark = mode == kThemeDark || (mode == kThemeWindows && SystemDark());
     t.dark = dark; t.glass = glass;
-    if (dark) {
+    if (mode == kThemeDark) { // preto x chumbo, sem cor
+        t.font = L"Segoe UI Variable Text";
+        t.tint = glass ? Rgba(0x0B0B0C, 0.80f) : Rgba(0x0B0B0C);
+        t.panel = Rgba(0xFFFFFF, 0.05f); t.panelHot = Rgba(0xFFFFFF, 0.10f); t.stroke = Rgba(0xFFFFFF, 0.10f);
+        t.text = Rgba(0xEDEDEF); t.text2 = Rgba(0x8D8D93);
+        t.accent = Rgba(0xE6E6E8); t.onAccent = Rgba(0x0B0B0C); t.danger = Rgba(0xFF6961);
+        t.track = Rgba(0xFFFFFF, 0.12f); t.knob = Rgba(0xE6E6E8); t.knobOn = Rgba(0x111113);
+        t.glow = 0xFFFFFF; t.glowA = 0.10f;
+    } else if (dark) { // Padrão Windows, escuro
         t.tint = glass ? Rgba(0x1C1C1E, 0.62f) : Rgba(0x1C1C1E);
-        t.panel = Rgba(0xFFFFFF, 0.08f); t.panelHot = Rgba(0xFFFFFF, 0.14f); t.stroke = Rgba(0xFFFFFF, 0.16f);
+        t.panel = Rgba(0xFFFFFF, 0.08f); t.panelHot = Rgba(0xFFFFFF, 0.14f); t.stroke = Rgba(0xFFFFFF, 0.14f);
         t.text = Rgba(0xFFFFFF, 0.96f); t.text2 = Rgba(0xFFFFFF, 0.58f);
-        t.accent = Rgba(0x0A84FF); t.onAccent = Rgba(0xFFFFFF); t.danger = Rgba(0xFF6961);
-        t.track = Rgba(0xFFFFFF, 0.18f); t.knob = Rgba(0xFFFFFF);
-    } else {
-        t.tint = glass ? Rgba(0xF5F5F7, 0.68f) : Rgba(0xF5F5F7);
-        t.panel = Rgba(0xFFFFFF, 0.62f); t.panelHot = Rgba(0xFFFFFF, 0.85f); t.stroke = Rgba(0x000000, 0.08f);
+        t.accent = Rgba(SystemAccent()); t.onAccent = Rgba(0xFFFFFF); t.danger = Rgba(0xFF6961);
+        t.track = Rgba(0xFFFFFF, 0.18f); t.knob = Rgba(0xFFFFFF); t.knobOn = Rgba(0xFFFFFF);
+        t.glow = SystemAccent(); t.glowA = 0.22f;
+    } else { // claro: minimalista (grafite) ou Padrão Windows (cor de destaque do sistema)
+        t.tint = glass ? Rgba(0xF5F5F7, 0.70f) : Rgba(0xF5F5F7);
+        t.panel = Rgba(0xFFFFFF, 0.62f); t.panelHot = Rgba(0xFFFFFF, 0.88f); t.stroke = Rgba(0x000000, 0.07f);
         t.text = Rgba(0x1D1D1F); t.text2 = Rgba(0x000000, 0.52f);
-        t.accent = Rgba(0x007AFF); t.onAccent = Rgba(0xFFFFFF); t.danger = Rgba(0xD70015);
-        t.track = Rgba(0x000000, 0.12f); t.knob = Rgba(0xFFFFFF);
+        bool win = mode == kThemeWindows;
+        t.accent = win ? Rgba(SystemAccent()) : Rgba(0x1D1D1F); t.onAccent = Rgba(0xFFFFFF); t.danger = Rgba(0xD70015);
+        t.track = Rgba(0x000000, 0.10f); t.knob = Rgba(0xFFFFFF); t.knobOn = Rgba(0xFFFFFF);
+        t.glow = win ? SystemAccent() : 0xFFFFFF; t.glowA = win ? 0.16f : 0.30f;
     }
     return t;
+}
+
+// Fundo de vidro: halos suaves de luz (no Crispy, degradê neon laranja sobre preto).
+inline void Backdrop(ID2D1RenderTarget* rt, const Theme& th, float w, float h) {
+    struct B { float x, y, r; UINT c; float a; };
+    B bl[3] = {{w * 0.05f, h * 0.0f, (w > h ? w : h) * 0.55f, th.neon ? 0xFF6633u : th.dark ? 0x5A5A62u : 0xFFFFFFu, th.neon ? 0.22f : th.dark ? 0.16f : 0.55f},
+               {w * 1.0f, h * 1.05f, (w > h ? w : h) * 0.55f, th.neon ? 0xFF285Au : th.dark ? 0x3A3A40u : 0xD0D4DCu, th.neon ? 0.05f : th.dark ? 0.14f : 0.35f},
+               {w * 0.85f, h * 0.1f, (w > h ? w : h) * 0.30f, th.neon ? 0xFF6633u : th.glow, th.neon ? 0.10f : th.dark ? 0.04f : 0.10f}};
+    ID2D1SolidColorBrush* b = nullptr;
+    for (auto& x : bl) {
+        const int steps = 24; // anéis concêntricos com pouca opacidade = degradê radial suave
+        for (int i = steps; i >= 1; --i) {
+            float r = x.r * i / steps;
+            if (SUCCEEDED(rt->CreateSolidColorBrush(Rgba(x.c, x.a / steps * 1.6f), &b))) { rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x.x, x.y), r, r), b); b->Release(); }
+        }
+    }
 }
 
 // Desfoque "acrylic" atrás da janela (funciona mesmo com a janela inativa). Retorna false se indisponível.
@@ -228,7 +268,7 @@ public:
         float k = h - 4 * s, x = on ? r.right - 2 * s - k : r.left + 2 * s;
         D2D1_RECT_F kr = D2D1::RectF(x, r.top + 2 * s, x + k, r.top + 2 * s + k);
         Fill(D2D1::RectF(kr.left, kr.top + 1 * s, kr.right, kr.bottom + 1 * s), k / 2, Rgba(0x000000, 0.18f));
-        Fill(kr, k / 2, th.knob);
+        Fill(kr, k / 2, on ? th.knobOn : th.knob);
     }
     // Controle segmentado; retorna nada, quem chama guarda os retângulos de cada parte.
     void Segmented(const D2D1_RECT_F& r, const std::wstring* labels, int n, int sel, int hot, D2D1_RECT_F* parts) {
@@ -239,7 +279,7 @@ public:
             D2D1_RECT_F p = D2D1::RectF(r.left + 2 * s + i * w, r.top + 2 * s, r.left + 2 * s + (i + 1) * w, r.bottom - 2 * s);
             parts[i] = p;
             if (i == sel) {
-                Fill(p, (h - 4 * s) / 2, th.neon ? Rgba(0xFF6633, 0.18f) : th.dark ? Rgba(0x636366) : Rgba(0xFFFFFF));
+                Fill(p, (h - 4 * s) / 2, th.neon ? Rgba(0xFF6633, 0.18f) : th.dark ? Rgba(0xFFFFFF, 0.14f) : Rgba(0xFFFFFF));
                 Stroke(p, (h - 4 * s) / 2, th.neon ? th.accent : th.stroke);
             }
             else if (i == hot) Fill(p, (h - 4 * s) / 2, Rgba(th.dark ? 0xFFFFFF : 0x000000, 0.06f));
