@@ -1,8 +1,10 @@
+DesignThumbs.zip
+*.obj
 *.exp
 *.lib
-*.obj
-*.res
-*.res.o
 DesignThumbs-*.zip
+*.res.o
+*.res
 DesignThumbs-Setup.exe
-DesignThumbs.zip
+*.res.o
+build/

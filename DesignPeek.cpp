@@ -19,7 +19,9 @@
 #include <exdisp.h>
 #include <shobjidl.h>
 #include <dwmapi.h>
+#include <commctrl.h>
 #include "Convert.h" // antes do dwrite.h (ordem dos headers do MinGW)
+#include "Jobs.h"
 #include <dwrite.h>
 #include "Ui.h"
 #include "Update.h"
@@ -654,7 +656,16 @@ static int g_toastAction;          // clique: 0 mostra os arquivos, 1 instala a 
 static upd::Release g_release;
 static UINT g_toastDone, g_toastTotal;
 static std::vector<std::wstring> g_toastOutputs;
-static int g_altHot = -1;
+static void ShowAltPopup();
+static void HideAltPopup();
+static std::wstring g_jobLabel;
+
+static bool CursorOver(HWND h) {
+    if (!h || !IsWindowVisible(h)) return false;
+    POINT pt; GetCursorPos(&pt);
+    RECT rc; GetWindowRect(h, &rc);
+    return PtInRect(&rc, pt) != 0;
+}
 static ULONGLONG g_altDownAt;
 static bool g_altFired;          // botões já mostrados neste toque
 
@@ -670,28 +681,6 @@ static void ShowToast(const std::wstring& title, const std::wstring& text, DWORD
     InvalidateRect(g_toastWnd, nullptr, TRUE);
     KillTimer(g_toastWnd, kToastTimer);
     if (hideAfterMs) SetTimer(g_toastWnd, kToastTimer, hideAfterMs, nullptr);
-}
-
-static void StartConversion(conv::Kind kind) {
-    if (g_converting) { ShowToast(T(L"Aguarde", L"Please wait", L"Espera"), T(L"Já há uma conversão em andamento.", L"A conversion is already running.", L"Ya hay una conversión en curso."), 3000, 0); return; }
-    std::vector<std::wstring> files = g_convFiles;
-    if (files.empty()) return;
-    g_converting = true;
-    g_toastOutputs.clear();
-    static const wchar_t* names[] = {L"PNG", L"JPG", L"PDF"};
-    g_toastDone = 0; g_toastTotal = (UINT)files.size();
-    ShowToast(std::wstring(T(L"Convertendo para ", L"Converting to ", L"Convirtiendo a ")) + names[kind], T(L"Preparando…", L"Preparing…", L"Preparando…"), 0, 0);
-    conv::Options opt;
-    opt.quality = g_cfg.quality / 100.0f;
-    opt.dpi = g_cfg.dpi300 ? 300 : 72;
-    opt.pdfRaw = g_cfg.pdfRaw;
-    HWND wnd = g_wnd;
-    std::thread([files, kind, opt, wnd] {
-        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-        auto* r = new conv::Result(conv::Convert(files, kind, opt, [wnd](size_t d, size_t t) { PostMessage(wnd, WM_CONV_PROGRESS, d, t); }));
-        if (!PostMessage(wnd, WM_CONV_DONE, kind, (LPARAM)r)) delete r;
-        CoUninitialize();
-    }).detach();
 }
 
 // Procura versão nova (no máximo uma vez por dia, exceto quando pedido nas configurações).
@@ -714,31 +703,6 @@ static void CheckForUpdates(bool manual) {
             if (!PostMessage(wnd, WM_UPDATE_FOUND, 0, (LPARAM)p)) delete p;
         } else if (manual) PostMessage(wnd, WM_UPDATE_NONE, ok, 0);
     }).detach();
-}
-
-static void HideAltPopup() { if (g_altWnd && IsWindowVisible(g_altWnd)) ShowWindow(g_altWnd, SW_HIDE); g_altHot = -1; }
-
-static void ShowAltPopup() {
-    SyncSelectionOrder(g_defView);
-    g_convFiles = g_selOrder;
-    if (g_convFiles.empty()) return;
-    POINT pt; GetCursorPos(&pt);
-    float ui = GetDpiForWindow(g_defView) / 96.0f;
-    int w = (int)(330 * ui), h = (int)(112 * ui);
-    MONITORINFO mi = {sizeof(mi)};
-    GetMonitorInfoW(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi);
-    int x = max((int)mi.rcWork.left, min((int)mi.rcWork.right - w, (int)pt.x - w / 2));
-    int y = pt.y - h - (int)(14 * ui);
-    if (y < mi.rcWork.top) y = pt.y + (int)(20 * ui); // sem espaço acima: mostra abaixo do cursor
-    SetWindowPos(g_altWnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-    InvalidateRect(g_altWnd, nullptr, TRUE);
-}
-
-static bool CursorOver(HWND h) {
-    if (!h || !IsWindowVisible(h)) return false;
-    POINT pt; GetCursorPos(&pt);
-    RECT rc; GetWindowRect(h, &rc);
-    return PtInRect(&rc, pt) != 0;
 }
 
 // Alt segurado parado por g_cfg.altDelay ms com a lista de arquivos em foco mostra os botões.
@@ -1059,7 +1023,7 @@ static void Paint() {
 static void ApplyTheme() {
     bool dark = ui::SystemDark();
     bool glass = true;
-    for (HWND w : {g_wnd, g_altWnd, g_toastWnd, g_settingsWnd})
+    for (HWND w : {g_wnd, g_toastWnd, g_settingsWnd})
         if (w) glass &= ui::EnableGlass(w, dark);
     g_theme = ui::MakeTheme(dark, glass);
     SafeRelease(g_checker);
@@ -1081,16 +1045,13 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
     case WM_CONV_DONE: {
-        auto* r = (conv::Result*)lp;
+        auto* r = (jobs::Result*)lp;
         g_converting = false;
         g_toastOutputs = r->outputs;
-        static const wchar_t* names[] = {L"PNG", L"JPG", L"PDF"};
-        wchar_t t[160];
-        if (r->outputs.empty()) ShowToast(T(L"Não foi possível converter", L"Couldn't convert", L"No se pudo convertir"), T(L"Nenhum arquivo gerou imagem.", L"No file produced an image.", L"Ningún archivo generó imagen."), 6000, 2);
+        if (r->outputs.empty()) ShowToast(T(L"Não foi possível concluir", L"Couldn't finish", L"No se pudo completar"), g_jobLabel, 6000, 2);
         else {
-            if (wp == conv::kPdf) swprintf(t, 160, L"%ls", PathFindFileNameW(r->outputs[0].c_str()));
-            else swprintf(t, 160, T(L"%u arquivo(s) %ls", L"%u %ls file(s)", L"%u archivo(s) %ls"), (unsigned)r->outputs.size(), names[wp]);
-            std::wstring text = t;
+            std::wstring text = r->outputs.size() == 1 ? std::wstring(PathFindFileNameW(r->outputs[0].c_str()))
+                                                       : std::to_wstring(r->outputs.size()) + T(L" arquivos gerados", L" files created", L" archivos generados");
             if (r->failed) text += L"  ·  " + std::to_wstring(r->failed) + T(L" com erro", L" failed", L" con error");
             g_toastAction = 0;
             ShowToast(T(L"Pronto · clique para ver na pasta", L"Done · click to show in folder", L"Listo · clic para ver en la carpeta"), text, 7000, 1);
@@ -1226,80 +1187,788 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 
 // ---------- botões do Alt e aviso (vidro, Direct2D) ----------
 
-static ui::Surface g_altSurf, g_toastSurf, g_setSurf;
+static ui::Surface g_toastSurf, g_setSurf;
 
 static float WndScale(HWND h) { return GetDpiForWindow(h) / 96.0f; }
 
-static D2D1_RECT_F AltButton(HWND h, int i) {
-    RECT rc; GetClientRect(h, &rc);
-    float s = WndScale(h), pad = 12 * s, gap = 8 * s, top = 38 * s;
-    float bw = (rc.right - 2 * pad - 2 * gap) / 3;
-    return D2D1::RectF(pad + i * (bw + gap), top, pad + i * (bw + gap) + bw, rc.bottom - pad);
+// ---------- execução das ações (em segundo plano, com aviso de progresso) ----------
+
+struct Batch { std::vector<std::wstring> files; jobs::Job job; };
+
+static jobs::Job BaseJob() {
+    jobs::Job j;
+    j.quality = g_cfg.quality / 100.0f;
+    j.dpi = g_cfg.dpi300 ? 300 : 72;
+    j.pdfRaw = g_cfg.pdfRaw;
+    return j;
+}
+
+static void StartBatches(std::vector<Batch> batches, const std::wstring& label) {
+    if (g_converting) { ShowToast(T(L"Aguarde", L"Please wait", L"Espera"), T(L"Já há uma conversão em andamento.", L"A conversion is already running.", L"Ya hay una conversión en curso."), 3000, 0); return; }
+    size_t total = 0;
+    for (auto& b : batches) total += b.files.size();
+    if (!total) return;
+    g_converting = true;
+    g_toastOutputs.clear();
+    g_jobLabel = label;
+    g_toastDone = 0; g_toastTotal = (UINT)total;
+    g_toastAction = 0;
+    ShowToast(label, T(L"Preparando…", L"Preparing…", L"Preparando…"), 0, 0);
+    HWND wnd = g_wnd;
+    std::thread([batches, total, wnd] {
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        auto* all = new jobs::Result;
+        size_t base = 0;
+        for (auto& b : batches) {
+            jobs::Result r = jobs::Run(b.files, b.job, [wnd, base, total](size_t d, size_t) { PostMessage(wnd, WM_CONV_PROGRESS, base + d, total); });
+            all->outputs.insert(all->outputs.end(), r.outputs.begin(), r.outputs.end());
+            all->failed += r.failed;
+            base += b.files.size();
+        }
+        if (!PostMessage(wnd, WM_CONV_DONE, 0, (LPARAM)all)) delete all;
+        CoUninitialize();
+    }).detach();
+}
+
+static void StartJob(const std::vector<std::wstring>& files, const jobs::Job& j, const std::wstring& label) { StartBatches({{files, j}}, label); }
+
+// ---------- predefinições (%LOCALAPPDATA%\DesignThumbs\predefinicoes.txt) ----------
+
+struct Preset { std::wstring name; ops::Format format; UINT maxPx, quality, dpi; };
+
+static std::wstring DataFile(const wchar_t* name, const char* defaultUtf8) {
+    wchar_t dir[MAX_PATH];
+    if (!GetEnvironmentVariableW(L"LOCALAPPDATA", dir, MAX_PATH)) return L"";
+    std::wstring d = std::wstring(dir) + L"\\DesignThumbs";
+    CreateDirectoryW(d.c_str(), nullptr);
+    std::wstring f = d + L"\\" + name;
+    if (GetFileAttributesW(f.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        HANDLE h = CreateFileW(f.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h != INVALID_HANDLE_VALUE) { DWORD w; WriteFile(h, defaultUtf8, (DWORD)strlen(defaultUtf8), &w, nullptr); CloseHandle(h); }
+    }
+    return f;
+}
+
+static std::wstring PresetsPath() {
+    return DataFile(L"predefinicoes.txt",
+        "\xEF\xBB\xBF" "# Predefinições do menu circular (segure Alt). Uma por linha:\r\n"
+        "# Nome | formato | maior lado em px (0 = original) | qualidade % | dpi\r\n"
+        "# Formatos: png, jpg, webp, tiff, gif, bmp, ico, pdf\r\n"
+        "WhatsApp | jpg | 1600 | 80\r\n"
+        "Instagram | jpg | 1080 | 90\r\n"
+        "Web | webp | 1920 | 82\r\n"
+        "E-mail | jpg | 1280 | 75\r\n"
+        "Impressão | pdf | 0 | 95 | 300\r\n"
+        "Ícone | ico\r\n");
+}
+
+static std::vector<Preset> LoadPresets() {
+    std::vector<Preset> out;
+    HANDLE h = CreateFileW(PresetsPath().c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return out;
+    char buf[16384]; DWORD n = 0;
+    ReadFile(h, buf, sizeof(buf) - 1, &n, nullptr);
+    CloseHandle(h);
+    std::string txt(buf, n);
+    if (txt.compare(0, 3, "\xEF\xBB\xBF") == 0) txt.erase(0, 3);
+    std::wstring w = fmt::Widen(txt), line;
+    auto trim = [](std::wstring s) { s.erase(0, s.find_first_not_of(L" \t")); s.erase(s.find_last_not_of(L" \t") + 1); return s; };
+    for (wchar_t c : w + L"\n") {
+        if (c != L'\n' && c != L'\r') { line += c; continue; }
+        line = trim(line);
+        if (!line.empty() && line[0] != L'#') {
+            std::vector<std::wstring> f;
+            size_t p = 0;
+            for (;;) { size_t e = line.find(L'|', p); f.push_back(trim(line.substr(p, e == std::wstring::npos ? std::wstring::npos : e - p))); if (e == std::wstring::npos) break; p = e + 1; }
+            std::wstring fm = f.size() > 1 ? Lower(f[1]) : L"png";
+            static const wchar_t* names[] = {L"png", L"jpg", L"pdf", L"webp", L"tiff", L"bmp", L"gif", L"ico"};
+            int fi = -1;
+            for (int i = 0; i < 8; ++i) if (fm == names[i]) fi = i;
+            if (fm == L"jpeg") fi = ops::kJpg;
+            if (fm == L"tif") fi = ops::kTiff;
+            if (!f[0].empty() && fi >= 0 && out.size() < 10)
+                out.push_back({f[0], (ops::Format)fi, f.size() > 2 ? (UINT)_wtoi(f[2].c_str()) : 0u,
+                               f.size() > 3 && _wtoi(f[3].c_str()) ? (UINT)_wtoi(f[3].c_str()) : g_cfg.quality,
+                               f.size() > 4 && _wtoi(f[4].c_str()) ? (UINT)_wtoi(f[4].c_str()) : (g_cfg.dpi300 ? 300u : 72u)});
+        }
+        line.clear();
+    }
+    return out;
+}
+
+// ---------- tipos de arquivo da seleção ----------
+
+enum { kSelImage = 1, kSelPdf = 2, kSelPsd = 4, kSelPalette = 8, kSelFont = 16 };
+
+static UINT SelectionKinds(const std::vector<std::wstring>& files) {
+    static const wchar_t* images[] = {L".jpg", L".jpeg", L".jfif", L".png", L".bmp", L".gif", L".tif", L".tiff", L".webp", L".heic", L".heif",
+                                      L".avif", L".jxl", L".ico", L".jxr", L".wdp", L".dds"};
+    UINT k = 0;
+    for (auto& f : files) {
+        std::wstring e = conv::ExtOf(f);
+        if (e == L".pdf" || e == L".ai") k |= kSelPdf | kSelImage;
+        else if (e == L".psd" || e == L".psb") k |= kSelPsd | kSelImage;
+        else if (fmt::IsPaletteExt(e)) k |= kSelPalette;
+        else if (fmt::IsFontExt(e)) k |= kSelFont;
+        else if (fmt::Handles(e) || fmt::InList(e, images, ARRAYSIZE(images))) k |= kSelImage;
+    }
+    return k;
+}
+
+// ---------- menu circular (segurar Alt) ----------
+
+struct Slice { std::wstring label; const wchar_t* icon; std::function<void()> act; };
+struct Side { std::wstring name; std::vector<Slice> items; };
+static std::vector<Side> g_sides;
+static int g_side, g_ringHot = -2;   // -1 = centro (troca de lado), -2 = nada
+static BYTE g_ringAlpha;
+static float g_ringScale = 1;
+
+static void OpenResizeDialog();
+static void OpenPagesDialog();
+static void OpenCropEditor();
+
+static void BuildSides() {
+    g_sides.clear();
+    const std::vector<std::wstring>& files = g_convFiles;
+    UINT k = SelectionKinds(files);
+    auto job = [](jobs::Action a) { jobs::Job j = BaseJob(); j.action = a; return j; };
+    auto run = [](jobs::Job j, std::wstring label) { return [j, label] { StartJob(g_convFiles, j, label); }; };
+
+    if (k & (kSelImage | kSelPalette | kSelFont)) {
+        Side s{T(L"Converter", L"Convert", L"Convertir"), {}};
+        static const ops::Format order[] = {ops::kPng, ops::kJpg, ops::kPdf, ops::kWebp, ops::kTiff, ops::kIco, ops::kGif, ops::kBmp};
+        for (ops::Format f : order) {
+            jobs::Job j = BaseJob(); j.format = f;
+            std::wstring name = ops::Name(f);
+            const wchar_t* icon = f == ops::kPdf ? L"" : f == ops::kIco ? L"" : L"";
+            if (f == ops::kPdf && files.size() > 1) name += L" ×" + std::to_wstring(files.size());
+            s.items.push_back({name, icon, run(j, std::wstring(T(L"Convertendo para ", L"Converting to ", L"Convirtiendo a ")) + ops::Name(f))});
+        }
+        g_sides.push_back(s);
+    }
+    if (k & kSelImage) {
+        Side s{T(L"Ferramentas", L"Tools", L"Herramientas"), {}};
+        s.items.push_back({T(L"Redimensionar", L"Resize", L"Redimensionar"), L"", [] { OpenResizeDialog(); }});
+        if (k & ~kSelPdf) s.items.push_back({T(L"Recortar", L"Crop", L"Recortar"), L"", [] { OpenCropEditor(); }});
+        jobs::Job j = job(jobs::kEditSame);
+        j.edit.rotate = 90; j.suffix = T(L"(girado)", L"(rotated)", L"(girado)");
+        s.items.push_back({T(L"Girar 90°", L"Rotate 90°", L"Girar 90°"), L"", run(j, T(L"Girando", L"Rotating", L"Girando"))});
+        j = job(jobs::kEditSame); j.edit.flipH = true; j.suffix = T(L"(espelhado)", L"(mirrored)", L"(espejado)");
+        s.items.push_back({T(L"Espelhar", L"Mirror", L"Espejar"), L"", run(j, T(L"Espelhando", L"Mirroring", L"Espejando"))});
+        j = job(jobs::kEditSame); j.edit.gray = true; j.suffix = T(L"(cinza)", L"(grayscale)", L"(gris)");
+        s.items.push_back({T(L"Tons de cinza", L"Grayscale", L"Escala de grises"), L"", run(j, T(L"Convertendo para cinza", L"Converting to grayscale", L"Convirtiendo a grises"))});
+        j = job(jobs::kEditSame); j.suffix = T(L"(sem metadados)", L"(no metadata)", L"(sin metadatos)");
+        s.items.push_back({T(L"Sem metadados", L"Strip metadata", L"Sin metadatos"), L"", run(j, T(L"Removendo metadados", L"Removing metadata", L"Quitando metadatos"))});
+        g_sides.push_back(s);
+    }
+    if (k & kSelPdf) {
+        Side s{L"PDF", {}};
+        if (files.size() > 1) {
+            jobs::Job j = BaseJob(); j.format = ops::kPdf;
+            s.items.push_back({T(L"Juntar", L"Merge", L"Unir"), L"", run(j, T(L"Juntando PDFs", L"Merging PDFs", L"Uniendo PDFs"))});
+        }
+        s.items.push_back({T(L"Dividir", L"Split", L"Dividir"), L"", run(job(jobs::kPdfSplit), T(L"Dividindo PDF", L"Splitting PDF", L"Dividiendo PDF"))});
+        s.items.push_back({T(L"Páginas…", L"Pages…", L"Páginas…"), L"", [] { OpenPagesDialog(); }});
+        jobs::Job j = job(jobs::kPdfCompress); j.suffix = T(L"(comprimido)", L"(compressed)", L"(comprimido)");
+        s.items.push_back({T(L"Comprimir", L"Compress", L"Comprimir"), L"", run(j, T(L"Comprimindo PDF", L"Compressing PDF", L"Comprimiendo PDF"))});
+        g_sides.push_back(s);
+    }
+    if (k & (kSelPsd | kSelPalette | kSelFont)) {
+        Side s{T(L"Extras", L"Extras", L"Extras"), {}};
+        if (k & kSelPsd) {
+            jobs::Job j = job(jobs::kPsdLayers); j.suffix = T(L"- camadas", L"- layers", L"- capas");
+            s.items.push_back({T(L"Camadas", L"Layers", L"Capas"), L"", run(j, T(L"Exportando camadas", L"Exporting layers", L"Exportando capas"))});
+        }
+        if (k & kSelPalette) {
+            jobs::Job j = job(jobs::kPaletteSheet); j.suffix = T(L"(folha)", L"(sheet)", L"(hoja)");
+            s.items.push_back({T(L"Folha de cores", L"Color sheet", L"Hoja de colores"), L"", run(j, T(L"Gerando folha de cores", L"Building color sheet", L"Generando hoja de colores"))});
+            s.items.push_back({L"HEX / CSS", L"", run(job(jobs::kPaletteText), T(L"Gerando lista de cores", L"Building color list", L"Generando lista de colores"))});
+            s.items.push_back({L"ASE ⇄ ACO", L"", run(job(jobs::kPaletteSwap), T(L"Convertendo paleta", L"Converting palette", L"Convirtiendo paleta"))});
+        }
+        if (k & kSelFont) {
+            jobs::Job j = job(jobs::kFontSheet); j.suffix = T(L"(amostra)", L"(specimen)", L"(muestra)");
+            s.items.push_back({T(L"Folha da fonte", L"Font specimen", L"Muestra de fuente"), L"", run(j, T(L"Gerando amostra", L"Building specimen", L"Generando muestra"))});
+        }
+        g_sides.push_back(s);
+    }
+    if (k & kSelImage) {
+        std::vector<Preset> presets = LoadPresets();
+        if (!presets.empty()) {
+            Side s{T(L"Predefinições", L"Presets", L"Ajustes"), {}};
+            for (auto& p : presets) {
+                jobs::Job j = BaseJob();
+                j.format = p.format; j.quality = p.quality / 100.0f; j.dpi = p.dpi;
+                j.edit.maxW = j.edit.maxH = p.maxPx;
+                j.suffix = L"(" + p.name + L")";
+                s.items.push_back({p.name, L"", run(j, p.name)});
+            }
+            g_sides.push_back(s);
+        }
+    }
+    if (g_side >= (int)g_sides.size()) g_side = 0;
+}
+
+// Geometria do anel (em pixels da janela).
+static float RingS() { return 400 * g_ringScale; }
+static float RingIn() { return 64 * g_ringScale; }
+static float RingOut() { return 180 * g_ringScale; }
+
+static int RingHit(POINT p) {
+    float c = RingS() / 2, dx = p.x - c, dy = p.y - c, r = sqrtf(dx * dx + dy * dy);
+    if (r < RingIn() - 4 * g_ringScale) return -1;
+    if (r > RingOut() + 6 * g_ringScale || g_sides.empty()) return -2;
+    size_t n = g_sides[g_side].items.size();
+    if (!n) return -2;
+    float step = 2 * 3.14159265f / n, a = atan2f(dy, dx) + 3.14159265f / 2 + step / 2; // 0 = item no topo
+    while (a < 0) a += 2 * 3.14159265f;
+    return (int)(a / step) % (int)n;
+}
+
+static void RenderRing() {
+    if (!g_altWnd || g_sides.empty()) return;
+    UINT S = (UINT)RingS();
+    fmt::Canvas cv(S, S); // bitmap com transparência (janela "layered", sem moldura)
+    if (!cv.rt) return;
+    ID2D1RenderTarget* rt = cv.rt;
+    rt->Clear(D2D1::ColorF(0, 0));
+    rt->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+    const ui::Theme& th = g_theme;
+    float s = g_ringScale, c = S / 2.0f, rIn = RingIn(), rOut = RingOut();
+    ID2D1Factory* fac = nullptr; rt->GetFactory(&fac);
+    ID2D1SolidColorBrush* br = nullptr;
+    auto fill = [&](ID2D1Geometry* g, D2D1_COLOR_F col) { rt->CreateSolidColorBrush(col, &br); rt->FillGeometry(g, br); br->Release(); };
+    auto ellipse = [&](float r, D2D1_COLOR_F col, bool stroke = false) {
+        rt->CreateSolidColorBrush(col, &br);
+        if (stroke) rt->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(c, c), r, r), br, 1 * s); else rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(c, c), r, r), br);
+        br->Release();
+    };
+    // sombra suave + disco de vidro
+    for (int i = 4; i >= 1; --i) ellipse(rOut + i * 4 * s, ui::Rgba(0x000000, th.dark ? 0.06f : 0.03f));
+    ellipse(rOut, th.dark ? ui::Rgba(0x1C1C1E, 0.94f) : ui::Rgba(0xF5F5F7, 0.96f));
+    ellipse(rOut, th.stroke, true);
+    const Side& side = g_sides[g_side];
+    size_t n = side.items.size();
+    float step = 2 * 3.14159265f / max<size_t>(1, n);
+    ui::Painter p(rt, g_dw, th, s);
+    for (size_t i = 0; i < n; ++i) {
+        float a0 = -3.14159265f / 2 - step / 2 + i * step, a1 = a0 + step, am = (a0 + a1) / 2;
+        if ((int)i == g_ringHot) { // fatia destacada
+            ID2D1PathGeometry* g = nullptr; ID2D1GeometrySink* k = nullptr;
+            fac->CreatePathGeometry(&g); g->Open(&k);
+            float gap = 2.5f * s / rOut;
+            auto pt = [&](float r, float a) { return D2D1::Point2F(c + r * cosf(a), c + r * sinf(a)); };
+            float ri = rIn + 3 * s, ro = rOut - 5 * s;
+            k->BeginFigure(pt(ri, a0 + gap), D2D1_FIGURE_BEGIN_FILLED);
+            const int seg = 24; // arcos aproximados por segmentos (mesmo resultado em qualquer renderizador)
+            for (int q = 0; q <= seg; ++q) k->AddLine(pt(ro, a0 + gap + (step - 2 * gap) * q / seg));
+            for (int q = seg; q >= 0; --q) k->AddLine(pt(ri, a0 + gap + (step - 2 * gap) * q / seg));
+            k->EndFigure(D2D1_FIGURE_END_CLOSED); k->Close();
+            fill(g, th.accent);
+            k->Release(); g->Release();
+        } else if (n > 1) { // divisória fina
+            rt->CreateSolidColorBrush(th.stroke, &br);
+            rt->DrawLine(D2D1::Point2F(c + (rIn + 10 * s) * cosf(a0), c + (rIn + 10 * s) * sinf(a0)),
+                         D2D1::Point2F(c + (rOut - 12 * s) * cosf(a0), c + (rOut - 12 * s) * sinf(a0)), br, 1 * s);
+            br->Release();
+        }
+        float rm = (rIn + rOut) / 2 + 4 * s, cx = c + rm * cosf(am), cy = c + rm * sinf(am);
+        D2D1_COLOR_F col = (int)i == g_ringHot ? th.onAccent : th.text;
+        float bw = min(rm * step * 0.95f, 92 * s);
+        p.Icon(side.items[i].icon, D2D1::RectF(cx - 20 * s, cy - 24 * s, cx + 20 * s, cy - 2 * s), 17, col);
+        p.Text(side.items[i].label, D2D1::RectF(cx - bw / 2, cy, cx + bw / 2, cy + 18 * s), 11.5f, col, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+    }
+    // centro: nome do lado, quantidade e indicador de lados
+    ellipse(rIn - 6 * s, g_ringHot == -1 ? th.panelHot : th.panel);
+    ellipse(rIn - 6 * s, th.stroke, true);
+    p.Text(side.name, D2D1::RectF(c - rIn, c - 22 * s, c + rIn, c - 2 * s), 12.5f, th.text, DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+    std::wstring cnt = std::to_wstring(g_convFiles.size()) + (g_convFiles.size() == 1 ? T(L" arquivo", L" file", L" archivo") : T(L" arquivos", L" files", L" archivos"));
+    p.Text(cnt, D2D1::RectF(c - rIn, c - 2 * s, c + rIn, c + 14 * s), 10.5f, th.text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
+    if (g_sides.size() > 1) {
+        float dot = 5 * s, gapd = 5 * s, total = g_sides.size() * dot + (g_sides.size() - 1) * gapd, x = c - total / 2;
+        for (size_t i = 0; i < g_sides.size(); ++i, x += dot + gapd) {
+            rt->CreateSolidColorBrush((int)i == g_side ? th.accent : th.track, &br);
+            rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x + dot / 2, c + 26 * s), dot / 2, dot / 2), br);
+            br->Release();
+        }
+    }
+    fac->Release();
+    HBITMAP bmp = nullptr;
+    if (FAILED(cv.Finish(&bmp)) || !bmp) return;
+    RECT wr; GetWindowRect(g_altWnd, &wr);
+    HDC screen = GetDC(nullptr), mem = CreateCompatibleDC(screen);
+    HGDIOBJ old = SelectObject(mem, bmp);
+    POINT pos = {wr.left, wr.top}, zero = {0, 0};
+    SIZE size = {(LONG)S, (LONG)S};
+    BLENDFUNCTION bf = {AC_SRC_OVER, 0, g_ringAlpha, AC_SRC_ALPHA};
+    UpdateLayeredWindow(g_altWnd, screen, &pos, &size, mem, &zero, 0, &bf, ULW_ALPHA);
+    SelectObject(mem, old);
+    DeleteDC(mem); ReleaseDC(nullptr, screen);
+    DeleteObject(bmp);
+}
+
+static void HideAltPopup() { if (g_altWnd && IsWindowVisible(g_altWnd)) ShowWindow(g_altWnd, SW_HIDE); g_ringHot = -2; }
+
+static void ShowAltPopup() {
+    SyncSelectionOrder(g_defView);
+    g_convFiles = g_selOrder;
+    if (g_convFiles.empty()) return;
+    BuildSides();
+    if (g_sides.empty()) return;
+    POINT pt; GetCursorPos(&pt);
+    g_ringScale = GetDpiForWindow(g_defView) / 96.0f;
+    int S = (int)RingS();
+    MONITORINFO mi = {sizeof(mi)};
+    GetMonitorInfoW(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi);
+    int x = max((int)mi.rcWork.left, min((int)mi.rcWork.right - S, (int)pt.x - S / 2));
+    int y = max((int)mi.rcWork.top, min((int)mi.rcWork.bottom - S, (int)pt.y - S / 2));
+    g_ringHot = -2;
+    g_ringAlpha = 60;
+    SetWindowPos(g_altWnd, HWND_TOPMOST, x, y, S, S, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    RenderRing();
+    SetTimer(g_altWnd, 1, 15, nullptr); // aparece suavemente
 }
 
 static LRESULT CALLBACK AltProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_MOUSEACTIVATE: return MA_NOACTIVATE;
+    case WM_NCHITTEST: { // fora do disco, os cliques passam para o que está atrás
+        POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+        ScreenToClient(h, &p);
+        return RingHit(p) == -2 ? HTTRANSPARENT : HTCLIENT;
+    }
+    case WM_TIMER:
+        g_ringAlpha = (BYTE)min(255, g_ringAlpha + 65);
+        RenderRing();
+        if (g_ringAlpha == 255) KillTimer(h, 1);
+        return 0;
     case WM_MOUSEMOVE: {
         POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
-        int hotNow = -1;
-        for (int i = 0; i < 3; ++i) if (ui::Hit(AltButton(h, i), p)) hotNow = i;
-        if (hotNow != g_altHot) { g_altHot = hotNow; InvalidateRect(h, nullptr, FALSE); }
+        int hot = RingHit(p);
+        if (hot != g_ringHot) { g_ringHot = hot; RenderRing(); }
         TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, h, 0};
         TrackMouseEvent(&tme);
         return 0;
     }
-    case WM_SETCURSOR: SetCursor(LoadCursor(nullptr, g_altHot >= 0 ? IDC_HAND : IDC_ARROW)); return TRUE;
+    case WM_SETCURSOR: SetCursor(LoadCursor(nullptr, g_ringHot >= -1 ? IDC_HAND : IDC_ARROW)); return TRUE;
+    case WM_MOUSEWHEEL: // roda do mouse: troca de lado
+        if (g_sides.size() > 1) {
+            int n = (int)g_sides.size();
+            g_side = (g_side + (GET_WHEEL_DELTA_WPARAM(wp) < 0 ? 1 : n - 1)) % n;
+            g_ringHot = -2;
+            RenderRing();
+        }
+        return 0;
     case WM_MOUSELEAVE:
-        g_altHot = -1;
+        g_ringHot = -2;
         if (GetAsyncKeyState(VK_MENU) >= 0) HideAltPopup(); // soltou o Alt e saiu de cima: some
-        else InvalidateRect(h, nullptr, FALSE);
+        else RenderRing();
         return 0;
     case WM_LBUTTONUP: {
         POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
-        for (int i = 0; i < 3; ++i)
-            if (ui::Hit(AltButton(h, i), p)) { HideAltPopup(); StartConversion((conv::Kind)i); break; }
-        return 0;
-    }
-    case WM_SIZE: g_altSurf.Resize(LOWORD(lp), HIWORD(lp)); return 0;
-    case WM_ERASEBKGND: return 1;
-    case WM_PAINT: {
-        PAINTSTRUCT ps;
-        BeginPaint(h, &ps);
-        g_altSurf.hwnd = h;
-        if (g_altSurf.Begin(g_d2d)) {
-            float s = WndScale(h);
-            ID2D1RenderTarget* rt = g_altSurf.rt;
-            D2D1_SIZE_F sz = rt->GetSize();
-            rt->Clear(g_theme.tint);
-            ui::Painter p(rt, g_dw, g_theme, s);
-            p.Stroke(D2D1::RectF(0, 0, sz.width, sz.height), 8 * s, g_theme.stroke);
-            size_t n = g_convFiles.size();
-            std::wstring conv = T(L"Converter", L"Convert", L"Convertir");
-            std::wstring title = n == 1 ? conv + L" “" + std::wstring(PathFindFileNameW(g_convFiles[0].c_str())) + L"”"
-                                        : conv + L" " + std::to_wstring(n) + T(L" arquivos", L" files", L" archivos");
-            p.Text(title, D2D1::RectF(16 * s, 6 * s, sz.width - 16 * s, 34 * s), 12, g_theme.text2, DWRITE_FONT_WEIGHT_SEMI_BOLD);
-            static const wchar_t* labels[] = {L"PNG", L"JPG", L"PDF"};
-            static const wchar_t* icons[] = {L"", L"", L""};
-            for (int i = 0; i < 3; ++i) {
-                D2D1_RECT_F r = AltButton(h, i);
-                bool hot = g_altHot == i;
-                float rad = 14 * s;
-                if (hot) p.Fill(r, rad, g_theme.accent); else p.Glass(r, rad);
-                D2D1_COLOR_F c = hot ? g_theme.onAccent : g_theme.text;
-                bool sub = i == 2 && n > 1;
-                p.Icon(icons[i], D2D1::RectF(r.left, r.top + 6 * s, r.right, r.top + 28 * s), 16, c);
-                p.Text(labels[i], D2D1::RectF(r.left, r.top + 26 * s, r.right, r.top + (sub ? 44 : 50) * s), 13, c, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
-                if (sub) p.Text(std::to_wstring(n) + T(L" páginas", L" pages", L" páginas"), D2D1::RectF(r.left, r.top + 42 * s, r.right, r.bottom - 4 * s), 10,
-                                hot ? g_theme.onAccent : g_theme.text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
-            }
-            g_altSurf.End();
+        int hit = RingHit(p);
+        if (hit == -1 && g_sides.size() > 1) { g_side = (g_side + 1) % (int)g_sides.size(); RenderRing(); return 0; }
+        if (hit >= 0 && hit < (int)g_sides[g_side].items.size()) {
+            auto act = g_sides[g_side].items[hit].act;
+            HideAltPopup();
+            act();
         }
-        EndPaint(h, &ps);
         return 0;
     }
+    case WM_RBUTTONUP: HideAltPopup(); return 0;
     }
     return DefWindowProcW(h, msg, wp, lp);
+}
+
+// ---------- diálogos: redimensionar e páginas ----------
+
+static HWND g_dlgWnd, g_dlgEdit;
+static int g_dlgMode;                 // 0 redimensionar, 1 páginas
+static int g_dlgFormat;               // redimensionar: 0 manter, 1 JPG, 2 PNG, 3 WEBP
+static int g_dlgHot;
+static std::vector<std::pair<int, D2D1_RECT_F>> g_dlgHits;
+static ui::Surface g_dlgSurf;
+static HBRUSH g_dlgEditBrush;
+static HFONT g_dlgFont;
+static const UINT kResizeChoices[] = {25, 50, 75, 1080, 1600, 1920, 2048, 3840}; // até 100: porcentagem; acima: maior lado em px
+
+static void CloseDialog() { if (g_dlgWnd) DestroyWindow(g_dlgWnd); }
+
+static void DialogAction(int id) {
+    if (id == 1) { CloseDialog(); return; }                                 // cancelar
+    if (id >= 10 && id < 14) { g_dlgFormat = id - 10; InvalidateRect(g_dlgWnd, nullptr, FALSE); return; }
+    jobs::Job j = BaseJob();
+    if (g_dlgMode == 0 && id >= 20 && id < 20 + (int)ARRAYSIZE(kResizeChoices)) {
+        UINT v = kResizeChoices[id - 20];
+        if (v <= 100) { j.edit.scalePct = v; j.suffix = L"(" + std::to_wstring(v) + L"%)"; }
+        else { j.edit.maxW = j.edit.maxH = v; j.suffix = L"(" + std::to_wstring(v) + L"px)"; }
+        static const ops::Format fmts[] = {ops::kPng, ops::kJpg, ops::kPng, ops::kWebp};
+        if (g_dlgFormat == 0) j.action = jobs::kEditSame; else j.format = fmts[g_dlgFormat];
+        CloseDialog();
+        StartJob(g_convFiles, j, T(L"Redimensionando", L"Resizing", L"Redimensionando"));
+        return;
+    }
+    if (g_dlgMode == 1 && id == 2) { // extrair páginas
+        wchar_t buf[256] = {};
+        GetWindowTextW(g_dlgEdit, buf, 256);
+        j.action = jobs::kPdfExtract;
+        j.pages = buf;
+        j.suffix = std::wstring(L"(p") + buf + L")";
+        for (auto& c : j.suffix) if (c == L',' || c == L' ') c = c == L',' ? L'_' : c;
+        CloseDialog();
+        StartJob(g_convFiles, j, T(L"Extraindo páginas", L"Extracting pages", L"Extrayendo páginas"));
+    }
+}
+
+static void PaintDialog(HWND h) {
+    g_dlgSurf.hwnd = h;
+    if (!g_dlgSurf.Begin(g_d2d)) return;
+    float s = WndScale(h);
+    ID2D1RenderTarget* rt = g_dlgSurf.rt;
+    D2D1_SIZE_F sz = rt->GetSize();
+    const ui::Theme& th = g_theme;
+    rt->Clear(th.tint);
+    ui::Painter p(rt, g_dw, th, s);
+    g_dlgHits.clear();
+    auto hit = [&](int id, D2D1_RECT_F r) { g_dlgHits.push_back({id, r}); return g_dlgHot == id; };
+    float x = 24 * s, w = sz.width - 48 * s, y = 22 * s;
+    std::wstring title = g_dlgMode == 0 ? T(L"Redimensionar", L"Resize", L"Redimensionar") : T(L"Extrair páginas", L"Extract pages", L"Extraer páginas");
+    p.Text(title, D2D1::RectF(x, y, x + w, y + 28 * s), 18, th.text, DWRITE_FONT_WEIGHT_BOLD);
+    std::wstring sub = std::to_wstring(g_convFiles.size()) + (g_convFiles.size() == 1 ? T(L" arquivo", L" file", L" archivo") : T(L" arquivos", L" files", L" archivos"));
+    p.Text(sub, D2D1::RectF(x, y + 28 * s, x + w, y + 46 * s), 12, th.text2);
+    y += 62 * s;
+    if (g_dlgMode == 0) {
+        float bw = (w - 3 * 8 * s) / 4, bh = 38 * s;
+        for (int i = 0; i < (int)ARRAYSIZE(kResizeChoices); ++i) {
+            UINT v = kResizeChoices[i];
+            D2D1_RECT_F r = D2D1::RectF(x + (i % 4) * (bw + 8 * s), y + (i / 4) * (bh + 8 * s), x + (i % 4) * (bw + 8 * s) + bw, y + (i / 4) * (bh + 8 * s) + bh);
+            p.Pill(r, std::to_wstring(v) + (v <= 100 ? L"%" : L" px"), hit(20 + i, r));
+        }
+        y += 2 * (bh + 8 * s) + 10 * s;
+        p.Text(T(L"Formato", L"Format", L"Formato"), D2D1::RectF(x, y, x + 120 * s, y + 32 * s), 13, th.text);
+        D2D1_RECT_F seg = D2D1::RectF(x + w - 280 * s, y, x + w, y + 32 * s), parts[4];
+        std::wstring l[4] = {T(L"Manter", L"Keep", L"Mantener"), L"JPG", L"PNG", L"WEBP"};
+        p.Segmented(seg, l, 4, g_dlgFormat, g_dlgHot >= 10 && g_dlgHot < 14 ? g_dlgHot - 10 : -1, parts);
+        for (int i = 0; i < 4; ++i) hit(10 + i, parts[i]);
+        y += 48 * s;
+        p.Text(T(L"Porcentagem reduz/amplia; px limita o maior lado.", L"Percent scales; px limits the longest side.", L"Porcentaje escala; px limita el lado mayor."),
+               D2D1::RectF(x, y, x + w, y + 18 * s), 11, th.text2);
+    } else {
+        p.Text(T(L"Exemplos: 1-3   ·   2, 5, 9   ·   4-", L"Examples: 1-3   ·   2, 5, 9   ·   4-", L"Ejemplos: 1-3   ·   2, 5, 9   ·   4-"), D2D1::RectF(x, y, x + w, y + 20 * s), 12, th.text2);
+        y += 28 * s;
+        D2D1_RECT_F box = D2D1::RectF(x, y, x + w - 130 * s, y + 36 * s);
+        p.Fill(box, 10 * s, th.dark ? ui::Rgba(0x2C2C2E) : ui::Rgba(0xFFFFFF));
+        p.Stroke(box, 10 * s, th.stroke);
+        if (g_dlgEdit) SetWindowPos(g_dlgEdit, nullptr, (int)(box.left + 12 * s), (int)(box.top + 8 * s), (int)(box.right - box.left - 24 * s), (int)(20 * s), SWP_NOZORDER | SWP_NOACTIVATE);
+        D2D1_RECT_F go = D2D1::RectF(x + w - 120 * s, y, x + w, y + 36 * s);
+        p.Pill(go, T(L"Extrair", L"Extract", L"Extraer"), hit(2, go), true);
+    }
+    D2D1_RECT_F cancel = D2D1::RectF(sz.width - 24 * s - 110 * s, sz.height - 52 * s, sz.width - 24 * s, sz.height - 18 * s);
+    p.Pill(cancel, T(L"Cancelar", L"Cancel", L"Cancelar"), hit(1, cancel));
+    p.Stroke(D2D1::RectF(0, 0, sz.width, sz.height), 8 * s, th.stroke);
+    g_dlgSurf.End();
+}
+
+static LRESULT CALLBACK DialogProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_NCHITTEST: {
+        POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+        ScreenToClient(h, &pt);
+        for (auto& e : g_dlgHits) if (ui::Hit(e.second, pt)) return HTCLIENT;
+        return pt.y < 70 * WndScale(h) ? HTCAPTION : HTCLIENT;
+    }
+    case WM_MOUSEMOVE: {
+        POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+        int hot = 0;
+        for (auto& e : g_dlgHits) if (ui::Hit(e.second, pt)) hot = e.first;
+        if (hot != g_dlgHot) { g_dlgHot = hot; InvalidateRect(h, nullptr, FALSE); }
+        TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, h, 0};
+        TrackMouseEvent(&tme);
+        return 0;
+    }
+    case WM_MOUSELEAVE: if (g_dlgHot) { g_dlgHot = 0; InvalidateRect(h, nullptr, FALSE); } return 0;
+    case WM_SETCURSOR: if (LOWORD(lp) == HTCLIENT) { SetCursor(LoadCursor(nullptr, g_dlgHot ? IDC_HAND : IDC_ARROW)); return TRUE; } break;
+    case WM_LBUTTONUP: {
+        POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+        for (auto& e : g_dlgHits) if (ui::Hit(e.second, pt)) { DialogAction(e.first); break; }
+        return 0;
+    }
+    case WM_CTLCOLOREDIT: {
+        HDC dc = (HDC)wp;
+        COLORREF bg = g_theme.dark ? RGB(0x2C, 0x2C, 0x2E) : RGB(255, 255, 255);
+        SetBkColor(dc, bg);
+        SetTextColor(dc, g_theme.dark ? RGB(245, 245, 245) : RGB(29, 29, 31));
+        if (!g_dlgEditBrush) g_dlgEditBrush = CreateSolidBrush(bg);
+        return (LRESULT)g_dlgEditBrush;
+    }
+    case WM_KEYDOWN: if (wp == VK_ESCAPE) CloseDialog(); return 0;
+    case WM_SIZE: g_dlgSurf.Resize(LOWORD(lp), HIWORD(lp)); return 0;
+    case WM_ERASEBKGND: return 1;
+    case WM_PAINT: { PAINTSTRUCT ps; BeginPaint(h, &ps); PaintDialog(h); EndPaint(h, &ps); return 0; }
+    case WM_DESTROY:
+        g_dlgSurf.Release(); g_dlgHits.clear(); g_dlgWnd = g_dlgEdit = nullptr;
+        if (g_dlgEditBrush) { DeleteObject(g_dlgEditBrush); g_dlgEditBrush = nullptr; }
+        if (g_dlgFont) { DeleteObject(g_dlgFont); g_dlgFont = nullptr; }
+        return 0;
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
+static void OpenDialog(int mode) {
+    CloseDialog();
+    g_dlgMode = mode; g_dlgHot = 0; g_dlgFormat = 0;
+    POINT pt; GetCursorPos(&pt);
+    MONITORINFO mi = {sizeof(mi)};
+    GetMonitorInfoW(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi);
+    float s = g_defView ? GetDpiForWindow(g_defView) / 96.0f : 1;
+    int w = (int)(460 * s), h = (int)((mode == 0 ? 330 : 230) * s);
+    int x = max((int)mi.rcWork.left, min((int)mi.rcWork.right - w, (int)pt.x - w / 2));
+    int y = max((int)mi.rcWork.top, min((int)mi.rcWork.bottom - h, (int)pt.y - h / 2));
+    g_dlgWnd = CreateWindowExW(WS_EX_TOPMOST, L"DesignPeekDialog", L"DesignPeek", WS_POPUP, x, y, w, h, nullptr, nullptr, g_inst, nullptr);
+    ui::EnableGlass(g_dlgWnd, g_theme.dark);
+    if (mode == 1) {
+        g_dlgEdit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0, 0, 10, 10, g_dlgWnd, nullptr, g_inst, nullptr);
+        g_dlgFont = CreateFontW(-(int)(14 * s), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+        SendMessageW(g_dlgEdit, WM_SETFONT, (WPARAM)g_dlgFont, TRUE);
+        SetWindowTextW(g_dlgEdit, L"");
+    }
+    ShowWindow(g_dlgWnd, SW_SHOW);
+    SetForegroundWindow(g_dlgWnd);
+    if (g_dlgEdit) { SetFocus(g_dlgEdit); SendMessageW(g_dlgEdit, EM_SETSEL, 0, -1); }
+}
+
+static void OpenResizeDialog() { OpenDialog(0); }
+static void OpenPagesDialog() { OpenDialog(1); }
+
+// ---------- editor de recorte (uma imagem por vez) ----------
+
+static HWND g_cropWnd;
+static ui::Surface g_cropSurf;
+static ID2D1Bitmap* g_cropGpu;
+static HBITMAP g_cropBmp;
+static size_t g_cropIndex;
+static std::vector<std::pair<std::wstring, ops::Edit>> g_cropDone;
+static D2D1_RECT_F g_cropRect = {0.1f, 0.1f, 0.9f, 0.9f}; // normalizado
+static int g_cropAspect;   // 0 livre, 1 1:1, 2 4:5, 3 3:2, 4 16:9, 5 9:16
+static int g_cropDrag;     // 0 nada, 1 mover, 2..5 cantos
+static POINT g_cropFrom;
+static D2D1_RECT_F g_cropStart, g_cropImg;
+static int g_cropHot;
+static std::vector<std::pair<int, D2D1_RECT_F>> g_cropHits;
+static const float kAspects[] = {0, 1, 4.0f / 5, 3.0f / 2, 16.0f / 9, 9.0f / 16};
+
+static void CropApplyAspect(bool fromTopLeft) {
+    if (!g_cropAspect || !g_cropBmp) return;
+    float iw = g_cropImg.right - g_cropImg.left, ih = g_cropImg.bottom - g_cropImg.top;
+    float a = kAspects[g_cropAspect] * ih / iw; // proporção em coordenadas normalizadas
+    D2D1_RECT_F& r = g_cropRect;
+    float w = r.right - r.left, h = r.bottom - r.top;
+    if (w / h > a) w = h * a; else h = w / a;
+    if (fromTopLeft) { r.right = r.left + w; r.bottom = r.top + h; }
+    else { float cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2; r = D2D1::RectF(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2); }
+    if (r.left < 0) { r.right -= r.left; r.left = 0; }
+    if (r.top < 0) { r.bottom -= r.top; r.top = 0; }
+    if (r.right > 1) { r.left -= r.right - 1; r.right = 1; }
+    if (r.bottom > 1) { r.top -= r.bottom - 1; r.bottom = 1; }
+}
+
+static bool CropLoad() {
+    SafeRelease(g_cropGpu);
+    if (g_cropBmp) { DeleteObject(g_cropBmp); g_cropBmp = nullptr; }
+    while (g_cropIndex < g_convFiles.size()) {
+        bool alpha; int pages;
+        if (conv::RenderFile(g_convFiles[g_cropIndex], 2048, 0, &g_cropBmp, &alpha, &pages)) break;
+        ++g_cropIndex;
+    }
+    g_cropRect = D2D1::RectF(0.1f, 0.1f, 0.9f, 0.9f);
+    if (g_cropWnd) InvalidateRect(g_cropWnd, nullptr, FALSE);
+    return g_cropBmp != nullptr;
+}
+
+static void CropNext(bool apply) {
+    if (apply) {
+        ops::Edit e;
+        e.crop = true;
+        e.cx0 = max(0.0f, g_cropRect.left); e.cy0 = max(0.0f, g_cropRect.top); e.cx1 = min(1.0f, g_cropRect.right); e.cy1 = min(1.0f, g_cropRect.bottom);
+        g_cropDone.push_back({g_convFiles[g_cropIndex], e});
+    }
+    ++g_cropIndex;
+    if (g_cropIndex < g_convFiles.size() && CropLoad()) { CropApplyAspect(false); return; }
+    // terminou: executa os recortes, cada arquivo com o seu
+    std::vector<Batch> batches;
+    for (auto& d : g_cropDone) {
+        jobs::Job j = BaseJob();
+        j.action = jobs::kEditSame; j.edit = d.second; j.suffix = T(L"(recorte)", L"(cropped)", L"(recorte)");
+        batches.push_back({{d.first}, j});
+    }
+    DestroyWindow(g_cropWnd);
+    if (!batches.empty()) StartBatches(batches, T(L"Recortando", L"Cropping", L"Recortando"));
+}
+
+static void PaintCrop(HWND h) {
+    g_cropSurf.hwnd = h;
+    if (!g_cropSurf.Begin(g_d2d)) return;
+    float s = WndScale(h);
+    ID2D1RenderTarget* rt = g_cropSurf.rt;
+    D2D1_SIZE_F sz = rt->GetSize();
+    const ui::Theme& th = g_theme;
+    rt->Clear(th.tint);
+    ui::Painter p(rt, g_dw, th, s);
+    g_cropHits.clear();
+    auto hit = [&](int id, D2D1_RECT_F r) { g_cropHits.push_back({id, r}); return g_cropHot == id; };
+    std::wstring title = std::wstring(T(L"Recortar", L"Crop", L"Recortar")) + L"  ·  " + PathFindFileNameW(g_convFiles[min(g_cropIndex, g_convFiles.size() - 1)].c_str());
+    p.Text(title, D2D1::RectF(20 * s, 12 * s, sz.width - 140 * s, 40 * s), 14, th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+    p.Text(std::to_wstring(g_cropIndex + 1) + L" / " + std::to_wstring(g_convFiles.size()), D2D1::RectF(sz.width - 140 * s, 12 * s, sz.width - 20 * s, 40 * s), 12, th.text2,
+           DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
+    if (g_cropBmp && !g_cropGpu) {
+        BYTE* px; UINT w, hh;
+        if (ops::Pixels(g_cropBmp, &px, &w, &hh))
+            rt->CreateBitmap(D2D1::SizeU(w, hh), px, w * 4, D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)), &g_cropGpu);
+    }
+    D2D1_RECT_F area = D2D1::RectF(20 * s, 52 * s, sz.width - 20 * s, sz.height - 70 * s);
+    if (g_cropGpu) {
+        D2D1_SIZE_F bs = g_cropGpu->GetSize();
+        float k = min((area.right - area.left) / bs.width, (area.bottom - area.top) / bs.height);
+        float w = bs.width * k, hh = bs.height * k, cx = (area.left + area.right) / 2, cy = (area.top + area.bottom) / 2;
+        g_cropImg = D2D1::RectF(cx - w / 2, cy - hh / 2, cx + w / 2, cy + hh / 2);
+        rt->DrawBitmap(g_cropGpu, g_cropImg, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        D2D1_RECT_F c = D2D1::RectF(g_cropImg.left + g_cropRect.left * w, g_cropImg.top + g_cropRect.top * hh, g_cropImg.left + g_cropRect.right * w, g_cropImg.top + g_cropRect.bottom * hh);
+        ID2D1SolidColorBrush* dim = nullptr; rt->CreateSolidColorBrush(ui::Rgba(0x000000, 0.55f), &dim);
+        rt->FillRectangle(D2D1::RectF(g_cropImg.left, g_cropImg.top, g_cropImg.right, c.top), dim);
+        rt->FillRectangle(D2D1::RectF(g_cropImg.left, c.bottom, g_cropImg.right, g_cropImg.bottom), dim);
+        rt->FillRectangle(D2D1::RectF(g_cropImg.left, c.top, c.left, c.bottom), dim);
+        rt->FillRectangle(D2D1::RectF(c.right, c.top, g_cropImg.right, c.bottom), dim);
+        dim->Release();
+        ID2D1SolidColorBrush* white = nullptr; rt->CreateSolidColorBrush(ui::Rgba(0xFFFFFF, 0.95f), &white);
+        rt->DrawRectangle(c, white, 1.5f * s);
+        white->SetOpacity(0.35f); // regra dos terços
+        for (int i = 1; i < 3; ++i) {
+            rt->DrawLine(D2D1::Point2F(c.left + (c.right - c.left) * i / 3, c.top), D2D1::Point2F(c.left + (c.right - c.left) * i / 3, c.bottom), white, 1);
+            rt->DrawLine(D2D1::Point2F(c.left, c.top + (c.bottom - c.top) * i / 3), D2D1::Point2F(c.right, c.top + (c.bottom - c.top) * i / 3), white, 1);
+        }
+        white->SetOpacity(1);
+        float hs = 7 * s;
+        for (D2D1_POINT_2F q : {D2D1::Point2F(c.left, c.top), D2D1::Point2F(c.right, c.top), D2D1::Point2F(c.left, c.bottom), D2D1::Point2F(c.right, c.bottom)})
+            rt->FillEllipse(D2D1::Ellipse(q, hs, hs), white);
+        white->Release();
+    }
+    float by = sz.height - 52 * s;
+    D2D1_RECT_F seg = D2D1::RectF(20 * s, by, 20 * s + 380 * s, by + 34 * s), parts[6];
+    std::wstring l[6] = {T(L"Livre", L"Free", L"Libre"), L"1:1", L"4:5", L"3:2", L"16:9", L"9:16"};
+    p.Segmented(seg, l, 6, g_cropAspect, g_cropHot >= 10 && g_cropHot < 16 ? g_cropHot - 10 : -1, parts);
+    for (int i = 0; i < 6; ++i) hit(10 + i, parts[i]);
+    D2D1_RECT_F ok = D2D1::RectF(sz.width - 20 * s - 120 * s, by, sz.width - 20 * s, by + 34 * s);
+    D2D1_RECT_F skip = D2D1::RectF(ok.left - 10 * s - 100 * s, by, ok.left - 10 * s, by + 34 * s);
+    p.Pill(ok, T(L"Aplicar", L"Apply", L"Aplicar"), hit(2, ok), true);
+    p.Pill(skip, T(L"Pular", L"Skip", L"Omitir"), hit(3, skip));
+    p.Stroke(D2D1::RectF(0, 0, sz.width, sz.height), 8 * s, th.stroke);
+    if (!g_cropSurf.End()) SafeRelease(g_cropGpu);
+}
+
+static int CropGrab(POINT pt) {
+    float w = g_cropImg.right - g_cropImg.left, h = g_cropImg.bottom - g_cropImg.top, tol = 14;
+    float l = g_cropImg.left + g_cropRect.left * w, t = g_cropImg.top + g_cropRect.top * h, r = g_cropImg.left + g_cropRect.right * w, b = g_cropImg.top + g_cropRect.bottom * h;
+    auto near_ = [&](float x, float y) { return fabsf(pt.x - x) < tol && fabsf(pt.y - y) < tol; };
+    if (near_(l, t)) return 2; if (near_(r, t)) return 3; if (near_(l, b)) return 4; if (near_(r, b)) return 5;
+    if (pt.x > l && pt.x < r && pt.y > t && pt.y < b) return 1;
+    return 0;
+}
+
+static LRESULT CALLBACK CropProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_NCHITTEST: {
+        POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+        ScreenToClient(h, &pt);
+        return pt.y < 46 * WndScale(h) ? HTCAPTION : HTCLIENT;
+    }
+    case WM_LBUTTONDOWN: {
+        POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+        for (auto& e : g_cropHits) if (ui::Hit(e.second, pt)) return 0;
+        g_cropDrag = CropGrab(pt);
+        g_cropFrom = pt; g_cropStart = g_cropRect;
+        if (g_cropDrag) SetCapture(h);
+        return 0;
+    }
+    case WM_MOUSEMOVE: {
+        POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+        if (g_cropDrag) {
+            float w = g_cropImg.right - g_cropImg.left, hh = g_cropImg.bottom - g_cropImg.top;
+            float dx = (pt.x - g_cropFrom.x) / w, dy = (pt.y - g_cropFrom.y) / hh;
+            D2D1_RECT_F r = g_cropStart;
+            if (g_cropDrag == 1) {
+                float cw = r.right - r.left, ch = r.bottom - r.top;
+                r.left = max(0.0f, min(1 - cw, r.left + dx)); r.top = max(0.0f, min(1 - ch, r.top + dy));
+                r.right = r.left + cw; r.bottom = r.top + ch;
+            } else {
+                if (g_cropDrag == 2 || g_cropDrag == 4) r.left = max(0.0f, min(r.right - 0.02f, r.left + dx));
+                if (g_cropDrag == 3 || g_cropDrag == 5) r.right = min(1.0f, max(r.left + 0.02f, r.right + dx));
+                if (g_cropDrag == 2 || g_cropDrag == 3) r.top = max(0.0f, min(r.bottom - 0.02f, r.top + dy));
+                if (g_cropDrag == 4 || g_cropDrag == 5) r.bottom = min(1.0f, max(r.top + 0.02f, r.bottom + dy));
+                if (g_cropAspect) { // mantém a proporção a partir do canto oposto
+                    float a = kAspects[g_cropAspect] * hh / w, cw = r.right - r.left, ch = cw / a;
+                    if (g_cropDrag == 2 || g_cropDrag == 3) r.top = r.bottom - ch; else r.bottom = r.top + ch;
+                    if (r.top < 0 || r.bottom > 1) { r = g_cropRect; }
+                }
+            }
+            g_cropRect = r;
+            InvalidateRect(h, nullptr, FALSE);
+        } else {
+            int hot = 0;
+            for (auto& e : g_cropHits) if (ui::Hit(e.second, pt)) hot = e.first;
+            if (hot != g_cropHot) { g_cropHot = hot; InvalidateRect(h, nullptr, FALSE); }
+        }
+        return 0;
+    }
+    case WM_SETCURSOR:
+        if (LOWORD(lp) == HTCLIENT) {
+            POINT pt; GetCursorPos(&pt); ScreenToClient(h, &pt);
+            int g = g_cropDrag ? g_cropDrag : CropGrab(pt);
+            SetCursor(LoadCursor(nullptr, g_cropHot ? IDC_HAND : g == 1 ? IDC_SIZEALL : g == 2 || g == 5 ? IDC_SIZENWSE : g ? IDC_SIZENESW : IDC_ARROW));
+            return TRUE;
+        }
+        break;
+    case WM_LBUTTONUP: {
+        POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+        if (g_cropDrag) { g_cropDrag = 0; ReleaseCapture(); return 0; }
+        for (auto& e : g_cropHits)
+            if (ui::Hit(e.second, pt)) {
+                if (e.first >= 10 && e.first < 16) { g_cropAspect = e.first - 10; CropApplyAspect(false); InvalidateRect(h, nullptr, FALSE); }
+                else if (e.first == 2) CropNext(true);
+                else if (e.first == 3) CropNext(false);
+                break;
+            }
+        return 0;
+    }
+    case WM_KEYDOWN:
+        if (wp == VK_ESCAPE) DestroyWindow(h);
+        else if (wp == VK_RETURN) CropNext(true);
+        return 0;
+    case WM_SIZE: g_cropSurf.Resize(LOWORD(lp), HIWORD(lp)); return 0;
+    case WM_ERASEBKGND: return 1;
+    case WM_PAINT: { PAINTSTRUCT ps; BeginPaint(h, &ps); PaintCrop(h); EndPaint(h, &ps); return 0; }
+    case WM_DESTROY:
+        g_cropSurf.Release(); SafeRelease(g_cropGpu);
+        if (g_cropBmp) { DeleteObject(g_cropBmp); g_cropBmp = nullptr; }
+        g_cropWnd = nullptr;
+        return 0;
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
+static void OpenCropEditor() {
+    if (g_cropWnd) DestroyWindow(g_cropWnd);
+    g_cropIndex = 0; g_cropDone.clear(); g_cropAspect = 0; g_cropDrag = 0; g_cropHot = 0;
+    if (!CropLoad()) return;
+    POINT pt; GetCursorPos(&pt);
+    MONITORINFO mi = {sizeof(mi)};
+    GetMonitorInfoW(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi);
+    int w = (int)((mi.rcWork.right - mi.rcWork.left) * 0.7), h = (int)((mi.rcWork.bottom - mi.rcWork.top) * 0.8);
+    g_cropWnd = CreateWindowExW(WS_EX_APPWINDOW, L"DesignPeekCrop", T(L"DesignPeek — Recortar", L"DesignPeek — Crop", L"DesignPeek — Recortar"), WS_POPUP,
+                                mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - w) / 2, mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - h) / 2, w, h,
+                                nullptr, nullptr, g_inst, nullptr);
+    ui::EnableGlass(g_cropWnd, g_theme.dark);
+    ShowWindow(g_cropWnd, SW_SHOW);
+    SetForegroundWindow(g_cropWnd);
 }
 
 // Mostra as saídas no Explorer (todas da mesma pasta selecionadas).
@@ -1384,7 +2053,9 @@ static void SetAutostart(bool on);
 static bool AutostartEnabled();
 
 enum { kTogSpace = 1, kTogAlt, kDelayMinus, kDelayPlus, kDpi72, kDpi300, kPdfSmall, kPdfRaw, kQualMinus, kQualPlus, kTogAuto, kBtnFolder, kBtnQuit, kBtnClose,
-       kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate };
+       kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate, kBtnPresets };
+
+static std::wstring PresetsPath();
 
 static std::vector<std::wstring> FolderList();
 static std::wstring FolderListPath(bool create);
@@ -1396,8 +2067,9 @@ static const wchar_t* kAbout =
     L"Preview com Espaço: selecione um arquivo e aperte Espaço. Setas trocam de arquivo, a roda do mouse dá zoom e arrastar move. "
     L"Z mostra em 100%, 0 ajusta, PgUp/PgDn troca páginas, Enter abre no programa e Ctrl+C copia a imagem. "
     L"Embaixo aparecem tamanho, DPI, cor, câmera e as fontes usadas (as que faltam ficam em vermelho).\n\n"
-    L"Conversão rápida: selecione arquivos e segure Alt para converter em PNG, JPG ou PDF. Com vários arquivos, o PDF segue "
-    L"a ordem em que você clicou neles.\n\n"
+    L"Menu circular: selecione arquivos e segure Alt. Converta para PNG, JPG, PDF, WEBP, TIFF, ICO, GIF ou BMP; use ferramentas "
+    L"(redimensionar, recortar, girar, cinza, sem metadados), PDF (juntar na ordem dos cliques, dividir, extrair páginas, comprimir), "
+    L"extras (camadas do PSD, folha de cores, HEX/CSS, ASE↔ACO, amostra de fonte) e predefinições. Gire a roda do mouse ou clique no centro para trocar de lado.\n\n"
     L"Conta-gotas: no preview, passe o mouse para ver o HEX da cor e clique para copiar (ótimo com paletas .ase/.aco).\n\n"
     L"Novo › Pasta Padrão Maker cria as pastas da lista (edite em Pasta Padrão Maker › Editar).\n\n"
     L"Leve: não escuta o teclado e só trabalha quando você pede.";
@@ -1408,7 +2080,9 @@ static const wchar_t* kAboutEn =
     L"Space preview: select a file and press Space. Arrows switch files, the mouse wheel zooms and dragging pans. "
     L"Z shows 100%, 0 fits, PgUp/PgDn change pages, Enter opens the file and Ctrl+C copies the image. "
     L"The bottom bar shows size, DPI, color, camera and the fonts used (missing ones in red).\n\n"
-    L"Quick convert: select files and hold Alt to convert to PNG, JPG or PDF. With several files, the PDF follows the order you clicked them.\n\n"
+    L"Radial menu: select files and hold Alt. Convert to PNG, JPG, PDF, WEBP, TIFF, ICO, GIF or BMP; use tools (resize, crop, rotate, grayscale, strip metadata), "
+    L"PDF (merge in click order, split, extract pages, compress), extras (PSD layers, color sheet, HEX/CSS, ASE↔ACO, font specimen) and presets. "
+    L"Scroll the mouse wheel or click the center to flip sides.\n\n"
     L"Color picker: in the preview, hover to see the HEX color and click to copy it (great with .ase/.aco palettes).\n\n"
     L"New › Maker folder set creates the folders on your list (edit it in Maker folder set › Edit).\n\n"
     L"Lightweight: it doesn't listen to the keyboard and only works when you ask.";
@@ -1419,7 +2093,9 @@ static const wchar_t* kAboutEs =
     L"Vista previa con Espacio: selecciona un archivo y pulsa Espacio. Las flechas cambian de archivo, la rueda del ratón hace zoom y arrastrar mueve. "
     L"Z muestra al 100%, 0 ajusta, RePág/AvPág cambian de página, Enter abre el archivo y Ctrl+C copia la imagen. "
     L"Abajo aparecen tamaño, DPI, color, cámara y las fuentes usadas (las que faltan en rojo).\n\n"
-    L"Conversión rápida: selecciona archivos y mantén Alt para convertir a PNG, JPG o PDF. Con varios archivos, el PDF sigue el orden en que hiciste clic.\n\n"
+    L"Menú circular: selecciona archivos y mantén Alt. Convierte a PNG, JPG, PDF, WEBP, TIFF, ICO, GIF o BMP; usa herramientas (redimensionar, recortar, girar, grises, sin metadatos), "
+    L"PDF (unir en el orden de clic, dividir, extraer páginas, comprimir), extras (capas de PSD, hoja de colores, HEX/CSS, ASE↔ACO, muestra de fuente) y ajustes. "
+    L"Gira la rueda del ratón o haz clic al centro para cambiar de lado.\n\n"
     L"Cuentagotas: en la vista previa, pasa el ratón para ver el color HEX y haz clic para copiarlo (ideal con paletas .ase/.aco).\n\n"
     L"Nuevo › Carpetas Maker crea las carpetas de tu lista (edítala en Carpetas Maker › Editar).\n\n"
     L"Ligero: no escucha el teclado y solo trabaja cuando lo pides.";
@@ -1449,6 +2125,7 @@ static void SettingsAction(int id) {
     }
     case kBtnQuit: DestroyWindow(g_settingsWnd); PostMessage(g_wnd, WM_CLOSE, 0, 0); return;
     case kTogPicker: g_cfg.picker = !g_cfg.picker; break;
+    case kBtnPresets: ShellExecuteW(nullptr, L"open", L"notepad.exe", (L"\"" + PresetsPath() + L"\"").c_str(), nullptr, SW_SHOWNORMAL); return;
     case kTogUpdate: g_cfg.autoUpdate = !g_cfg.autoUpdate; break;
     case kBtnUpdate: CheckForUpdates(true); return;
     case kBtnFolders: ShellExecuteW(nullptr, L"open", L"notepad.exe", (L"\"" + FolderListPath(true) + L"\"").c_str(), nullptr, SW_SHOWNORMAL); return;
@@ -1519,9 +2196,9 @@ static void PaintSettings(HWND h) {
     y = c.bottom + 22 * s;
 
     section(T(L"CONVERSÃO RÁPIDA", L"QUICK CONVERT", L"CONVERSIÓN RÁPIDA"));
-    c = card(5);
-    toggle(kTogAlt, c, label(0, c, T(L"Botões ao segurar Alt", L"Buttons when holding Alt", L"Botones al mantener Alt"),
-                             T(L"PNG, JPG ou PDF sobre o mouse", L"PNG, JPG or PDF above the mouse", L"PNG, JPG o PDF sobre el ratón")), g_cfg.alt);
+    c = card(6);
+    toggle(kTogAlt, c, label(0, c, T(L"Menu circular ao segurar Alt", L"Radial menu when holding Alt", L"Menú circular al mantener Alt"),
+                             T(L"Roda do mouse ou clique no centro troca de lado", L"Mouse wheel or center click flips sides", L"Rueda del ratón o clic al centro cambia de lado")), g_cfg.alt);
     {
         float ry = label(1, c, T(L"Tempo segurando", L"Hold time", L"Tiempo manteniendo"));
         D2D1_RECT_F r = rightBox(c, ry, 150 * s), mi, pl;
@@ -1549,6 +2226,11 @@ static void PaintSettings(HWND h) {
         int hot = g_setHot == kQualMinus ? 0 : g_setHot == kQualPlus ? 1 : -1;
         p.Stepper(r, std::to_wstring(g_cfg.quality) + L"%", hot, &mi, &pl);
         hit(kQualMinus, mi); hit(kQualPlus, pl);
+    }
+    {
+        float ry = label(5, c, T(L"Predefinições", L"Presets", L"Ajustes"), T(L"WhatsApp, Instagram, Web… (um por linha)", L"WhatsApp, Instagram, Web… (one per line)", L"WhatsApp, Instagram, Web… (uno por línea)"));
+        D2D1_RECT_F r = rightBox(c, ry, 90 * s);
+        p.Pill(r, T(L"Editar", L"Edit", L"Editar"), hit(kBtnPresets, r));
     }
     y = c.bottom + 22 * s;
 
@@ -1923,12 +2605,56 @@ static void SetAutostart(bool on);
 static void SetStartMenu(bool on);
 static void SetNewMenu(bool on);
 
+static int Uninstall(bool silent, bool ask = true);
+
+// Já instalado e o instalador foi aberto de novo: atualizar/reinstalar, desinstalar ou cancelar.
+static int InstallerChoice() {
+    wchar_t ver[32] = {}; DWORD sz = sizeof(ver);
+    RegGetValueW(HKEY_CURRENT_USER, kUninstKey, L"DisplayVersion", RRF_RT_REG_SZ, nullptr, ver, &sz);
+    std::wstring content = std::wstring(T(L"Versão instalada: ", L"Installed version: ", L"Versión instalada: ")) + ver + L"\n" +
+                           T(L"Versão deste instalador: ", L"This installer: ", L"Versión de este instalador: ") + upd::kVersion;
+    bool newer = upd::Compare(ver, upd::kVersion) < 0;
+    TASKDIALOG_BUTTON buttons[] = {
+        {100, newer ? T(L"Atualizar\nInstala a versão nova mantendo as configurações", L"Update\nInstalls the new version and keeps your settings", L"Actualizar\nInstala la versión nueva y mantiene la configuración")
+                    : T(L"Reinstalar\nInstala de novo, mantendo as configurações", L"Reinstall\nInstalls again and keeps your settings", L"Reinstalar\nInstala de nuevo y mantiene la configuración")},
+        {101, T(L"Desinstalar\nRemove o DesignThumbs deste computador", L"Uninstall\nRemoves DesignThumbs from this computer", L"Desinstalar\nElimina DesignThumbs de este equipo")},
+    };
+    TASKDIALOGCONFIG tc = {sizeof(tc)};
+    tc.dwFlags = TDF_USE_COMMAND_LINKS | TDF_ALLOW_DIALOG_CANCELLATION | TDF_POSITION_RELATIVE_TO_WINDOW;
+    tc.dwCommonButtons = TDCBF_CANCEL_BUTTON;
+    tc.pszWindowTitle = L"DesignThumbs";
+    tc.hInstance = g_inst;
+    tc.pszMainIcon = MAKEINTRESOURCEW(1);
+    tc.dwFlags |= 0; // ícone do programa (recurso 1)
+    tc.pszMainInstruction = T(L"O DesignThumbs já está instalado", L"DesignThumbs is already installed", L"DesignThumbs ya está instalado");
+    tc.pszContent = content.c_str();
+    tc.pButtons = buttons;
+    tc.cButtons = ARRAYSIZE(buttons);
+    tc.nDefaultButton = 100;
+    int pressed = IDCANCEL;
+    if (FAILED(TaskDialogIndirect(&tc, &pressed, nullptr, nullptr))) // sem a caixa moderna: pergunta simples
+        pressed = MessageBoxW(nullptr, T(L"O DesignThumbs já está instalado.\n\nSim = atualizar/reinstalar\nNão = desinstalar", L"DesignThumbs is already installed.\n\nYes = update/reinstall\nNo = uninstall",
+                                         L"DesignThumbs ya está instalado.\n\nSí = actualizar/reinstalar\nNo = desinstalar"), L"DesignThumbs", MB_YESNOCANCEL | MB_ICONQUESTION) == IDYES ? 100
+                  : IDCANCEL;
+    return pressed;
+}
+
 static int Install(bool silent) {
+    bool installed = false;
+    { HKEY k; if (RegOpenKeyExW(HKEY_CURRENT_USER, kUninstKey, 0, KEY_READ, &k) == ERROR_SUCCESS) { installed = true; RegCloseKey(k); } }
+    if (!silent && installed) {
+        int c = InstallerChoice();
+        if (c == 101) return Uninstall(false, false); // já escolheu na caixa: sem nova pergunta
+        if (c != 100) return 0;
+        silent = false;
+        goto install; // já confirmou: não pergunta de novo
+    }
     if (!silent && MessageBoxW(nullptr, T(L"Instalar o DesignThumbs?\n\nMiniaturas, painel de visualização e preview com Espaço para arquivos de design. Não precisa de administrador.\n\nPrivacidade: uma vez por dia o programa consulta o GitHub para ver se há versão nova (pode desligar nas configurações). Nenhum dado seu é enviado.",
                                          L"Install DesignThumbs?\n\nThumbnails, preview pane and Space preview for design files. No administrator needed.\n\nPrivacy: once a day the program checks GitHub for a new version (you can turn this off in settings). None of your data is sent.",
                                          L"¿Instalar DesignThumbs?\n\nMiniaturas, panel de vista previa y vista previa con Espacio para archivos de diseño. No requiere administrador.\n\nPrivacidad: una vez al día el programa consulta GitHub para ver si hay una versión nueva (se puede desactivar en la configuración). No se envía ningún dato tuyo."),
                                L"DesignThumbs", MB_YESNO | MB_ICONQUESTION) != IDYES)
         return 0;
+install:
     std::wstring dir = InstallDir();
     SHCreateDirectoryExW(nullptr, dir.c_str(), nullptr);
     QuitRunning();
@@ -1973,8 +2699,8 @@ static int Install(bool silent) {
     return 0;
 }
 
-static int Uninstall(bool silent) {
-    if (!silent && MessageBoxW(nullptr, T(L"Desinstalar o DesignThumbs?", L"Uninstall DesignThumbs?", L"¿Desinstalar DesignThumbs?"), L"DesignThumbs",
+static int Uninstall(bool silent, bool ask) {
+    if (!silent && ask && MessageBoxW(nullptr, T(L"Desinstalar o DesignThumbs?", L"Uninstall DesignThumbs?", L"¿Desinstalar DesignThumbs?"), L"DesignThumbs",
                                MB_YESNO | MB_ICONQUESTION) != IDYES)
         return 0;
     std::wstring dir = InstallDir();
@@ -2062,13 +2788,15 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     wc.style = 0;
     wc.lpfnWndProc = AltProc; wc.lpszClassName = L"DesignPeekAlt"; RegisterClassW(&wc);
     wc.lpfnWndProc = ToastProc; wc.lpszClassName = L"DesignPeekToast"; RegisterClassW(&wc);
+    wc.lpfnWndProc = DialogProc; wc.lpszClassName = L"DesignPeekDialog"; RegisterClassW(&wc);
+    wc.lpfnWndProc = CropProc; wc.lpszClassName = L"DesignPeekCrop"; RegisterClassW(&wc);
     wc.lpfnWndProc = SettingsProc; wc.lpszClassName = L"DesignPeekSettings";
     wc.hIcon = LoadIcon(inst, MAKEINTRESOURCE(1)); // ícone do programa
     RegisterClassW(&wc);
 
     DWORD exStyle = WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE;
     g_wnd = CreateWindowExW(exStyle, L"DesignPeekWnd", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
-    g_altWnd = CreateWindowExW(exStyle, L"DesignPeekAlt", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
+    g_altWnd = CreateWindowExW(exStyle | WS_EX_LAYERED, L"DesignPeekAlt", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
     g_toastWnd = CreateWindowExW(exStyle, L"DesignPeekToast", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
     ApplyTheme(); // vidro + tema claro/escuro do Windows
 
@@ -2079,6 +2807,30 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     UpdateHotkeys();
     if (args.find(L"/settings") != std::wstring::npos) OpenSettings();
     SetTimer(g_wnd, kUpdateTimer, 60 * 1000, nullptr); // primeira verificação um minuto depois de iniciar
+    // "/ring a b c" abre o menu circular para esses arquivos; "/resize", "/pages" e "/crop" abrem as ferramentas
+    for (const wchar_t* cmdName : {L"/ring ", L"/resize ", L"/pages ", L"/crop "}) {
+        size_t at = args.find(cmdName);
+        if (at == std::wstring::npos) continue;
+        int n = 0;
+        LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &n);
+        g_convFiles.clear();
+        for (int i = 1; i < n; ++i) if (argv[i][0] != L'/' && IsFile(argv[i])) g_convFiles.push_back(argv[i]);
+        LocalFree(argv);
+        if (g_convFiles.empty()) break;
+        std::wstring c = cmdName;
+        if (c == L"/ring ") {
+            BuildSides();
+            POINT pt; GetCursorPos(&pt);
+            g_ringScale = GetDpiForSystem() / 96.0f;
+            int S = (int)RingS();
+            g_ringAlpha = 255;
+            SetWindowPos(g_altWnd, HWND_TOPMOST, pt.x - S / 2, pt.y - S / 2, S, S, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+            RenderRing();
+        } else if (c == L"/resize ") OpenResizeDialog();
+        else if (c == L"/pages ") OpenPagesDialog();
+        else OpenCropEditor();
+        break;
+    }
     size_t peek = args.find(L"/peek ");
     if (peek != std::wstring::npos) { // abre um arquivo direto (útil em "Abrir com")
         std::wstring f = args.substr(peek + 6);
@@ -2087,6 +2839,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     }
     MSG m;
     while (GetMessageW(&m, nullptr, 0, 0) > 0) {
+        if (g_dlgEdit && m.hwnd == g_dlgEdit && m.message == WM_KEYDOWN && (m.wParam == VK_RETURN || m.wParam == VK_ESCAPE)) {
+            if (m.wParam == VK_RETURN) DialogAction(2); else CloseDialog();
+            continue;
+        }
         TranslateMessage(&m);
         DispatchMessageW(&m);
     }

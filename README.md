@@ -1,4 +1,3 @@
-
 # DesignThumbs
 
 **[⬇ Baixar o DesignThumbs (.zip)](https://github.com/thiagohcrispim-web/designthumbs/raw/main/dist/DesignThumbs.zip)** — extraia e execute `DesignThumbs-Setup.exe`.
@@ -51,18 +50,21 @@ usa um fundo sólido com o mesmo visual.
 A barra inferior mostra dimensões, DPI e tamanho de impressão, modo de cor, páginas, câmera, tamanho do arquivo, programa de origem
 e as **fontes** usadas em INDD/AI — as que não estão instaladas aparecem em vermelho com ⚠.
 
-## Converter com Alt
-Com um ou vários arquivos selecionados, segure **Alt** (~0,5 s) e clique em:
-- **PNG** / **JPG** — um arquivo por original (InDesign: um por página), salvo ao lado do original, na maior resolução disponível.
-- **PDF** — com um arquivo, um PDF; com vários, **um único PDF com as páginas na ordem em que você clicou nos arquivos**
-  (selecionou 1.jpg, depois 3.jpg e 2.jpg → páginas 1, 3, 2),
-  nomeado automaticamente como `primeiro arquivo (+N).pdf`. Um `.ai` sozinho é copiado como PDF (mantém o vetor).
+## Menu circular (segure Alt)
+Selecione arquivos no Explorer e segure **Alt**: um menu circular aparece em volta do mouse, só com o que serve para
+aqueles arquivos. **Gire a roda do mouse** (ou clique no centro) para trocar de lado:
 
-Resolução: **72 dpi** (padrão) ou **300 dpi** — documentos com tamanho físico (InDesign, Illustrator, SVG) são gerados nessa
-resolução; imagens mantêm seus pixels e recebem o DPI escolhido (no PDF, define o tamanho da página).
-PDF **comprimido** (JPEG, arquivo pequeno) ou **normal, sem compressão** (sem perda, arquivo grande).
+| Lado | O que tem |
+|---|---|
+| **Converter** | PNG, JPG, PDF, WEBP, TIFF (várias páginas), ICO (16–256 px), GIF, BMP |
+| **Ferramentas** | Redimensionar (25–75% ou 1080–3840 px), Recortar (com proporções 1:1, 4:5, 3:2, 16:9, 9:16), Girar 90°, Espelhar, Tons de cinza, Sem metadados |
+| **PDF** | Juntar (na ordem dos cliques, mantendo texto e vetores), Dividir, Extrair páginas (`1-3, 5, 8-`), Comprimir |
+| **Extras** | Camadas do PSD em PNG, Folha de cores (PNG + PDF), HEX/CSS, ASE ⇄ ACO, Folha de amostra da fonte |
+| **Predefinições** | WhatsApp, Instagram, Web, E-mail, Impressão, Ícone… editáveis em Configurações › Predefinições |
 
-Um aviso no canto da tela mostra o progresso; clique nele para abrir a pasta com os arquivos gerados.
+Os arquivos novos são salvos ao lado dos originais, sem sobrescrever nada. Resolução (72/300 dpi), qualidade e PDF
+comprimido ou sem compressão ficam nas configurações. Linha de comando: `DesignPeek.exe /ring arquivo…`
+(também `/resize`, `/pages`, `/crop`).
 
 ## Menu Novo › Pasta Padrão Maker
 Botão direito numa pasta › **Novo › Pasta Padrão Maker** (logo depois de Pasta e Atalho) cria as pastas da lista
@@ -78,7 +80,7 @@ Clique na engrenagem do preview, rode `DesignPeek.exe` de novo ou use o atalho "
 preview com Espaço, botões do Alt (e tempo), qualidade do JPG/PDF, 72/300 dpi, PDF comprimido ou sem compressão, iniciar com o Windows.
 
 ## Instalar
-Baixe e rode **DesignThumbs-Setup.exe** (não precisa de administrador). É o próprio DesignPeek com a DLL embutida:
+Baixe e rode **DesignThumbs-Setup.exe** (não precisa de administrador). Rodando de novo, ele oferece **atualizar/reinstalar** ou **desinstalar**. É o próprio DesignPeek com a DLL embutida:
 ele se copia para `%LOCALAPPDATA%\Programs\DesignThumbs`, registra as miniaturas e aparece em
 **Configurações › Aplicativos**, onde também se desinstala. Rodar uma versão nova por cima atualiza, sem reiniciar o Explorer.
 
@@ -116,6 +118,9 @@ se aplica a essa consulta: https://docs.github.com/site-policy/privacy-policies/
 (leitor de PDF, páginas, registro do painel Alt+P). Ctrl+C copia o texto da janela.
 
 ## Versões
+- **v9** — menu circular com lados (converter, ferramentas, PDF, extras, predefinições); WEBP, TIFF, ICO, GIF, BMP;
+  redimensionar, recortar, girar, espelhar, cinza, sem metadados; juntar/dividir/extrair PDF mantendo o original; comprimir PDF;
+  camadas do PSD, paletas (folha, HEX/CSS, ASE⇄ACO), amostra de fonte; instalador oferece desinstalar ao ser reaberto.
 - **v8.1** — instalador próprio (o DesignPeek se instala; sem NSIS), que não reinicia o Explorer; evita o alarme falso de "PUP" de antivírus.
 - **v8** — instalador (DesignThumbs-Setup.exe) com desinstalação pelo Windows; atualização automática; paletas .ase/.aco;
   fontes .ttf/.otf; conta-gotas no preview; Pasta Padrão Maker configurável; português, inglês e espanhol.

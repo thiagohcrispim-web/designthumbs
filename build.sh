@@ -8,6 +8,14 @@ RC=x86_64-w64-mingw32-windres
 FLAGS="-O2 -DUNICODE -D_UNICODE -static -s -Ithird_party/mingw-w64-headers"
 $RC -c 65001 DesignThumbs.rc -O coff -o DesignThumbs.res.o
 $CXX $FLAGS -shared -o DesignThumbs.dll DesignThumbs.cpp DesignThumbs.res.o DesignThumbs.def -lshlwapi -lwindowscodecs -ld2d1 -ldwrite -lole32 -luuid -lgdi32 -lruntimeobject -lshcore
+# libwebp (só o codificador): compila uma vez em build/webp
+mkdir -p build/webp
+if [ ! -f build/webp/libwebp.a ]; then
+  for f in third_party/libwebp/src/enc/*.c third_party/libwebp/src/dsp/*.c third_party/libwebp/src/utils/*.c third_party/libwebp/sharpyuv/*.c; do
+    x86_64-w64-mingw32-gcc -O2 -Ithird_party/libwebp -DWEBP_USE_THREAD -c "$f" -o "build/webp/$(echo "$f" | tr / _).o"
+  done
+  x86_64-w64-mingw32-ar rcs build/webp/libwebp.a build/webp/*.o
+fi
 $RC -c 65001 DesignPeek.rc -O coff -o DesignPeek.res.o # embute a DLL no EXE
-$CXX $FLAGS -municode -mwindows -D_WIN32_WINNT=0x0A00 -o DesignPeek.exe DesignPeek.cpp DesignPeek.res.o -lshlwapi -lole32 -loleaut32 -luuid -lgdi32 -ldwmapi -lshell32 -ld2d1 -ldwrite -lwindowscodecs -lruntimeobject -lshcore -lwinhttp -lurlmon
+$CXX $FLAGS -municode -mwindows -D_WIN32_WINNT=0x0A00 -o DesignPeek.exe DesignPeek.cpp DesignPeek.res.o build/webp/libwebp.a -lshlwapi -lole32 -loleaut32 -luuid -lgdi32 -ldwmapi -lshell32 -ld2d1 -ldwrite -lwindowscodecs -lruntimeobject -lshcore -lwinhttp -lurlmon -lcomctl32
 cp DesignPeek.exe DesignThumbs-Setup.exe # o próprio DesignPeek é o instalador
