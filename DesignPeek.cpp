@@ -1271,6 +1271,93 @@ static void StartBatches(std::vector<Batch> batches, const std::wstring& label) 
 
 static void StartJob(const std::vector<std::wstring>& files, const jobs::Job& j, const std::wstring& label) { StartBatches({{files, j}}, label); }
 
+// ZIP simples (sem compressão) para quando o tar.exe não existir; inclui subpastas.
+static bool WriteStoredZip(const std::wstring& out, const std::vector<std::wstring>& files, const std::wstring& dir) {
+    struct Entry { std::string name; uint32_t crc, size, offset; };
+    std::vector<Entry> entries;
+    FILE* z = _wfopen(out.c_str(), L"wb");
+    if (!z) return false;
+    static uint32_t table[256];
+    if (!table[1]) for (uint32_t i = 0; i < 256; ++i) { uint32_t c = i; for (int k = 0; k < 8; ++k) c = c & 1 ? 0xEDB88320u ^ (c >> 1) : c >> 1; table[i] = c; }
+    auto put16 = [&](uint16_t v) { fwrite(&v, 2, 1, z); };
+    auto put32 = [&](uint32_t v) { fwrite(&v, 4, 1, z); };
+    auto utf8 = [](const std::wstring& w) { int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr); std::string r(n > 0 ? n - 1 : 0, 0); if (n > 1) WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &r[0], n, nullptr, nullptr); return r; };
+    bool ok = true;
+    std::function<void(const std::wstring&, const std::wstring&)> add = [&](const std::wstring& path, const std::wstring& rel) {
+        DWORD at = GetFileAttributesW(path.c_str());
+        if (at == INVALID_FILE_ATTRIBUTES) return;
+        if (at & FILE_ATTRIBUTE_DIRECTORY) {
+            WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW((path + L"\\*").c_str(), &fd);
+            if (h == INVALID_HANDLE_VALUE) return;
+            do { if (wcscmp(fd.cFileName, L".") && wcscmp(fd.cFileName, L"..")) add(path + L"\\" + fd.cFileName, rel + L"/" + fd.cFileName); } while (FindNextFileW(h, &fd));
+            FindClose(h);
+            return;
+        }
+        FILE* f = _wfopen(path.c_str(), L"rb");
+        if (!f) { ok = false; return; }
+        std::vector<char> data; char buf[65536]; size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), f)) > 0) data.insert(data.end(), buf, buf + n);
+        fclose(f);
+        if (data.size() > 0xFFFFFFF0u) { ok = false; return; }
+        uint32_t crc = 0xFFFFFFFFu; for (char ch : data) crc = table[(crc ^ (uint8_t)ch) & 255] ^ (crc >> 8); crc ^= 0xFFFFFFFFu;
+        Entry e{utf8(rel), crc, (uint32_t)data.size(), (uint32_t)ftell(z)};
+        put32(0x04034b50); put16(20); put16(0x0800); put16(0); put16(0); put16(0x21); put32(e.crc); put32(e.size); put32(e.size);
+        put16((uint16_t)e.name.size()); put16(0); fwrite(e.name.data(), 1, e.name.size(), z);
+        if (!data.empty()) fwrite(data.data(), 1, data.size(), z);
+        entries.push_back(e);
+    };
+    for (auto& f : files) add(f, conv::DirOf(f) == dir ? std::wstring(PathFindFileNameW(f.c_str())) : std::wstring(PathFindFileNameW(f.c_str())));
+    uint32_t cd = (uint32_t)ftell(z);
+    for (auto& e : entries) {
+        put32(0x02014b50); put16(20); put16(20); put16(0x0800); put16(0); put16(0); put16(0x21); put32(e.crc); put32(e.size); put32(e.size);
+        put16((uint16_t)e.name.size()); put16(0); put16(0); put16(0); put16(0); put32(0); put32(e.offset); fwrite(e.name.data(), 1, e.name.size(), z);
+    }
+    uint32_t cdSize = (uint32_t)ftell(z) - cd;
+    put32(0x06054b50); put16(0); put16(0); put16((uint16_t)entries.size()); put16((uint16_t)entries.size()); put32(cdSize); put32(cd); put16(0);
+    fclose(z);
+    return ok && !entries.empty();
+}
+
+// Compacta os itens selecionados em um .zip na mesma pasta, usando o tar.exe que vem no Windows 10/11.
+static void StartZip(std::vector<std::wstring> files) {
+    if (g_converting) { ShowToast(T(L"Aguarde", L"Please wait", L"Espera"), T(L"Já há uma conversão em andamento.", L"A conversion is already running.", L"Ya hay una conversión en curso."), 3000, 0); return; }
+    if (files.empty()) return;
+    g_converting = true;
+    g_toastOutputs.clear();
+    g_jobLabel = T(L"Compactando em ZIP", L"Compressing to ZIP", L"Comprimiendo en ZIP");
+    g_toastDone = 0; g_toastTotal = (UINT)files.size(); g_toastAction = 0;
+    ShowToast(g_jobLabel, T(L"Preparando…", L"Preparing…", L"Preparando…"), 0, 0);
+    HWND wnd = g_wnd;
+    std::thread([files, wnd] {
+        auto* res = new jobs::Result;
+        std::wstring dir = conv::DirOf(files[0]);
+        std::wstring base;
+        if (files.size() == 1) { base = PathFindFileNameW(files[0].c_str()); size_t dot = base.rfind(L'.'); if (dot != std::wstring::npos && dot > 0 && !(GetFileAttributesW(files[0].c_str()) & FILE_ATTRIBUTE_DIRECTORY)) base.resize(dot); }
+        else { base = PathFindFileNameW(dir.c_str()); if (base.empty() || base.back() == L':') base = L"Arquivos"; }
+        std::wstring out = dir + L"\\" + base + L".zip";
+        for (int n = 2; GetFileAttributesW(out.c_str()) != INVALID_FILE_ATTRIBUTES; ++n) out = dir + L"\\" + base + L" (" + std::to_wstring(n) + L").zip";
+        wchar_t sys[MAX_PATH]; GetSystemDirectoryW(sys, MAX_PATH);
+        std::wstring cmd = L"\"" + std::wstring(sys) + L"\\tar.exe\" -a -c -f \"" + out + L"\"";
+        for (auto& f : files) {
+            std::wstring name = conv::DirOf(f) == dir ? std::wstring(PathFindFileNameW(f.c_str())) : f;
+            cmd += L" \"" + name + L"\"";
+        }
+        STARTUPINFOW si = {sizeof(si)}; si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION pi = {};
+        std::vector<wchar_t> buf(cmd.begin(), cmd.end()); buf.push_back(0);
+        DWORD code = 1;
+        if (CreateProcessW(nullptr, buf.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, dir.c_str(), &si, &pi)) {
+            WaitForSingleObject(pi.hProcess, INFINITE);
+            GetExitCodeProcess(pi.hProcess, &code);
+            CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+        }
+        if (code != 0) { DeleteFileW(out.c_str()); if (WriteStoredZip(out, files, dir)) code = 0; } // sem tar.exe: ZIP sem compressão
+        if (code == 0 && GetFileAttributesW(out.c_str()) != INVALID_FILE_ATTRIBUTES) res->outputs.push_back(out);
+        else { DeleteFileW(out.c_str()); res->failed = (int)files.size(); }
+        if (!PostMessage(wnd, WM_CONV_DONE, 0, (LPARAM)res)) delete res;
+    }).detach();
+}
+
 // ---------- predefinições (%LOCALAPPDATA%\DesignThumbs\predefinicoes.txt) ----------
 
 struct Preset { std::wstring name; ops::Format format; UINT maxPx, quality, dpi; };
@@ -1374,16 +1461,19 @@ static void BuildSides() {
     auto job = [](jobs::Action a) { jobs::Job j = BaseJob(); j.action = a; return j; };
     auto run = [](jobs::Job j, std::wstring label) { return [j, label] { StartJob(g_convFiles, j, label); }; };
 
-    if (k & (kSelImage | kSelPalette | kSelFont)) {
+    { // Converter: formatos (só para imagens, paletas e fontes) e ZIP (qualquer arquivo)
         Side s{T(L"Converter", L"Convert", L"Convertir"), {}};
-        static const ops::Format order[] = {ops::kPng, ops::kJpg, ops::kPdf, ops::kWebp, ops::kTiff, ops::kIco, ops::kGif, ops::kBmp};
-        for (ops::Format f : order) {
-            jobs::Job j = BaseJob(); j.format = f;
-            std::wstring name = ops::Name(f);
-            const wchar_t* icon = f == ops::kPdf ? L"" : f == ops::kIco ? L"" : L"";
-            if (f == ops::kPdf && files.size() > 1) name += L" ×" + std::to_wstring(files.size());
-            s.items.push_back({name, icon, run(j, std::wstring(T(L"Convertendo para ", L"Converting to ", L"Convirtiendo a ")) + ops::Name(f))});
+        if (k & (kSelImage | kSelPalette | kSelFont)) {
+            static const ops::Format order[] = {ops::kPng, ops::kJpg, ops::kPdf, ops::kWebp, ops::kTiff};
+            for (ops::Format f : order) {
+                jobs::Job j = BaseJob(); j.format = f;
+                std::wstring name = ops::Name(f);
+                const wchar_t* icon = f == ops::kPdf ? L"\uE8A5" : L"\uE91B";
+                if (f == ops::kPdf && files.size() > 1) name += L" \u00D7" + std::to_wstring(files.size());
+                s.items.push_back({name, icon, run(j, std::wstring(T(L"Convertendo para ", L"Converting to ", L"Convirtiendo a ")) + ops::Name(f))});
+            }
         }
+        s.items.push_back({L"ZIP", L"\uE7B8", [] { StartZip(g_convFiles); }});
         g_sides.push_back(s);
     }
     if (k & kSelImage) {
@@ -1430,20 +1520,6 @@ static void BuildSides() {
             s.items.push_back({T(L"Folha da fonte", L"Font specimen", L"Muestra de fuente"), L"", run(j, T(L"Gerando amostra", L"Building specimen", L"Generando muestra"))});
         }
         g_sides.push_back(s);
-    }
-    if (k & kSelImage) {
-        std::vector<Preset> presets = LoadPresets();
-        if (!presets.empty()) {
-            Side s{T(L"Predefinições", L"Presets", L"Ajustes"), {}};
-            for (auto& p : presets) {
-                jobs::Job j = BaseJob();
-                j.format = p.format; j.quality = j.webpQuality = p.quality / 100.0f; j.dpi = p.dpi;
-                j.edit.maxW = j.edit.maxH = p.maxPx;
-                j.suffix = L"(" + p.name + L")";
-                s.items.push_back({p.name, L"", run(j, p.name)});
-            }
-            g_sides.push_back(s);
-        }
     }
     if (g_side >= (int)g_sides.size()) g_side = 0;
 }
@@ -1531,9 +1607,9 @@ static void RenderRing() {
             float lineA, plate[3], plateShadeA, plateShade[3], wellA[3], wellB[3], wellRim[3], wellRimA;
             float hot[3], hotIn, hotOut, edge[3], edgeA, halo[3], haloA;
         } st;
-        if (crispy) st = {{30, 30, 33}, {5, 5, 6}, 0.98f, {140, 140, 150}, 0.6f, true, true, false, true, 0,
+        if (crispy) st = {{30, 30, 33}, {5, 5, 6}, 0.98f, {140, 140, 150}, 0.6f, false, true, false, false, 0,
                           {20, 20, 22}, 0.55f, {0, 0, 0}, {28, 28, 30}, {2, 2, 3}, {70, 70, 74}, 0.5f,
-                          {nR, nG, nB}, 0.95f, 0.10f, {nR + (255 - nR) * 0.3f, nG + (255 - nG) * 0.3f, nB + (255 - nB) * 0.3f}, 0.95f, {nR, nG, nB}, 0.38f};
+                          {nR, nG, nB}, 0.95f, 0.10f, {nR + (255 - nR) * 0.3f, nG + (255 - nG) * 0.3f, nB + (255 - nB) * 0.3f}, 0.85f, {nR, nG, nB}, 0.20f};
         else if (g_cfg.themeMode == ui::kThemeDark)
             st = {{30, 30, 33}, {5, 5, 6}, 0.98f, {160, 160, 168}, 0.45f, false, true, false, false, 0,
                   {20, 20, 22}, 0.55f, {0, 0, 0}, {28, 28, 30}, {2, 2, 3}, {70, 70, 74}, 0.5f,
@@ -1687,7 +1763,7 @@ static void RenderRing() {
         D2D1_COLOR_F col = hot && crispy ? ui::Rgba(0xFFFFFF) : crispy ? ui::Rgba(0x8E8E95) : th.text;
         if (sculpt) col = hot ? (th.dark ? ui::Rgba(0xFFFFFF) : ui::Rgba(0x1D1D1F)) : crispy ? ui::Rgba(0x6C6C73) : th.dark ? ui::Rgba(0x66666C) : ui::Rgba(0xBDBDC3);
         if (sculpt && hot && crispy) // sombra escura atrás do nome, para separar do brilho
-            for (int q = 8; q >= 1; --q) rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy + 2 * s), (26 + q * 1.6f) * s, (14 + q * 1.2f) * s), solid(ui::Rgba(0x000000, 0.06f)));
+            for (int q = 8; q >= 1; --q) rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy + 2 * s), (26 + q * 1.6f) * s, (14 + q * 1.2f) * s), solid(ui::Rgba(0x000000, 0.035f)));
         float bw = min(rm * step * 0.95f, 96 * s);
         if (formats) { // só o nome do formato
             const std::wstring& lab = side.items[i].label;
@@ -2319,9 +2395,9 @@ static const wchar_t* kAbout =
     L"Preview com Espaço: selecione um arquivo e aperte Espaço. Setas trocam de arquivo, a roda do mouse dá zoom e arrastar move. "
     L"Z mostra em 100%, 0 ajusta, PgUp/PgDn troca páginas, Enter abre no programa e Ctrl+C copia a imagem. "
     L"Embaixo aparecem tamanho, DPI, cor, câmera e as fontes usadas (as que faltam ficam em vermelho).\n\n"
-    L"Menu circular: selecione arquivos e segure Alt. Converta para PNG, JPG, PDF, WEBP, TIFF, ICO, GIF ou BMP; use ferramentas "
+    L"Menu circular: selecione arquivos e segure Alt. Converta para PNG, JPG, PDF, WEBP ou TIFF, ou compacte em ZIP; use ferramentas "
     L"(redimensionar, recortar, girar, cinza, sem metadados), PDF (juntar na ordem dos cliques, dividir, extrair páginas, comprimir), "
-    L"extras (camadas do PSD, folha de cores, HEX/CSS, ASE↔ACO, amostra de fonte) e predefinições. Gire a roda do mouse ou clique no centro para trocar de lado.\n\n"
+    L"extras (camadas do PSD, folha de cores, HEX/CSS, ASE↔ACO, amostra de fonte). Gire a roda do mouse ou clique no centro para trocar de lado.\n\n"
     L"Conta-gotas: no preview, passe o mouse para ver o HEX da cor e clique para copiar (ótimo com paletas .ase/.aco).\n\n"
     L"Novo › Pasta Padrão Maker cria as pastas da lista (edite em Pasta Padrão Maker › Editar).\n\n"
     L"Leve: não escuta o teclado e só trabalha quando você pede.";
@@ -2332,8 +2408,8 @@ static const wchar_t* kAboutEn =
     L"Space preview: select a file and press Space. Arrows switch files, the mouse wheel zooms and dragging pans. "
     L"Z shows 100%, 0 fits, PgUp/PgDn change pages, Enter opens the file and Ctrl+C copies the image. "
     L"The bottom bar shows size, DPI, color, camera and the fonts used (missing ones in red).\n\n"
-    L"Radial menu: select files and hold Alt. Convert to PNG, JPG, PDF, WEBP, TIFF, ICO, GIF or BMP; use tools (resize, crop, rotate, grayscale, strip metadata), "
-    L"PDF (merge in click order, split, extract pages, compress), extras (PSD layers, color sheet, HEX/CSS, ASE↔ACO, font specimen) and presets. "
+    L"Radial menu: select files and hold Alt. Convert to PNG, JPG, PDF, WEBP or TIFF, or compress to ZIP; use tools (resize, crop, rotate, grayscale, strip metadata), "
+    L"PDF (merge in click order, split, extract pages, compress), extras (PSD layers, color sheet, HEX/CSS, ASE↔ACO, font specimen). "
     L"Scroll the mouse wheel or click the center to flip sides.\n\n"
     L"Color picker: in the preview, hover to see the HEX color and click to copy it (great with .ase/.aco palettes).\n\n"
     L"New › Maker folder set creates the folders on your list (edit it in Maker folder set › Edit).\n\n"
@@ -2345,8 +2421,8 @@ static const wchar_t* kAboutEs =
     L"Vista previa con Espacio: selecciona un archivo y pulsa Espacio. Las flechas cambian de archivo, la rueda del ratón hace zoom y arrastrar mueve. "
     L"Z muestra al 100%, 0 ajusta, RePág/AvPág cambian de página, Enter abre el archivo y Ctrl+C copia la imagen. "
     L"Abajo aparecen tamaño, DPI, color, cámara y las fuentes usadas (las que faltan en rojo).\n\n"
-    L"Menú circular: selecciona archivos y mantén Alt. Convierte a PNG, JPG, PDF, WEBP, TIFF, ICO, GIF o BMP; usa herramientas (redimensionar, recortar, girar, grises, sin metadatos), "
-    L"PDF (unir en el orden de clic, dividir, extraer páginas, comprimir), extras (capas de PSD, hoja de colores, HEX/CSS, ASE↔ACO, muestra de fuente) y ajustes. "
+    L"Menú circular: selecciona archivos y mantén Alt. Convierte a PNG, JPG, PDF, WEBP o TIFF, o comprime en ZIP; usa herramientas (redimensionar, recortar, girar, grises, sin metadatos), "
+    L"PDF (unir en el orden de clic, dividir, extraer páginas, comprimir), extras (capas de PSD, hoja de colores, HEX/CSS, ASE↔ACO, muestra de fuente). "
     L"Gira la rueda del ratón o haz clic al centro para cambiar de lado.\n\n"
     L"Cuentagotas: en la vista previa, pasa el ratón para ver el color HEX y haz clic para copiarlo (ideal con paletas .ase/.aco).\n\n"
     L"Nuevo › Carpetas Maker crea las carpetas de tu lista (edítala en Carpetas Maker › Editar).\n\n"
@@ -2480,7 +2556,7 @@ static void PaintSettings(HWND h) {
     y = c.bottom + 22 * s;
 
     section(T(L"CONVERSÃO RÁPIDA", L"QUICK CONVERT", L"CONVERSIÓN RÁPIDA"));
-    c = card(7);
+    c = card(6);
     toggle(kTogAlt, c, label(0, c, T(L"Menu circular ao segurar Alt", L"Radial menu when holding Alt", L"Menú circular al mantener Alt"),
                              T(L"Roda do mouse ou clique no centro troca de lado", L"Mouse wheel or center click flips sides", L"Rueda del ratón o clic al centro cambia de lado")), g_cfg.alt);
     {
@@ -2518,11 +2594,6 @@ static void PaintSettings(HWND h) {
         int hot = g_setHot == kWebpMinus ? 0 : g_setHot == kWebpPlus ? 1 : -1;
         p.Stepper(r, std::to_wstring(g_cfg.webpQuality) + L"%", hot, &mi, &pl);
         hit(kWebpMinus, mi); hit(kWebpPlus, pl);
-    }
-    {
-        float ry = label(6, c, T(L"Predefinições", L"Presets", L"Ajustes"), T(L"WhatsApp, Instagram, Web… (um por linha)", L"WhatsApp, Instagram, Web… (one per line)", L"WhatsApp, Instagram, Web… (uno por línea)"));
-        D2D1_RECT_F r = rightBox(c, ry, 90 * s);
-        p.Pill(r, T(L"Editar", L"Edit", L"Editar"), hit(kBtnPresets, r));
     }
     y = c.bottom + 22 * s;
 
