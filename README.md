@@ -124,6 +124,8 @@ se aplica a essa consulta: https://docs.github.com/site-policy/privacy-policies/
 (leitor de PDF, páginas, registro do painel Alt+P). Ctrl+C copia o texto da janela.
 
 ## Versões
+- **v9.5.1** — DesktopClock: tamanho 100% / 90% / 70% e opção **Anexar à barra de tarefas** (o relógio fica dentro
+  da barra, na cor dela, e desliza para os lados). Agradecimento especial nas Configurações.
 - **v9.5** — **Ler texto da tela (OCR)** no DesktopClock: botão ao lado do ChatGPT ou **Ctrl+Alt+T**; a tela congela,
   você arrasta sobre o texto, o OCR do próprio Windows lê (sem internet) e o texto vai para a área de transferência.
   Um cartão oferece tradução para **PT / ES / EN** (Google Tradutor, com o MyMemory de reserva), juntar linhas e

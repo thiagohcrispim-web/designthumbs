@@ -39,6 +39,9 @@ struct ClockState {
     float s = 1;
     bool reminderOpen = false;
     bool ocr = true;          // botão e atalho Ctrl+Alt+T do OCR
+    DWORD scalePct = 100;     // tamanho: 100, 90 ou 70%
+    bool docked = false;      // anexado à barra de tarefas
+    RECT tb{};                // barra de tarefas quando anexado
 };
 static ClockState g_clock;
 enum { kClkTri = 0, kClkChip0 = 1, kClkChip1, kClkChip2, kClkChip3 };
@@ -226,14 +229,36 @@ static void PomoPauseResume() {
     else { g_clock.pausedLeft = ClockLeft(); g_clock.paused = true; }
 }
 
+// Barra de tarefas horizontal (para anexar o relógio). false se estiver na vertical ou não for encontrada.
+static bool TaskbarRect(RECT* r) {
+    APPBARDATA ab = {sizeof(ab)};
+    if (!SHAppBarMessage(ABM_GETTASKBARPOS, &ab)) return false;
+    *r = ab.rc;
+    return (r->right - r->left) > (r->bottom - r->top) && (r->bottom - r->top) >= 24;
+}
+static bool TaskbarDark() {
+    DWORD v = 0, sz = sizeof(v);
+    RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", L"SystemUsesLightTheme", RRF_RT_REG_DWORD, nullptr, &v, &sz);
+    return v == 0;
+}
+
 // ---------- desenho ----------
 
 static void ClockRender() {
     HWND w = g_clock.wnd;
     if (!w || !g_clock.on) return;
-    const ui::Theme& th = g_theme;
-    float s = g_clock.s = GetDpiForSystem() / 96.0f;
-    float H = 64 * s, M = 14 * s, fpx = (float)g_clock.fontPx;
+    ui::Theme th = g_theme;
+    float s = GetDpiForSystem() / 96.0f * (float)g_clock.scalePct / 100.0f;
+    bool docked = g_clock.docked && TaskbarRect(&g_clock.tb);
+    if (docked) { // cabe na altura da barra de tarefas e segue a cor dela
+        s = (g_clock.tb.bottom - g_clock.tb.top) * 0.82f / 64.0f;
+        bool dk = TaskbarDark();
+        th.dark = dk;
+        th.text = dk ? ui::Rgba(0xFFFFFF, 0.95f) : ui::Rgba(0x1D1D1F);
+        th.text2 = dk ? ui::Rgba(0xFFFFFF, 0.6f) : ui::Rgba(0x000000, 0.55f);
+    }
+    g_clock.s = s;
+    float H = 64 * s, M = docked ? 0 : 14 * s, fpx = (float)g_clock.fontPx;
     bool pomo = g_clock.phase != 0;
     UINT pc = kPomoPairs[min(3ul, (unsigned long)g_clock.pomoColors)][g_clock.phase == 1 ? 0 : 1];
 
@@ -260,8 +285,9 @@ static void ClockRender() {
     ui::Painter p(rt, g_dw, th, s);
     D2D1_RECT_F card = D2D1::RectF(M, M, M + Wc, M + H);
     float rad = 22 * s;
-    p.Shadow(card, rad);
-    D2D1_COLOR_F base = th.neon ? ui::Rgba(0x0E0E10, 0.94f) : th.dark ? ui::Rgba(0x161618, 0.94f) : ui::Rgba(0xFAFAFC, 0.95f);
+    if (!docked) p.Shadow(card, rad);
+    D2D1_COLOR_F base = docked ? ui::Rgba(0x000000, 0.006f) // quase invisível: a barra de tarefas aparece por trás (e o clique funciona)
+                       : th.neon ? ui::Rgba(0x0E0E10, 0.94f) : th.dark ? ui::Rgba(0x161618, 0.94f) : ui::Rgba(0xFAFAFC, 0.95f);
     p.Fill(card, rad, base);
     if (pomo) {
         p.Fill(card, rad, ui::Rgba(pc, 0.15f));
@@ -281,7 +307,7 @@ static void ClockRender() {
             clip->Release();
         }
         fac->Release();
-    } else p.Stroke(card, rad, th.neon ? ui::Rgba(ui::NeonColor(), 0.42f) : th.stroke, 1 * s);
+    } else if (!docked) p.Stroke(card, rad, th.neon ? ui::Rgba(ui::NeonColor(), 0.42f) : th.stroke, 1 * s);
 
     float x = card.left + 14 * s, cy = (card.top + card.bottom) / 2;
     D2D1_COLOR_F hotBg = th.dark ? ui::Rgba(0xFFFFFF, 0.14f) : ui::Rgba(0x000000, 0.09f), chipBg = th.dark ? ui::Rgba(0xFFFFFF, 0.07f) : ui::Rgba(0x000000, 0.05f);
@@ -367,6 +393,11 @@ static void ClockRender() {
     HDC screen = GetDC(nullptr), mem = CreateCompatibleDC(screen);
     HGDIOBJ old = SelectObject(mem, bmp);
     POINT pos = {wr.left, wr.top}, zero = {0, 0};
+    if (docked) { // trilho da barra de tarefas: centralizado na altura, dentro da largura
+        RECT& t = g_clock.tb;
+        pos.y = t.top + ((t.bottom - t.top) - (LONG)Ht) / 2;
+        pos.x = max(t.left + 4, min(t.right - (LONG)W - 4, wr.left));
+    }
     SIZE size = {(LONG)W, (LONG)Ht};
     BLENDFUNCTION bf = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
     UpdateLayeredWindow(w, screen, &pos, &size, mem, &zero, 0, &bf, ULW_ALPHA);
@@ -420,7 +451,11 @@ static void ClockMenu(POINT pt) {
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, 5, T(L"Fonte do relógio…", L"Clock font…", L"Fuente del reloj…"));
     AppendMenuW(m, MF_STRING, 6, T(L"Aplicativo do botão…", L"Button app…", L"Aplicación del botón…"));
-    AppendMenuW(m, MF_STRING, 7, T(L"Voltar ao canto", L"Back to the corner", L"Volver a la esquina"));
+    AppendMenuW(m, MF_STRING | (g_clock.docked ? MF_CHECKED : 0), 10, T(L"Anexar à barra de tarefas", L"Attach to the taskbar", L"Anclar a la barra de tareas"));
+    HMENU sz = CreatePopupMenu();
+    for (int i = 0; i < 3; ++i) { static const int pc[3] = {100, 90, 70}; wchar_t b[8]; swprintf(b, 8, L"%d%%", pc[i]); AppendMenuW(sz, MF_STRING | ((int)g_clock.scalePct == pc[i] ? MF_CHECKED : 0), 20 + i, b); }
+    AppendMenuW(m, MF_POPUP, (UINT_PTR)sz, T(L"Tamanho", L"Size", L"Tamaño"));
+    if (!g_clock.docked) AppendMenuW(m, MF_STRING, 7, T(L"Voltar ao canto", L"Back to the corner", L"Volver a la esquina"));
     AppendMenuW(m, MF_STRING, 8, T(L"Configurações", L"Settings", L"Configuración"));
     AppendMenuW(m, MF_STRING, 9, T(L"Ocultar relógio", L"Hide clock", L"Ocultar reloj"));
     SetForegroundWindow(g_clock.wnd);
@@ -443,6 +478,8 @@ static void ClockMenu(POINT pt) {
         break;
     }
     case 7: ClockDefaultPos(); break;
+    case 10: { void ClockDock(bool); ClockDock(!g_clock.docked); return; }
+    case 20: case 21: case 22: { static const int pc[3] = {100, 90, 70}; g_clock.scalePct = pc[c - 20]; WriteDword(L"ClockScale", g_clock.scalePct); break; }
     case 8: OpenSettings(); break;
     case 9: { void ClockEnable(bool); ClockEnable(false); return; }
     }
@@ -456,6 +493,7 @@ static LRESULT CALLBACK ClockProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         SYSTEMTIME t; GetLocalTime(&t);
         if (t.wSecond != g_clock.lastSec) {
             g_clock.lastSec = t.wSecond;
+            if (g_clock.docked) SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); // fica por cima da barra
             ClockRender();
             if (t.wSecond == 0 || t.wSecond == 30) CheckReminders();
         }
@@ -489,12 +527,28 @@ static LRESULT CALLBACK ClockProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_HOTKEY: if (wp == 7) StartOcr(); return 0;
     case WM_RBUTTONUP: { POINT pt; GetCursorPos(&pt); ClockMenu(pt); return 0; }
-    case WM_EXITSIZEMOVE: { RECT r; GetWindowRect(h, &r); WriteDword(L"ClockX", (DWORD)r.left); WriteDword(L"ClockY", (DWORD)r.top); return 0; }
+    case WM_MOVING:
+        if (g_clock.docked && TaskbarRect(&g_clock.tb)) {
+            RECT* r = (RECT*)lp; RECT& t = g_clock.tb;
+            LONG ww = r->right - r->left, hh = r->bottom - r->top;
+            r->top = t.top + ((t.bottom - t.top) - hh) / 2; r->bottom = r->top + hh;
+            if (r->left < t.left + 4) { r->left = t.left + 4; r->right = r->left + ww; }
+            if (r->right > t.right - 4) { r->right = t.right - 4; r->left = r->right - ww; }
+            return TRUE;
+        }
+        break;
+    case WM_EXITSIZEMOVE: {
+        RECT r; GetWindowRect(h, &r);
+        if (g_clock.docked) WriteDword(L"DockX", (DWORD)r.left);
+        else { WriteDword(L"ClockX", (DWORD)r.left); WriteDword(L"ClockY", (DWORD)r.top); }
+        return 0;
+    }
     case WM_DISPLAYCHANGE: case WM_SETTINGCHANGE: ClockRender(); break;
     }
     return DefWindowProcW(h, msg, wp, lp);
 }
 
+void ClockDock(bool on);
 void ClockEnable(bool on) {
     g_clock.on = on;
     WriteDword(L"ClockOn", on);
@@ -517,9 +571,29 @@ void ClockEnable(bool on) {
     if (x == 0x80000000 || !MonitorFromPoint(pt, MONITOR_DEFAULTTONULL)) ClockDefaultPos();
     else SetWindowPos(g_clock.wnd, nullptr, (int)x, (int)y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     ShowWindow(g_clock.wnd, SW_SHOWNOACTIVATE);
+    if (g_clock.docked) ClockDock(true);
     ClockRender();
     SetTimer(g_clock.wnd, 1, 200, nullptr);
     if (g_clock.ocr) RegisterHotKey(g_clock.wnd, 7, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'T');
+}
+
+void ClockDock(bool on) {
+    RECT t;
+    if (on && !TaskbarRect(&t)) { MessageBoxW(g_clock.wnd, T(L"A barra de tarefas precisa estar na horizontal (embaixo ou em cima).", L"The taskbar must be horizontal (bottom or top).", L"La barra de tareas debe estar en horizontal."), L"DesktopClock", MB_OK | MB_ICONINFORMATION); return; }
+    g_clock.docked = on;
+    WriteDword(L"ClockDocked", on);
+    if (!g_clock.wnd) return;
+    if (on) {
+        DWORD dx = ReadDword(L"DockX", 0x80000000);
+        int x = dx == 0x80000000 ? t.left + 8 : (int)dx;
+        SetWindowPos(g_clock.wnd, HWND_TOPMOST, x, t.top, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+    } else {
+        DWORD x = ReadDword(L"ClockX", 0x80000000), y = ReadDword(L"ClockY", 0x80000000);
+        POINT pt = {(LONG)x, (LONG)y};
+        if (x == 0x80000000 || !MonitorFromPoint(pt, MONITOR_DEFAULTTONULL)) { ClockRender(); ClockDefaultPos(); }
+        else SetWindowPos(g_clock.wnd, nullptr, (int)x, (int)y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    ClockRender();
 }
 
 static void ClockLoad() {
@@ -529,5 +603,7 @@ static void ClockLoad() {
     g_clock.pomoColors = min(3ul, (unsigned long)ReadDword(L"PomoColors", 0));
     g_clock.app = ReadStr(L"ClockApp", L"https://chatgpt.com");
     g_clock.ocr = ReadDword(L"OcrOn", 1) != 0;
+    { DWORD sc = ReadDword(L"ClockScale", 100); g_clock.scalePct = sc == 90 || sc == 70 ? sc : 100; }
+    g_clock.docked = ReadDword(L"ClockDocked", 0) != 0;
     if (ReadDword(L"ClockOn", 0)) ClockEnable(true); // desligado até o usuário ativar
 }

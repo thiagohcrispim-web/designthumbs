@@ -2378,10 +2378,11 @@ static bool AutostartEnabled();
 
 #include "Clock.inc.h"
 #include "OcrUi.inc.h"
+#include "Hearts.inc.h"
 
 enum { kTogSpace = 1, kTogAlt, kDelayMinus, kDelayPlus, kDpi72, kDpi300, kPdfSmall, kPdfRaw, kQualMinus, kQualPlus, kTogAuto, kBtnFolder, kBtnQuit, kBtnClose,
        kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate, kBtnPresets, kTheme0, kTheme1, kTheme2, kTheme3, kWebpMinus, kWebpPlus, kTogTray, kTogTempDel, kNeon0, kNeon1, kNeon2, kNeon3, kNeon4, kNeon5, kNeonRgb,
-       kClockOn, kClockFont, kPomoT0, kPomoT1, kPomoT2, kPomoC0, kPomoC1, kPomoC2, kPomoC3, kTheftHist, kUiFont, kOcrOn, kOcrKeep, kOcrJoin, kOcrLang };
+       kClockOn, kClockFont, kPomoT0, kPomoT1, kPomoT2, kPomoC0, kPomoC1, kPomoC2, kPomoC3, kTheftHist, kUiFont, kOcrOn, kOcrKeep, kOcrJoin, kOcrLang, kClk100, kClk90, kClk70, kClockDock, kSte };
 static const UINT kNeonPresets[6] = {0xFF6633, 0xFF2D95, 0x00E5FF, 0xB6FF3B, 0xA855F7, 0xFFD400};
 
 static std::wstring PresetsPath();
@@ -2473,6 +2474,9 @@ static void SettingsAction(int id) {
     case kPomoT0: case kPomoT1: case kPomoT2: g_clock.pomoTimes = id - kPomoT0; ClockSave(); break;
     case kPomoC0: case kPomoC1: case kPomoC2: case kPomoC3: g_clock.pomoColors = id - kPomoC0; ClockSave(); ClockRender(); break;
     case kTheftHist: ShowTheftHistory(); return;
+    case kClk100: case kClk90: case kClk70: { static const int pc[3] = {100, 90, 70}; g_clock.scalePct = pc[id - kClk100]; WriteDword(L"ClockScale", g_clock.scalePct); ClockRender(); break; }
+    case kClockDock: ClockDock(!g_clock.docked); break;
+    case kSte: StartHearts(g_settingsWnd); return;
     case kOcrOn:
         g_clock.ocr = !g_clock.ocr; WriteDword(L"OcrOn", g_clock.ocr);
         if (g_clock.wnd) { if (g_clock.ocr) RegisterHotKey(g_clock.wnd, 7, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'T'); else UnregisterHotKey(g_clock.wnd, 7); }
@@ -2616,7 +2620,7 @@ static void PaintSettings(HWND h) {
     y = c.bottom + 22 * s;
 
     section(L"DESKTOPCLOCK");
-    c = card(g_clock.on ? 8 : 1);
+    c = card(g_clock.on ? 10 : 1);
     toggle(kClockOn, c, label(0, c, T(L"Ativar DesktopClock", L"Enable DesktopClock", L"Activar DesktopClock"),
                                   T(L"Relógio na área de trabalho com agenda, Pomodoro e roubo de tempo", L"Desktop clock with agenda, Pomodoro and time theft", L"Reloj de escritorio con agenda, Pomodoro y robo de tiempo")), g_clock.on);
     if (g_clock.on) {
@@ -2672,6 +2676,17 @@ static void PaintSettings(HWND h) {
             D2D1_RECT_F r = rightBox(c, ry, 150 * s);
             p.Pill(r, T(L"Adicionar idioma…", L"Add language…", L"Añadir idioma…"), hit(kOcrLang, r));
         }
+        {
+            float ry = label(8, c, T(L"Tamanho do relógio", L"Clock size", L"Tamaño del reloj"));
+            D2D1_RECT_F r = rightBox(c, ry, 210 * s), parts[3];
+            std::wstring l[3] = {L"100%", L"90%", L"70%"};
+            int sel = g_clock.scalePct == 90 ? 1 : g_clock.scalePct == 70 ? 2 : 0;
+            int hot = g_setHot >= kClk100 && g_setHot <= kClk70 ? g_setHot - kClk100 : -1;
+            p.Segmented(r, l, 3, sel, hot, parts);
+            for (int i = 0; i < 3; ++i) hit(kClk100 + i, parts[i]);
+        }
+        toggle(kClockDock, c, label(9, c, T(L"Anexar à barra de tarefas", L"Attach to the taskbar", L"Anclar a la barra de tareas"),
+                                        T(L"O relógio fica dentro da barra; arraste para os lados", L"The clock sits in the taskbar; drag sideways", L"El reloj queda en la barra; arrastra a los lados")), g_clock.docked);
     }
     y = c.bottom + 22 * s;
 
@@ -2743,6 +2758,25 @@ static void PaintSettings(HWND h) {
         p.Pill(b2, T(L"Procurar atualização", L"Check for updates", L"Buscar actualización"), hit(kBtnUpdate, b2));
         p.Pill(b3, T(L"Encerrar", L"Quit", L"Salir"), hit(kBtnQuit, b3));
         y = b1.bottom + 22 * s;
+    }
+
+    section(T(L"AGRADECIMENTO ESPECIAL", L"SPECIAL THANKS", L"AGRADECIMIENTO ESPECIAL"));
+    {
+        const std::wstring rest = L" por você ser o amor da minha vida!", line2 = L"Gustavo (Primão), Eliza e Thais",
+                           line3 = L"Obrigado por me incentivarem e a darem ideias para melhorar nosso dia-a-dia!";
+        float tx = x + 16 * s, ty = y + 14 * s, tw = w - 32 * s, lh = 20 * s;
+        float h3 = p.Paragraph(line3, tx, 0, tw, 12.5f, th.text2, false);
+        D2D1_RECT_F box = D2D1::RectF(x, y, x + w, y + 14 * s + lh * 2 + 6 * s + h3 + 14 * s);
+        p.Glass(box, 16 * s);
+        float sw = p.Measure(L"Ste", 13.5f, DWRITE_FONT_WEIGHT_BOLD);
+        D2D1_RECT_F ste = D2D1::RectF(tx, ty, tx + sw, ty + lh);
+        bool hs = hit(kSte, D2D1::RectF(ste.left - 4 * s, ste.top - 2 * s, ste.right + 4 * s, ste.bottom + 2 * s));
+        p.Text(L"Ste", ste, 13.5f, ui::Rgba(hs ? 0xF0386B : 0xE0115F), DWRITE_FONT_WEIGHT_BOLD);
+        if (hs) p.Fill(D2D1::RectF(ste.left, ste.bottom - 2 * s, ste.right, ste.bottom - 0.8f * s), 0, ui::Rgba(0xF0386B, 0.8f));
+        p.Text(rest, D2D1::RectF(ste.right, ty, x + w - 16 * s, ty + lh), 13.5f, th.text);
+        p.Text(line2, D2D1::RectF(tx, ty + lh, x + w - 16 * s, ty + 2 * lh), 13.5f, th.text);
+        p.Paragraph(line3, tx, ty + 2 * lh + 6 * s, tw, 12.5f, th.text2);
+        y = box.bottom + 22 * s;
     }
 
     section(T(L"SOBRE", L"ABOUT", L"ACERCA DE"));
