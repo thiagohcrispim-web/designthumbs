@@ -2378,6 +2378,7 @@ static bool AutostartEnabled();
 
 #include "Clock.inc.h"
 #include "OcrUi.inc.h"
+#include "Agenda.inc.h"
 #include "Hearts.inc.h"
 
 enum { kTogSpace = 1, kTogAlt, kDelayMinus, kDelayPlus, kDpi72, kDpi300, kPdfSmall, kPdfRaw, kQualMinus, kQualPlus, kTogAuto, kBtnFolder, kBtnQuit, kBtnClose,
