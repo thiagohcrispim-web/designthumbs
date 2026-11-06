@@ -124,6 +124,12 @@ se aplica a essa consulta: https://docs.github.com/site-policy/privacy-policies/
 (leitor de PDF, páginas, registro do painel Alt+P). Ctrl+C copia o texto da janela.
 
 ## Versões
+- **v9.4** — **DesktopClock** integrado (ative em Configurações › DesktopClock): relógio na área de trabalho com
+  qualquer fonte instalada, agenda com lembretes (Dispensar / +5 min), botão de atalho (ChatGPT ou qualquer app),
+  **Pomodoro** por cores (foco/pausa: verde/vermelho, azul/cinza, lima/roxo, âmbar/céu) e **Roubo de tempo**
+  (caveira: clique para contar quem te interrompeu, clique de novo para registrar; histórico do dia e da semana,
+  planilha CSV). Ícones redesenhados no estilo Feather, ícone novo do programa, fonte Bahnschrift em todo o app
+  (ou qualquer fonte do Windows em Configurações › Sistema › Fonte da interface).
 - **v9.3** — Crispy cyberpunk: menu circular com disco preto fosco, vincos entre as fatias, centro rebaixado e
   fatia de vidro neon; **cor do neon escolhível** (6 cores prontas ou qualquer RGB) em Configurações › Sistema.
 - **v9.2** — temas Minimalista Claro, Minimalista Escuro (preto × chumbo), Padrão Windows (cor de destaque do
