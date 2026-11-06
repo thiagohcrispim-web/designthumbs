@@ -1500,10 +1500,12 @@ static void RenderRing() {
     ID2D1SolidColorBrush* br = nullptr;
     auto solid = [&](D2D1_COLOR_F col) { if (br) br->Release(); rt->CreateSolidColorBrush(col, &br); return br; };
     bool crispy = th.neon;
+    bool sculpt = crispy || g_cfg.themeMode == ui::kThemeDark || g_cfg.themeMode == ui::kThemeLight; // disco esculpido (v9.4.2)
     D2D1_COLOR_F orange = ui::Rgba(ui::NeonColor());
 
     // sombra suave
-    for (int i = 5; i >= 1; --i) rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(c, c + 3 * s), rOut + i * 3.5f * s, rOut + i * 3.5f * s), solid(ui::Rgba(0x000000, th.dark ? 0.07f : 0.035f)));
+    if (sculpt && !th.dark) for (int i = 12; i >= 1; --i) rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(c, c + 5 * s), rOut + i * 2.2f * s, rOut + i * 2.2f * s), solid(ui::Rgba(0x1E2232, 0.011f)));
+    else for (int i = 5; i >= 1; --i) rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(c, c + 3 * s), rOut + i * 3.5f * s, rOut + i * 3.5f * s), solid(ui::Rgba(0x000000, th.dark ? 0.07f : 0.035f)));
     // Vidro líquido calculado pixel a pixel (idêntico em qualquer PC): base translúcida, brilho laranja que segue
     // o mouse, reflexo no alto, borda de luz e granulado fino.
     {
@@ -1515,72 +1517,114 @@ static void RenderRing() {
         float gx = g_ringMouse.x >= 0 ? (float)g_ringMouse.x : c, gy = g_ringMouse.x >= 0 ? (float)g_ringMouse.y : c - rOut * 0.55f;
         float ga = th.glowA, glowR = rOut * 1.05f;
         float hiA = th.dark ? 0.09f : 0.40f, noiseAmp = th.dark ? 7.0f : 5.0f;
-        // Crispy: disco preto fosco, vincos entre fatias, centro rebaixado com luz laranja e fatia de vidro neon.
+        // Disco esculpido (v9.4.2): Crispy (neon), Minimalista Escuro (sem luzes) e Minimalista Claro (porcelana).
+        // Vincos/divisórias entre fatias, centro rebaixado e a fatia ativa em vidro com cantos arredondados.
         size_t cn = g_sides[g_side].items.size();
         float cstep = 2 * 3.14159265f / max<size_t>(1, cn), hotA0 = 0, hotA1 = 0;
         if (g_ringHot >= 0) { hotA0 = -3.14159265f / 2 - cstep / 2 + g_ringHot * cstep; hotA1 = hotA0 + cstep; }
         float well = rIn - 6 * s;   // raio do centro
         UINT nc = ui::NeonColor();
         float nR = (float)(nc >> 16 & 255), nG = (float)(nc >> 8 & 255), nB = (float)(nc & 255);
-        float lR = nR + (255 - nR) * 0.35f, lG = nG + (255 - nG) * 0.35f, lB = nB + (255 - nB) * 0.35f; // neon mais claro
-        auto CrispyPixel = [&](float dx, float dy, float r, float rO) -> UINT32 {
+        struct Style {
+            float discA[3], discB[3], discAlpha, rim[3], rimA;
+            bool ticks, creases, lines, wellLight;
+            float lineA, plate[3], plateShadeA, plateShade[3], wellA[3], wellB[3], wellRim[3], wellRimA;
+            float hot[3], hotIn, hotOut, edge[3], edgeA, halo[3], haloA;
+        } st;
+        if (crispy) st = {{30, 30, 33}, {5, 5, 6}, 0.98f, {140, 140, 150}, 0.6f, true, true, false, true, 0,
+                          {20, 20, 22}, 0.55f, {0, 0, 0}, {28, 28, 30}, {2, 2, 3}, {70, 70, 74}, 0.5f,
+                          {nR, nG, nB}, 0.95f, 0.10f, {nR + (255 - nR) * 0.3f, nG + (255 - nG) * 0.3f, nB + (255 - nB) * 0.3f}, 0.95f, {nR, nG, nB}, 0.38f};
+        else if (g_cfg.themeMode == ui::kThemeDark)
+            st = {{30, 30, 33}, {5, 5, 6}, 0.98f, {160, 160, 168}, 0.45f, false, true, false, false, 0,
+                  {20, 20, 22}, 0.55f, {0, 0, 0}, {28, 28, 30}, {2, 2, 3}, {70, 70, 74}, 0.5f,
+                  {255, 255, 255}, 0.13f, 0.025f, {255, 255, 255}, 0.20f, {0, 0, 0}, 0};
+        else // Minimalista Claro
+            st = {{251, 251, 252}, {220, 222, 227}, 1.0f, {255, 255, 255}, 1.0f, false, false, true, false, 0.22f,
+                  {236, 238, 241}, 0.06f, {30, 34, 50}, {255, 255, 255}, {227, 229, 234}, {0, 0, 0}, 0.06f,
+                  {255, 255, 255}, 1.0f, 0.55f, {0, 0, 0}, 0, {30, 34, 50}, 0.11f};
+        auto SculptPixel = [&](float dx, float dy, float r, float rO) -> UINT32 {
             float ang = atan2f(dy, dx);
-            // base: cinza-chumbo no alto à esquerda até preto embaixo à direita
-            float t = 0.5f + 0.35f * (dy / rO) + 0.15f * (dx / rO);
-            float L = 30 - 24 * max(0.0f, min(1.0f, t));
-            float R = L, G = L, B = L + 1, A = 0.98f;
+            float t = max(0.0f, min(1.0f, 0.5f + 0.35f * (dy / rO) + 0.15f * (dx / rO)));
+            float R = st.discA[0] + (st.discB[0] - st.discA[0]) * t, G = st.discA[1] + (st.discB[1] - st.discA[1]) * t, B = st.discA[2] + (st.discB[2] - st.discA[2]) * t, A = st.discAlpha;
             auto mix = [&](float cr, float cg, float cb, float a) { a = max(0.0f, min(1.0f, a)); R += (cr - R) * a; G += (cg - G) * a; B += (cb - B) * a; };
-            // borda externa de luz cinza
+            auto mixv = [&](const float* c3, float a) { mix(c3[0], c3[1], c3[2], a); };
+            float top = 0.5f - 0.5f * dy / max(r, 1.0f);
             float rim = fabsf(r - (rO - 1.0f * s));
-            if (rim < 1.3f * s) mix(92, 92, 96, (1 - rim / (1.3f * s)) * (0.25f + 0.45f * (0.5f - 0.5f * dy / max(r, 1.0f))));
-            // vincos afilados nas divisões das fatias
-            if (cn > 1 && r > well) {
-                float rel = (r - well) / ((rO - well) * 0.62f);
-                if (rel < 1) {
-                    float a = ang + 3.14159265f / 2 + cstep / 2;
-                    a = fmodf(a + 8 * 3.14159265f, cstep);
-                    float da = min(a, cstep - a) * r, w = (4.5f * s) * (1 - rel) + 0.6f * s;
-                    float d = expf(-(da * da) / (w * w)) * (1 - rel * rel);
-                    R *= 1 - 0.85f * d; G *= 1 - 0.85f * d; B *= 1 - 0.85f * d;
+            if (rim < 1.3f * s) mixv(st.rim, (1 - rim / (1.3f * s)) * st.rimA * (0.25f + 0.75f * top));
+            float rel0 = fmodf(ang + 3.14159265f / 2 + cstep / 2 + 8 * 3.14159265f, cstep); // posição dentro da fatia
+            if (st.ticks) { // régua: 72 marcas; as das divisões são maiores
+                float tstep = 2 * 3.14159265f / 72, q = fmodf(rel0, tstep), da = min(q, tstep - q) * r;
+                int idx = (int)floorf(rel0 / tstep + 0.5f);
+                bool major = idx % max(1, 72 / (int)max<size_t>(1, cn)) == 0 && 72 % max<size_t>(1, cn) == 0;
+                float r0 = rO - (major ? 13 : 9) * s, r1 = rO - 5 * s;
+                if (r >= r0 && r <= r1 && da < 0.6f * s) mix(255, 255, 255, 0.16f * (1 - da / (0.6f * s)));
+                if (g_ringHot >= 0) { // trecho aceso da fatia ativa
+                    float a = ang; while (a < hotA0) a += 2 * 3.14159265f; while (a > hotA0 + 2 * 3.14159265f) a -= 2 * 3.14159265f;
+                    if (a > hotA0 + 0.03f && a < hotA1 - 0.03f) {
+                        float d = fabsf(r - (rO - 7 * s));
+                        if (d < 0.9f * s) mix(nR, nG, nB, 0.95f);
+                        else if (d < 4 * s) mix(nR, nG, nB, 0.35f * (1 - (d - 0.9f * s) / (3.1f * s)));
+                    }
                 }
             }
-            // anel do centro (patamar) com sombra em volta
-            if (r < well + 14 * s && r >= well) { float k = (r - well) / (14 * s); R *= 0.45f + 0.55f * k; G *= 0.45f + 0.55f * k; B *= 0.45f + 0.55f * k; }
+            if (cn > 1 && r > well) {
+                float da = min(rel0, cstep - rel0) * r;
+                int boundary = (int)floorf((ang + 3.14159265f / 2 + cstep / 2 + 8 * 3.14159265f) / cstep + 0.5f) % (int)cn;
+                bool nearHot = g_ringHot >= 0 && (boundary == g_ringHot || boundary == (g_ringHot + 1) % (int)cn);
+                if (st.creases) { // vinco afilado
+                    float rel = (r - well) / ((rO - well) * 0.55f);
+                    if (rel < 1) {
+                        float w = (4.0f * s) * (1 - rel) + 0.6f * s;
+                        float d = expf(-(da * da) / (w * w)) * (1 - rel * rel) * 0.75f;
+                        R *= 1 - d; G *= 1 - d; B *= 1 - d;
+                    }
+                }
+                if (st.lines && !nearHot) { // linha fina que some em direção à borda
+                    float r0 = well + 12 * s, r1 = rO - 14 * s;
+                    if (r > r0 && r < r1 && da < 0.7f * s) mix(40, 44, 60, st.lineA * (1 - (r - r0) / (r1 - r0)) * (1 - da / (0.7f * s)));
+                }
+            }
+            // centro rebaixado
+            if (r < well + 14 * s && r >= well) {
+                float k = (r - well) / (14 * s);
+                if (st.plateShadeA > 0) mixv(st.plateShade, st.plateShadeA * (1 - k));
+                else { R *= 0.45f + 0.55f * k; G *= 0.45f + 0.55f * k; B *= 0.45f + 0.55f * k; }
+            }
             if (r < well) {
                 float inner = well - 10 * s;
-                if (r >= inner) { float k = (r - inner) / (10 * s); float v = 24 + 10 * (1 - k) - 6 * (dy / max(r, 1.0f)); R = G = v; B = v + 1; }
-                else { float k = r / inner; float v = 2 + 14 * k * k * k * (0.6f + 0.4f * (-dy / max(r, 1.0f) * 0.5f + 0.5f)); R = G = v; B = v + 1; }
-                if (fabsf(r - inner) < 1.0f * s) mix(70, 70, 74, 0.5f);
-                // luz laranja na borda do centro, virada para a fatia ativa
-                if (g_ringHot >= 0 && r > inner - 16 * s) {
-                    float am = (hotA0 + hotA1) / 2, c = cosf(ang - am);
-                    if (c > 0) { float k = powf(c, 5) * max(0.0f, 1 - fabsf(r - inner + 3 * s) / (13 * s)); mix(nR, nG, nB, k * 0.95f); }
+                if (r >= inner) { R = st.plate[0]; G = st.plate[1]; B = st.plate[2]; }
+                else {
+                    float k = r / inner, kk = k * k * k;
+                    for (int ch = 0; ch < 3; ++ch) { float v = st.wellA[ch] + (st.wellB[ch] - st.wellA[ch]) * kk; (ch == 0 ? R : ch == 1 ? G : B) = v; }
+                }
+                if (fabsf(r - inner) < 1.0f * s) mixv(st.wellRim, st.wellRimA);
+                if (st.wellLight && g_ringHot >= 0 && r > inner - 16 * s) {
+                    float am = (hotA0 + hotA1) / 2, cc = cosf(ang - am);
+                    if (cc > 0) { float k = powf(cc, 5) * max(0.0f, 1 - fabsf(r - inner + 3 * s) / (13 * s)); mix(nR, nG, nB, k * 0.9f); }
                 }
             }
-            // fatia ativa: vidro neon com cantos arredondados
+            // fatia ativa
             if (g_ringHot >= 0) {
-                float ri = well + 16 * s, ro = rO - 10 * s, gap = 4 * s, rad = 12 * s;
+                float ri = well + 16 * s, ro = rO - (st.ticks ? 18 : 12) * s, gap = 4 * s, rad = 11 * s;
                 float a = ang; while (a < hotA0 - 3.14159265f) a += 2 * 3.14159265f; while (a > hotA0 + 3 * 3.14159265f) a -= 2 * 3.14159265f;
                 float dA0 = r * sinf(a - hotA0) - gap, dA1 = r * sinf(hotA1 - a) - gap;
                 if (cosf(a - (hotA0 + hotA1) / 2) < 0) dA0 = dA1 = -999;
                 float ex = min(dA0, dA1), ey = min(r - ri, ro - r), dist;
-                if (ex < rad && ey < rad && ex > -rad && ey > -rad && ex < rad && ey < rad && min(ex, ey) > -999) {
-                    float qx = rad - ex, qy = rad - ey;
-                    dist = (qx > 0 && qy > 0) ? rad - sqrtf(qx * qx + qy * qy) : min(ex, ey);
-                } else dist = min(ex, ey);
+                if (ex < rad && ey < rad && min(ex, ey) > -999) { float qx = rad - ex, qy = rad - ey; dist = (qx > 0 && qy > 0) ? rad - sqrtf(qx * qx + qy * qy) : min(ex, ey); }
+                else dist = min(ex, ey);
                 if (dist > 0) {
-                    float tt = (r - ri) / (ro - ri);                          // 0 perto do centro
-                    float edge = min(1.0f, dist / (26 * s));                   // brilho junto às bordas
-                    float hot = powf(1 - tt, 2.2f) * 1.0f + (1 - edge) * 0.12f;
-                    float hh = min(1.0f, hot * 1.2f);
-                    R = 12 + (nR - 12) * hh; G = 10 + (nG - 10) * hh; B = 12 + (nB - 12) * hh; A = 0.99f;
-                    if (dist < 1.6f * s) mix(lR, lG, lB, (1 - dist / (1.6f * s)) * (0.55f + 0.45f * (1 - tt)));
-                } else if (dist > -16 * s) { // halo neon fora da fatia
-                    float k = 1 + dist / (16 * s); mix(nR, nG, nB, k * k * 0.35f);
+                    float tt = (r - ri) / (ro - ri);
+                    float al = st.hotOut + (st.hotIn - st.hotOut) * powf(max(0.0f, 1 - tt), 2.0f);
+                    if (crispy) { R = R * (1 - al) + st.hot[0] * al; G = G * (1 - al) + st.hot[1] * al; B = B * (1 - al) + st.hot[2] * al; R *= 0.92f; G *= 0.92f; B *= 0.92f; }
+                    else mixv(st.hot, al);
+                    A = max(A, 0.99f);
+                    if (st.edgeA > 0 && dist < 1.4f * s) mixv(st.edge, (1 - dist / (1.4f * s)) * st.edgeA);
+                } else if (st.haloA > 0 && dist > -16 * s) {
+                    float k = 1 + dist / (16 * s); mixv(st.halo, k * k * st.haloA);
                 }
             }
             UINT32 hsh = ((UINT32)(dx + 1000) * 73856093u) ^ ((UINT32)(dy + 1000) * 19349663u); hsh ^= hsh >> 13; hsh *= 0x5bd1e995u; hsh ^= hsh >> 15;
-            float nz = ((hsh & 255) / 255.0f - 0.5f) * 5;
+            float nz = ((hsh & 255) / 255.0f - 0.5f) * (st.lines ? 2.5f : 5);
             R = max(0.0f, min(255.0f, R + nz)); G = max(0.0f, min(255.0f, G + nz)); B = max(0.0f, min(255.0f, B + nz));
             float cov = max(0.0f, min(1.0f, rO + 0.5f - r)); A *= cov;
             return (UINT32)(A * 255) << 24 | (UINT32)(R * A) << 16 | (UINT32)(G * A) << 8 | (UINT32)(B * A);
@@ -1590,7 +1634,7 @@ static void RenderRing() {
             for (UINT x = 0; x < S; ++x) {
                 float dx = x + 0.5f - c, dy = y + 0.5f - c, r = sqrtf(dx * dx + dy * dy);
                 if (r > rOut + 1) continue;
-                if (crispy) { px[(size_t)y * S + x] = CrispyPixel(dx, dy, r, rOut); continue; }
+                if (sculpt) { px[(size_t)y * S + x] = SculptPixel(dx, dy, r, rOut); continue; }
                 float cov = max(0.0f, min(1.0f, rOut + 0.5f - r)); // borda suavizada
                 float R = baseR, G = baseG, B = baseB, A = baseA;
                 auto blend = [&](float cr, float cg, float cb, float a) { R += (cr - R) * a; G += (cg - G) * a; B += (cb - B) * a; A += (1 - A) * a * 0.6f; };
@@ -1615,7 +1659,7 @@ static void RenderRing() {
             bg->Release();
         }
     }
-    if (crispy) {}
+    if (sculpt) {}
     else if (!th.dark) rt->DrawEllipse(disc, solid(ui::Rgba(0x000000, 0.07f)), 1 * s);
 
     const Side& side = g_sides[g_side];
@@ -1627,7 +1671,7 @@ static void RenderRing() {
         float a0 = -3.14159265f / 2 - step / 2 + i * step, a1 = a0 + step, am = (a0 + a1) / 2;
         bool hot = (int)i == g_ringHot;
         float rm = (rIn + rOut) / 2 + 3 * s, cx = c + rm * cosf(am), cy = c + rm * sinf(am);
-        if (hot && !crispy) { // destaque: um disco de vidro macio com halo, sem cantos duros
+        if (hot && !sculpt) { // destaque: um disco de vidro macio com halo, sem cantos duros
             float pr = min(36 * s, rm * sinf(step / 2) - 2 * s);
             D2D1_COLOR_F halo = crispy ? ui::Rgba(ui::NeonColor()) : g_cfg.themeMode == ui::kThemeWindows ? th.accent : th.dark ? ui::Rgba(0xFFFFFF) : ui::Rgba(0x000000);
             for (int q = 10; q >= 1; --q) { // halo difuso
@@ -1641,27 +1685,56 @@ static void RenderRing() {
             rt->DrawEllipse(pk, solid(crispy ? ui::Rgba(ui::NeonColor(), 0.55f) : th.dark ? ui::Rgba(0xFFFFFF, 0.16f) : ui::Rgba(0x000000, 0.08f)), 1 * s);
         }
         D2D1_COLOR_F col = hot && crispy ? ui::Rgba(0xFFFFFF) : crispy ? ui::Rgba(0x8E8E95) : th.text;
+        if (sculpt) col = hot ? (th.dark ? ui::Rgba(0xFFFFFF) : ui::Rgba(0x1D1D1F)) : crispy ? ui::Rgba(0x6C6C73) : th.dark ? ui::Rgba(0x66666C) : ui::Rgba(0xBDBDC3);
+        if (sculpt && hot && crispy) // sombra escura atrás do nome, para separar do brilho
+            for (int q = 8; q >= 1; --q) rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy + 2 * s), (26 + q * 1.6f) * s, (14 + q * 1.2f) * s), solid(ui::Rgba(0x000000, 0.06f)));
         float bw = min(rm * step * 0.95f, 96 * s);
-        if (formats) // só o nome do formato: limpo e grande
-            p.Text(side.items[i].label, D2D1::RectF(cx - bw / 2, cy - 11 * s, cx + bw / 2, cy + 11 * s), 14, col, hot ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
-        else {
-            p.Icon(side.items[i].icon, D2D1::RectF(cx - 20 * s, cy - 23 * s, cx + 20 * s, cy - 3 * s), 14, hot ? col : (crispy ? orange : th.text2));
+        if (formats) { // só o nome do formato
+            const std::wstring& lab = side.items[i].label;
+            D2D1_RECT_F lr = D2D1::RectF(cx - bw / 2, cy - 11 * s, cx + bw / 2, cy + 11 * s);
+            if (sculpt) p.TextSpaced(lab, lr, hot ? 15.5f : 13, col, hot ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_SEMI_BOLD, 0.1f); // letras espaçadas
+            else p.Text(lab, lr, 14, col, hot ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+        } else {
+            p.Icon(side.items[i].icon, D2D1::RectF(cx - 20 * s, cy - 23 * s, cx + 20 * s, cy - 3 * s), 14, hot ? col : sculpt ? col : (crispy ? orange : th.text2));
             p.Text(side.items[i].label, D2D1::RectF(cx - bw / 2, cy, cx + bw / 2, cy + 18 * s), 11, col, hot ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
         }
     }
     // centro: lente de vidro com o nome do lado
     D2D1_ELLIPSE lens = D2D1::Ellipse(C, rIn - 8 * s, rIn - 8 * s);
-    if (!crispy) rt->FillEllipse(lens, solid(g_ringHot == -1 ? (crispy ? ui::Rgba(ui::NeonColor(), 0.16f) : th.panelHot) : (th.dark ? ui::Rgba(0xFFFFFF, 0.04f) : ui::Rgba(0xFFFFFF, 0.65f))));
-    if (!crispy) rt->DrawEllipse(lens, solid(crispy ? ui::Rgba(ui::NeonColor(), 0.55f) : th.dark ? ui::Rgba(0xFFFFFF, 0.16f) : ui::Rgba(0x000000, 0.08f)), 1 * s);
-    if (crispy && g_ringHot == -1) { rt->DrawEllipse(lens, solid(ui::Rgba(ui::NeonColor(), 0.9f)), 1.5f * s); rt->DrawEllipse(lens, solid(ui::Rgba(ui::NeonColor(), 0.25f)), 5 * s); }
-    p.Text(side.name, D2D1::RectF(c - rIn, c - 20 * s, c + rIn, c - 1 * s), 12.5f, crispy ? orange : th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
     std::wstring cnt = std::to_wstring(g_convFiles.size()) + (g_convFiles.size() == 1 ? T(L" arquivo", L" file", L" archivo") : T(L" arquivos", L" files", L" archivos"));
-    p.Text(cnt, D2D1::RectF(c - rIn, c - 1 * s, c + rIn, c + 14 * s), 10, th.text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
-    if (g_sides.size() > 1) { // indicador de lados: traços finos
-        float dw = 7 * s, gapd = 4 * s, total = g_sides.size() * dw + (g_sides.size() - 1) * gapd, x = c - total / 2;
-        for (size_t i = 0; i < g_sides.size(); ++i, x += dw + gapd)
-            rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(x, c + 23 * s, x + dw, c + 25.5f * s), 1.5f * s, 1.5f * s),
-                                     solid((int)i == g_side ? th.accent : th.track));
+    if (sculpt) {
+        D2D1_COLOR_F titleCol = crispy ? orange : th.dark ? ui::Rgba(0xFFFFFF) : ui::Rgba(0x1D1D1F), muted = th.dark ? ui::Rgba(0x8E8E95) : ui::Rgba(0x7A7A82);
+        if (g_ringHot == -1) {
+            if (crispy) { rt->DrawEllipse(lens, solid(ui::Rgba(ui::NeonColor(), 0.9f)), 1.5f * s); rt->DrawEllipse(lens, solid(ui::Rgba(ui::NeonColor(), 0.25f)), 5 * s); }
+            else rt->DrawEllipse(lens, solid(th.dark ? ui::Rgba(0xFFFFFF, 0.35f) : ui::Rgba(0x000000, 0.18f)), 1.2f * s);
+        }
+        std::wstring up; for (wchar_t ch : cnt) up += (wchar_t)towupper(ch);
+        p.Text(up, D2D1::RectF(c - rIn, c - 26 * s, c + rIn, c - 14 * s), 8.5f, muted, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+        p.Text(side.name, D2D1::RectF(c - rIn, c - 14 * s, c + rIn, c + 6 * s), 15, titleCol, DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+        if (g_sides.size() > 1) {
+            auto shortName = [](std::wstring n) { return n.size() > 7 ? n.substr(0, 6) + L"." : n; };
+            size_t ns = g_sides.size();
+            std::wstring nb = L"\u2039 " + shortName(g_sides[(g_side + ns - 1) % ns].name) + L" \u00B7 " + shortName(g_sides[(g_side + 1) % ns].name) + L" \u203A";
+            p.Text(nb, D2D1::RectF(c - rIn, c + 6 * s, c + rIn, c + 18 * s), 8.5f, muted, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+            float dw = 6 * s, dl = 14 * s, gapd = 4 * s, total = (ns - 1) * dw + dl + (ns - 1) * gapd, x = c - total / 2;
+            for (size_t i = 0; i < ns; ++i) {
+                float w2 = (int)i == g_side ? dl : dw;
+                rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(x, c + 24 * s, x + w2, c + 27 * s), 1.5f * s, 1.5f * s),
+                                         solid((int)i == g_side ? (crispy ? orange : th.dark ? ui::Rgba(0xE6E6E8) : ui::Rgba(0x1D1D1F)) : (th.dark ? ui::Rgba(0xFFFFFF, 0.18f) : ui::Rgba(0x000000, 0.14f))));
+                x += w2 + gapd;
+            }
+        }
+    } else {
+        rt->FillEllipse(lens, solid(g_ringHot == -1 ? th.panelHot : (th.dark ? ui::Rgba(0xFFFFFF, 0.04f) : ui::Rgba(0xFFFFFF, 0.65f))));
+        rt->DrawEllipse(lens, solid(th.dark ? ui::Rgba(0xFFFFFF, 0.16f) : ui::Rgba(0x000000, 0.08f)), 1 * s);
+        p.Text(side.name, D2D1::RectF(c - rIn, c - 20 * s, c + rIn, c - 1 * s), 12.5f, th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+        p.Text(cnt, D2D1::RectF(c - rIn, c - 1 * s, c + rIn, c + 14 * s), 10, th.text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
+        if (g_sides.size() > 1) { // indicador de lados: traços finos
+            float dw = 7 * s, gapd = 4 * s, total = g_sides.size() * dw + (g_sides.size() - 1) * gapd, x = c - total / 2;
+            for (size_t i = 0; i < g_sides.size(); ++i, x += dw + gapd)
+                rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(x, c + 23 * s, x + dw, c + 25.5f * s), 1.5f * s, 1.5f * s),
+                                         solid((int)i == g_side ? th.accent : th.track));
+        }
     }
     if (br) br->Release();
     fac->Release();
