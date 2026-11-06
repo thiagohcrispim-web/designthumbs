@@ -53,23 +53,37 @@ static ULONGLONG ClockLeft() {
     return g_clock.phaseEnd > now ? g_clock.phaseEnd - now : 0;
 }
 
-// ---------- agenda (%LOCALAPPDATA%\DesignThumbs\agenda.txt: "2026-11-06 15:30 Reunião") ----------
+// ---------- agenda (%LOCALAPPDATA%\DesignThumbs\agenda.txt) ----------
+// Uma linha por evento: "2026-11-06 16:00 d30 a10,5 Reunião" (d = duração em min, a = avisos em min antes;
+// linhas antigas sem d/a valem 30 min com avisos de 10 e 5 min).
 
-struct AgendaItem { SYSTEMTIME when; std::wstring title; };
+enum { kAlert10 = 1, kAlert5 = 2, kAlert0 = 4 };
+struct AgendaItem { SYSTEMTIME when; std::wstring title; int dur = 30; int alerts = kAlert10 | kAlert5; };
 static std::vector<AgendaItem> LoadAgenda() {
     std::vector<AgendaItem> r;
     FILE* f = _wfopen(DataPath(L"agenda.txt").c_str(), L"rt, ccs=UTF-8");
     if (!f) return r;
     wchar_t line[512];
     while (fgetws(line, 512, f)) {
-        AgendaItem a = {};
+        AgendaItem a;
+        a.when = {};
         int y, mo, d, h, mi, n = 0;
-        if (swscanf(line, L"%d-%d-%d %d:%d %n", &y, &mo, &d, &h, &mi, &n) == 5 && n > 0) {
-            a.when.wYear = (WORD)y; a.when.wMonth = (WORD)mo; a.when.wDay = (WORD)d; a.when.wHour = (WORD)h; a.when.wMinute = (WORD)mi;
-            a.title = line + n;
-            while (!a.title.empty() && (a.title.back() == L'\n' || a.title.back() == L'\r')) a.title.pop_back();
-            r.push_back(a);
+        if (swscanf(line, L"%d-%d-%d %d:%d %n", &y, &mo, &d, &h, &mi, &n) != 5 || n <= 0) continue;
+        a.when.wYear = (WORD)y; a.when.wMonth = (WORD)mo; a.when.wDay = (WORD)d; a.when.wHour = (WORD)h; a.when.wMinute = (WORD)mi;
+        const wchar_t* p = line + n;
+        for (int k = 0; k < 2; ++k) { // tokens opcionais
+            int v = 0, used = 0;
+            if (p[0] == L'd' && swscanf(p + 1, L"%d %n", &v, &used) == 1 && used) { a.dur = max(5, min(600, v)); p += 1 + used; }
+            else if (p[0] == L'a' && (iswdigit(p[1]) || p[1] == L'n')) {
+                a.alerts = 0; ++p; if (*p == L'n') ++p;
+                while (iswdigit(*p)) { int m = (int)wcstol(p, (wchar_t**)&p, 10); a.alerts |= m == 10 ? kAlert10 : m == 5 ? kAlert5 : m == 0 ? kAlert0 : 0; if (*p == L',') ++p; }
+                while (*p == L' ') ++p;
+            }
         }
+        a.title = p;
+        while (!a.title.empty() && (a.title.back() == L'\n' || a.title.back() == L'\r')) a.title.pop_back();
+        if (a.title.empty()) a.title = T(L"(sem título)", L"(untitled)", L"(sin título)");
+        r.push_back(a);
     }
     fclose(f);
     return r;
@@ -77,20 +91,17 @@ static std::vector<AgendaItem> LoadAgenda() {
 static void SaveAgenda(const std::vector<AgendaItem>& v) {
     FILE* f = _wfopen(DataPath(L"agenda.txt").c_str(), L"wt, ccs=UTF-8");
     if (!f) return;
-    for (auto& a : v) fwprintf(f, L"%04d-%02d-%02d %02d:%02d %ls\n", a.when.wYear, a.when.wMonth, a.when.wDay, a.when.wHour, a.when.wMinute, a.title.c_str());
+    for (auto& a : v) {
+        std::wstring al;
+        if (a.alerts & kAlert10) al += L"10";
+        if (a.alerts & kAlert5) al += std::wstring(al.empty() ? L"" : L",") + L"5";
+        if (a.alerts & kAlert0) al += std::wstring(al.empty() ? L"" : L",") + L"0";
+        if (al.empty()) al = L"n"; // sem avisos
+        fwprintf(f, L"%04d-%02d-%02d %02d:%02d d%d a%ls %ls\n", a.when.wYear, a.when.wMonth, a.when.wDay, a.when.wHour, a.when.wMinute, a.dur, al.c_str(), a.title.c_str());
+    }
     fclose(f);
 }
 static LONGLONG Minutes(const SYSTEMTIME& t) { FILETIME f; SystemTimeToFileTime(&t, &f); return (LONGLONG)(((ULONGLONG)f.dwHighDateTime << 32 | f.dwLowDateTime) / 600000000ull); }
-static void OpenAgendaFile() {
-    std::wstring p = DataPath(L"agenda.txt");
-    if (GetFileAttributesW(p.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        SYSTEMTIME t; GetLocalTime(&t);
-        AgendaItem ex = {t, T(L"Exemplo: apague esta linha. Formato: AAAA-MM-DD HH:MM Título", L"Example: delete this line. Format: YYYY-MM-DD HH:MM Title", L"Ejemplo: borre esta línea. Formato: AAAA-MM-DD HH:MM Título")};
-        ex.when.wDay = 1; ex.when.wMonth = 1; ex.when.wYear = 2000;
-        SaveAgenda({ex});
-    }
-    ShellExecuteW(nullptr, L"open", L"notepad.exe", (L"\"" + p + L"\"").c_str(), nullptr, SW_SHOWNORMAL);
-}
 static bool AgendaSoon(std::wstring* next) { // evento na próxima hora?
     SYSTEMTIME now; GetLocalTime(&now);
     LONGLONG m = Minutes(now), best = LLONG_MAX;
@@ -100,40 +111,8 @@ static bool AgendaSoon(std::wstring* next) { // evento na próxima hora?
     }
     return best != LLONG_MAX;
 }
-static void CheckReminders() {
-    if (g_clock.reminderOpen) return;
-    SYSTEMTIME now; GetLocalTime(&now);
-    LONGLONG m = Minutes(now);
-    auto items = LoadAgenda();
-    for (size_t i = 0; i < items.size(); ++i) {
-        LONGLONG d = Minutes(items[i].when);
-        if (d > m || d < m - 5) continue; // venceu agora (tolerância de 5 min)
-        g_clock.reminderOpen = true;
-        wchar_t when[32]; swprintf(when, 32, L"%02d:%02d", items[i].when.wHour, items[i].when.wMinute);
-        TASKDIALOG_BUTTON b[] = {{100, T(L"Dispensar", L"Dismiss", L"Descartar")}, {101, T(L"+5 min", L"+5 min", L"+5 min")}};
-        TASKDIALOGCONFIG tc = {sizeof(tc)};
-        tc.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION; tc.pszWindowTitle = L"DesktopClock";
-        tc.pszMainIcon = TD_INFORMATION_ICON; tc.pszMainInstruction = items[i].title.c_str(); tc.pszContent = when;
-        tc.pButtons = b; tc.cButtons = 2; tc.nDefaultButton = 100;
-        int pressed = 100;
-        MessageBeep(MB_ICONASTERISK);
-        if (FAILED(TaskDialogIndirect(&tc, &pressed, nullptr, nullptr))) MessageBoxW(nullptr, items[i].title.c_str(), L"DesktopClock", MB_OK | MB_TOPMOST);
-        auto cur = LoadAgenda(); // o arquivo pode ter mudado enquanto a caixa estava aberta
-        for (size_t k = 0; k < cur.size(); ++k)
-            if (Minutes(cur[k].when) == d && cur[k].title == items[i].title) {
-                if (pressed == 101) { // adia 5 minutos a partir de agora
-                    FILETIME f; SYSTEMTIME n2; GetLocalTime(&n2); SystemTimeToFileTime(&n2, &f);
-                    ULONGLONG u = ((ULONGLONG)f.dwHighDateTime << 32 | f.dwLowDateTime) + 5ull * 600000000ull;
-                    f.dwHighDateTime = (DWORD)(u >> 32); f.dwLowDateTime = (DWORD)u; FileTimeToSystemTime(&f, &cur[k].when);
-                    cur[k].when.wSecond = 0;
-                } else cur.erase(cur.begin() + k);
-                break;
-            }
-        SaveAgenda(cur);
-        g_clock.reminderOpen = false;
-        return;
-    }
-}
+static void OpenAgendaWindow();
+static void CheckReminders();
 
 // ---------- Roubo de Tempo (%LOCALAPPDATA%\DesignThumbs\roubo-de-tempo.csv: data;hora;segundos) ----------
 
@@ -462,7 +441,7 @@ static void ClockMenu(POINT pt) {
     int c = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, g_clock.wnd, nullptr);
     DestroyMenu(m);
     switch (c) {
-    case 1: OpenAgendaFile(); break;
+    case 1: OpenAgendaWindow(); break;
     case 2: ShowTheftHistory(); break;
     case 3: if (g_clock.phase) PomoStop(); else PomoPauseResume(); break;
     case 4: if (g_clock.phase == 1) { ++g_clock.done; PomoStart(g_clock.done % 4 == 0 ? 3 : 2); } else PomoStart(1); break;
@@ -495,7 +474,7 @@ static LRESULT CALLBACK ClockProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             g_clock.lastSec = t.wSecond;
             if (g_clock.docked) SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); // fica por cima da barra
             ClockRender();
-            if (t.wSecond == 0 || t.wSecond == 30) CheckReminders();
+            CheckReminders();
         }
         return 0;
     }
@@ -513,9 +492,7 @@ static LRESULT CALLBACK ClockProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         int hit = ClockHit(pt);
         if (hit < 0) { ReleaseCapture(); SendMessage(h, WM_NCLBUTTONDOWN, HTCAPTION, 0); return 0; } // arrastar
         if (hit == kClkTri) {
-            std::wstring next;
-            if (!g_clock.phase && AgendaSoon(&next)) MessageBoxW(h, next.c_str(), T(L"Próximo evento", L"Next event", L"Próximo evento"), MB_OK | MB_ICONINFORMATION);
-            else if (!g_clock.phase) OpenAgendaFile();
+            OpenAgendaWindow();
         } else if (hit == kClkChip0) ToggleTheft();
         else if (hit == kClkChip1) PomoPauseResume();
         else if (hit == kClkChip2) {
@@ -549,11 +526,13 @@ static LRESULT CALLBACK ClockProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 void ClockDock(bool on);
+static void SetTrayClock(bool docking);
 void ClockEnable(bool on) {
     g_clock.on = on;
     WriteDword(L"ClockOn", on);
     if (!on) {
         if (g_clock.theft) ToggleTheft(); // não perde o tempo que estava contando
+        if (g_clock.docked) SetTrayClock(false);
         if (g_clock.wnd) { KillTimer(g_clock.wnd, 1); DestroyWindow(g_clock.wnd); g_clock.wnd = nullptr; }
         return;
     }
@@ -577,11 +556,32 @@ void ClockEnable(bool on) {
     if (g_clock.ocr) RegisterHotKey(g_clock.wnd, 7, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'T');
 }
 
+// Relógio do Windows na bandeja ("Mostrar hora e data na bandeja do sistema", Windows 11): desligado enquanto o
+// DesktopClock está anexado à barra, para não ficarem dois relógios; volta ao desanexar (só se fomos nós que desligamos).
+static void SetTrayClock(bool docking) {
+    const wchar_t* key = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
+    DWORD cur = 1, sz = sizeof(cur);
+    bool exists = RegGetValueW(HKEY_CURRENT_USER, key, L"ShowSystrayDateTimeValue", RRF_RT_REG_DWORD, nullptr, &cur, &sz) == ERROR_SUCCESS;
+    if (!exists) cur = 1;
+    DWORD v;
+    if (docking) {
+        if (cur == 0) return; // já estava desligado pelo usuário
+        v = 0; WriteDword(L"TrayClockHidden", 1);
+    } else {
+        if (!ReadDword(L"TrayClockHidden", 0)) return;
+        v = 1; WriteDword(L"TrayClockHidden", 0);
+    }
+    RegSetKeyValueW(HKEY_CURRENT_USER, key, L"ShowSystrayDateTimeValue", REG_DWORD, &v, sizeof(v));
+    DWORD_PTR r;
+    SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, (LPARAM)L"TraySettings", SMTO_ABORTIFHUNG, 1000, &r);
+}
+
 void ClockDock(bool on) {
     RECT t;
     if (on && !TaskbarRect(&t)) { MessageBoxW(g_clock.wnd, T(L"A barra de tarefas precisa estar na horizontal (embaixo ou em cima).", L"The taskbar must be horizontal (bottom or top).", L"La barra de tareas debe estar en horizontal."), L"DesktopClock", MB_OK | MB_ICONINFORMATION); return; }
     g_clock.docked = on;
     WriteDword(L"ClockDocked", on);
+    SetTrayClock(on);
     if (!g_clock.wnd) return;
     if (on) {
         DWORD dx = ReadDword(L"DockX", 0x80000000);

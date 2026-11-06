@@ -124,6 +124,10 @@ se aplica a essa consulta: https://docs.github.com/site-policy/privacy-policies/
 (leitor de PDF, páginas, registro do painel Alt+P). Ctrl+C copia o texto da janela.
 
 ## Versões
+- **v9.5.2** — **Agenda** no DesktopClock (clique no triângulo): dia e semana, linha do tempo com o horário atual,
+  novo evento com título, dia, hora, duração e avisos; clique num evento para editar ou excluir. **Avisos** no canto
+  inferior direito 10 min antes (some em 20 s) e 5 min antes (com Ok / Adiar 5 min). Ao anexar o relógio à barra
+  de tarefas, o relógio do Windows na bandeja é ocultado (e volta ao desanexar).
 - **v9.5.1** — DesktopClock: tamanho 100% / 90% / 70% e opção **Anexar à barra de tarefas** (o relógio fica dentro
   da barra, na cor dela, e desliza para os lados). Agradecimento especial nas Configurações.
 - **v9.5** — **Ler texto da tela (OCR)** no DesktopClock: botão ao lado do ChatGPT ou **Ctrl+Alt+T**; a tela congela,
