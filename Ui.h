@@ -4,6 +4,7 @@
 #include <dwmapi.h>
 #include <d2d1_1.h>
 #include <dwrite.h>
+#include <dwrite_1.h>
 #include <string>
 #include <cstring>
 #include <cstdlib>
@@ -293,6 +294,24 @@ public:
         ID2D1SolidColorBrush* b = nullptr;
         if (f && SUCCEEDED(rt->CreateSolidColorBrush(c, &b))) { rt->DrawText(t.c_str(), (UINT32)t.size(), f, r, b); b->Release(); }
         if (f) f->Release();
+    }
+    // Texto com espaçamento extra entre as letras (em fração do tamanho da fonte), centralizado no retângulo.
+    void TextSpaced(const std::wstring& t, const D2D1_RECT_F& r, float size, D2D1_COLOR_F c, DWRITE_FONT_WEIGHT w, float em) {
+        IDWriteTextFormat* f = Format(size, w, DWRITE_TEXT_ALIGNMENT_CENTER);
+        if (!f) return;
+        IDWriteTextLayout* l = nullptr;
+        if (SUCCEEDED(dw->CreateTextLayout(t.c_str(), (UINT32)t.size(), f, r.right - r.left, r.bottom - r.top, &l))) {
+            IDWriteTextLayout1* l1 = nullptr;
+            float sp = em * size * s;
+            if (SUCCEEDED(l->QueryInterface(__uuidof(IDWriteTextLayout1), (void**)&l1))) {
+                l1->SetCharacterSpacing(sp / 2, sp / 2, 0, DWRITE_TEXT_RANGE{0, (UINT32)t.size()});
+                l1->Release();
+            }
+            ID2D1SolidColorBrush* b = nullptr;
+            if (SUCCEEDED(rt->CreateSolidColorBrush(c, &b))) { rt->DrawTextLayout(D2D1::Point2F(r.left, r.top), l, b); b->Release(); }
+            l->Release();
+        }
+        f->Release();
     }
     // Texto com quebra de linha; retorna a altura usada.
     float Paragraph(const std::wstring& t, float x, float y, float width, float size, D2D1_COLOR_F c, bool draw = true) {

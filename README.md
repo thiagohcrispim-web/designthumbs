@@ -124,6 +124,9 @@ se aplica a essa consulta: https://docs.github.com/site-policy/privacy-policies/
 (leitor de PDF, páginas, registro do painel Alt+P). Ctrl+C copia o texto da janela.
 
 ## Versões
+- **v9.4.2** — menu circular redesenhado: Crispy com régua na borda e trecho aceso da fatia ativa; Minimalista
+  Escuro no mesmo desenho, sem luzes; Minimalista Claro em porcelana com divisórias que somem e sombra difusa.
+  Nomes com letras espaçadas e os lados vizinhos visíveis no centro.
 - **v9.4** — **DesktopClock** integrado (ative em Configurações › DesktopClock): relógio na área de trabalho com
   qualquer fonte instalada, agenda com lembretes (Dispensar / +5 min), botão de atalho (ChatGPT ou qualquer app),
   **Pomodoro** por cores (foco/pausa: verde/vermelho, azul/cinza, lima/roxo, âmbar/céu) e **Roubo de tempo**
