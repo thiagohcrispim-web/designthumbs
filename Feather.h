@@ -39,6 +39,8 @@ static const Icon kIcons[] = {
     {"target", "M2 12A10 10 0 1 0 22 12A10 10 0 1 0 2 12ZM6 12A6 6 0 1 0 18 12A6 6 0 1 0 6 12ZM10 12A2 2 0 1 0 14 12A2 2 0 1 0 10 12Z"},
     {"coffee", "M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1L6 4M10 1L10 4M14 1L14 4"},
     {"calendar", "M5 4H19A2 2 0 0 1 21 6V20A2 2 0 0 1 19 22H5A2 2 0 0 1 3 20V6A2 2 0 0 1 5 4ZM16 2L16 6M8 2L8 6M3 10L21 10"},
+    {"align-justify", "M21 10H3M21 6H3M21 14H3M21 18H3"},
+    {"scan-text", "M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M8 9V8h8v1M12 8v8M10 16h4"},
     {"external-link", "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3L21 3L21 9M10 14L21 3"},
 };
 struct Glyph { wchar_t g; const char* name; };

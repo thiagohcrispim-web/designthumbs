@@ -1,3 +1,4 @@
+static void StartOcr();
 // Clock.inc.h - DesktopClock integrado ao DesignPeek: relógio na área de trabalho, agenda, Pomodoro e Roubo de Tempo.
 // Incluído dentro do DesignPeek.cpp (usa g_theme, g_dw, g_inst, T(), ReadDword...). Desligado até o usuário ativar.
 
@@ -34,12 +35,13 @@ struct ClockState {
     ULONGLONG theftStart = 0; // GetTickCount64
     SYSTEMTIME theftWall = {};
     int hot = -1, lastSec = -1;
-    D2D1_RECT_F rTri{}, rChip[3]{};
+    D2D1_RECT_F rTri{}, rChip[4]{};
     float s = 1;
     bool reminderOpen = false;
+    bool ocr = true;          // botão e atalho Ctrl+Alt+T do OCR
 };
 static ClockState g_clock;
-enum { kClkTri = 0, kClkChip0 = 1, kClkChip1, kClkChip2 };
+enum { kClkTri = 0, kClkChip0 = 1, kClkChip1, kClkChip2, kClkChip3 };
 
 static ULONGLONG ClockLeft() {
     if (!g_clock.phase) return 0;
@@ -248,7 +250,7 @@ static void ClockRender() {
         }
     }
     float timeW = 2 * w2 + wc, chip = 40 * s, gap = 6 * s, theftW = g_clock.theft ? 104 * s : chip;
-    float Wc = 14 * s + 20 * s + 12 * s + timeW + 12 * s + theftW + gap + chip + gap + chip + 10 * s;
+    float Wc = 14 * s + 20 * s + 12 * s + timeW + 12 * s + theftW + gap + chip + gap + chip + (g_clock.ocr ? gap + chip : 0) + 10 * s;
     UINT W = (UINT)(Wc + 2 * M), Ht = (UINT)(H + 2 * M);
     fmt::Canvas cv(W, Ht);
     if (!cv.rt) return;
@@ -352,6 +354,12 @@ static void ClockRender() {
         p.Fill(g_clock.rChip[2], chip / 2, g_clock.hot == kClkChip2 ? hotBg : chipBg);
         p.FeatherIcon("message-circle", g_clock.rChip[2], 18 * s, th.text);
     }
+    g_clock.rChip[3] = D2D1::RectF(0, 0, 0, 0);
+    if (g_clock.ocr) { // ler texto da tela (OCR)
+        g_clock.rChip[3] = chipRect(chip);
+        p.Fill(g_clock.rChip[3], chip / 2, g_clock.hot == kClkChip3 ? hotBg : chipBg);
+        p.FeatherIcon("scan-text", g_clock.rChip[3], 18 * s, th.text);
+    }
 
     HBITMAP bmp = nullptr;
     if (FAILED(cv.Finish(&bmp)) || !bmp) return;
@@ -368,7 +376,7 @@ static void ClockRender() {
 static int ClockHit(POINT pt) {
     auto in = [&](const D2D1_RECT_F& r) { return pt.x >= r.left && pt.x < r.right && pt.y >= r.top && pt.y < r.bottom; };
     if (in(g_clock.rTri)) return kClkTri;
-    for (int i = 0; i < 3; ++i) if (in(g_clock.rChip[i])) return kClkChip0 + i;
+    for (int i = 0; i < 4; ++i) if (in(g_clock.rChip[i])) return kClkChip0 + i;
     return -1;
 }
 
@@ -475,10 +483,11 @@ static LRESULT CALLBACK ClockProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         else if (hit == kClkChip2) {
             if (g_clock.phase) PomoStop();
             else ShellExecuteW(nullptr, L"open", g_clock.app.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-        }
+        } else if (hit == kClkChip3) { StartOcr(); return 0; }
         ClockRender();
         return 0;
     }
+    case WM_HOTKEY: if (wp == 7) StartOcr(); return 0;
     case WM_RBUTTONUP: { POINT pt; GetCursorPos(&pt); ClockMenu(pt); return 0; }
     case WM_EXITSIZEMOVE: { RECT r; GetWindowRect(h, &r); WriteDword(L"ClockX", (DWORD)r.left); WriteDword(L"ClockY", (DWORD)r.top); return 0; }
     case WM_DISPLAYCHANGE: case WM_SETTINGCHANGE: ClockRender(); break;
@@ -510,6 +519,7 @@ void ClockEnable(bool on) {
     ShowWindow(g_clock.wnd, SW_SHOWNOACTIVATE);
     ClockRender();
     SetTimer(g_clock.wnd, 1, 200, nullptr);
+    if (g_clock.ocr) RegisterHotKey(g_clock.wnd, 7, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'T');
 }
 
 static void ClockLoad() {
@@ -518,5 +528,6 @@ static void ClockLoad() {
     g_clock.pomoTimes = min(2ul, (unsigned long)ReadDword(L"PomoTimes", 0));
     g_clock.pomoColors = min(3ul, (unsigned long)ReadDword(L"PomoColors", 0));
     g_clock.app = ReadStr(L"ClockApp", L"https://chatgpt.com");
+    g_clock.ocr = ReadDword(L"OcrOn", 1) != 0;
     if (ReadDword(L"ClockOn", 0)) ClockEnable(true); // desligado até o usuário ativar
 }

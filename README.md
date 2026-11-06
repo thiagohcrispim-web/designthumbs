@@ -117,6 +117,10 @@ se aplica a essa consulta: https://docs.github.com/site-policy/privacy-policies/
 (leitor de PDF, páginas, registro do painel Alt+P). Ctrl+C copia o texto da janela.
 
 ## Versões
+- **v9.5** — **Ler texto da tela (OCR)** no DesktopClock: botão ao lado do ChatGPT ou **Ctrl+Alt+T**; a tela congela,
+  você arrasta sobre o texto, o OCR do próprio Windows lê (sem internet) e o texto vai para a área de transferência.
+  Um cartão oferece tradução para **PT / ES / EN** (Google Tradutor, com o MyMemory de reserva), juntar linhas e
+  abrir no Google Tradutor. Configurações › DesktopClock: liga/desliga, quebras de linha e idiomas de leitura.
 - **v9.4.3** — Crispy com menos luzes no menu circular (sem a régua na borda); o lado Converter fica com PNG, JPG,
   PDF, WEBP, TIFF e **ZIP** (compacta qualquer seleção); saem BMP, GIF, ICO e as predefinições.
 - **v9.4.2** — menu circular redesenhado: Crispy com régua na borda e trecho aceso da fatia ativa; Minimalista

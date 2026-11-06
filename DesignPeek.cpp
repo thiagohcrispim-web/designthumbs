@@ -2377,10 +2377,11 @@ static void SetAutostart(bool on);
 static bool AutostartEnabled();
 
 #include "Clock.inc.h"
+#include "OcrUi.inc.h"
 
 enum { kTogSpace = 1, kTogAlt, kDelayMinus, kDelayPlus, kDpi72, kDpi300, kPdfSmall, kPdfRaw, kQualMinus, kQualPlus, kTogAuto, kBtnFolder, kBtnQuit, kBtnClose,
        kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate, kBtnPresets, kTheme0, kTheme1, kTheme2, kTheme3, kWebpMinus, kWebpPlus, kTogTray, kTogTempDel, kNeon0, kNeon1, kNeon2, kNeon3, kNeon4, kNeon5, kNeonRgb,
-       kClockOn, kClockFont, kPomoT0, kPomoT1, kPomoT2, kPomoC0, kPomoC1, kPomoC2, kPomoC3, kTheftHist, kUiFont };
+       kClockOn, kClockFont, kPomoT0, kPomoT1, kPomoT2, kPomoC0, kPomoC1, kPomoC2, kPomoC3, kTheftHist, kUiFont, kOcrOn, kOcrKeep, kOcrJoin, kOcrLang };
 static const UINT kNeonPresets[6] = {0xFF6633, 0xFF2D95, 0x00E5FF, 0xB6FF3B, 0xA855F7, 0xFFD400};
 
 static std::wstring PresetsPath();
@@ -2472,6 +2473,12 @@ static void SettingsAction(int id) {
     case kPomoT0: case kPomoT1: case kPomoT2: g_clock.pomoTimes = id - kPomoT0; ClockSave(); break;
     case kPomoC0: case kPomoC1: case kPomoC2: case kPomoC3: g_clock.pomoColors = id - kPomoC0; ClockSave(); ClockRender(); break;
     case kTheftHist: ShowTheftHistory(); return;
+    case kOcrOn:
+        g_clock.ocr = !g_clock.ocr; WriteDword(L"OcrOn", g_clock.ocr);
+        if (g_clock.wnd) { if (g_clock.ocr) RegisterHotKey(g_clock.wnd, 7, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'T'); else UnregisterHotKey(g_clock.wnd, 7); }
+        ClockRender(); break;
+    case kOcrKeep: case kOcrJoin: WriteDword(L"OcrJoin", id == kOcrJoin); break;
+    case kOcrLang: ShellExecuteW(nullptr, L"open", L"ms-settings:regionlanguage", nullptr, nullptr, SW_SHOWNORMAL); return;
     case kUiFont: {
         std::wstring f = g_uiFont.empty() ? L"Bahnschrift" : g_uiFont;
         if (PickFont(g_settingsWnd, &f, nullptr)) { g_uiFont = f == L"Bahnschrift" ? L"" : f; WriteStr(L"UiFont", g_uiFont); ApplyTheme(); }
@@ -2609,7 +2616,7 @@ static void PaintSettings(HWND h) {
     y = c.bottom + 22 * s;
 
     section(L"DESKTOPCLOCK");
-    c = card(g_clock.on ? 5 : 1);
+    c = card(g_clock.on ? 8 : 1);
     toggle(kClockOn, c, label(0, c, T(L"Ativar DesktopClock", L"Enable DesktopClock", L"Activar DesktopClock"),
                                   T(L"Relógio na área de trabalho com agenda, Pomodoro e roubo de tempo", L"Desktop clock with agenda, Pomodoro and time theft", L"Reloj de escritorio con agenda, Pomodoro y robo de tiempo")), g_clock.on);
     if (g_clock.on) {
@@ -2646,6 +2653,24 @@ static void PaintSettings(HWND h) {
             float ry = label(4, c, T(L"Roubo de tempo", L"Time theft", L"Robo de tiempo"), T(L"Caveira ao lado do relógio: clique para contar, clique de novo para registrar", L"Skull next to the clock: click to count, click again to log", L"Calavera junto al reloj: clic para contar, clic otra vez para registrar"));
             D2D1_RECT_F r = rightBox(c, ry, 110 * s);
             p.Pill(r, T(L"Histórico", L"History", L"Historial"), hit(kTheftHist, r));
+        }
+        toggle(kOcrOn, c, label(5, c, T(L"Ler texto da tela (OCR)", L"Read text on screen (OCR)", L"Leer texto de la pantalla (OCR)"),
+                                    T(L"Botão no relógio e atalho Ctrl+Alt+T", L"Clock button and Ctrl+Alt+T shortcut", L"Botón en el reloj y atajo Ctrl+Alt+T")), g_clock.ocr);
+        {
+            float ry = label(6, c, T(L"Quebras de linha", L"Line breaks", L"Saltos de línea"), T(L"Ao copiar o texto lido", L"When copying the text", L"Al copiar el texto"));
+            D2D1_RECT_F r = rightBox(c, ry, 200 * s), parts[2];
+            std::wstring l[2] = {T(L"Manter", L"Keep", L"Mantener"), T(L"Juntar", L"Join", L"Unir")};
+            int hot = g_setHot == kOcrKeep ? 0 : g_setHot == kOcrJoin ? 1 : -1;
+            p.Segmented(r, l, 2, ReadDword(L"OcrJoin", 0) ? 1 : 0, hot, parts);
+            hit(kOcrKeep, parts[0]); hit(kOcrJoin, parts[1]);
+        }
+        {
+            static std::wstring langs; static bool got = false;
+            if (!got) { got = true; for (auto& n : ocr::Languages()) langs += (langs.empty() ? L"" : L", ") + n; if (langs.empty()) langs = T(L"nenhum encontrado", L"none found", L"ninguno"); }
+            std::wstring sub = std::wstring(T(L"Instalados: ", L"Installed: ", L"Instalados: ")) + langs;
+            float ry = label(7, c, T(L"Idiomas de leitura", L"Reading languages", L"Idiomas de lectura"), sub.c_str());
+            D2D1_RECT_F r = rightBox(c, ry, 150 * s);
+            p.Pill(r, T(L"Adicionar idioma…", L"Add language…", L"Añadir idioma…"), hit(kOcrLang, r));
         }
     }
     y = c.bottom + 22 * s;
