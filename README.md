@@ -117,6 +117,8 @@ se aplica a essa consulta: https://docs.github.com/site-policy/privacy-policies/
 (leitor de PDF, páginas, registro do painel Alt+P). Ctrl+C copia o texto da janela.
 
 ## Versões
+- **v9.4.3** — Crispy com menos luzes no menu circular (sem a régua na borda); o lado Converter fica com PNG, JPG,
+  PDF, WEBP, TIFF e **ZIP** (compacta qualquer seleção); saem BMP, GIF, ICO e as predefinições.
 - **v9.4.2** — menu circular redesenhado: Crispy com régua na borda e trecho aceso da fatia ativa; Minimalista
   Escuro no mesmo desenho, sem luzes; Minimalista Claro em porcelana com divisórias que somem e sombra difusa.
   Nomes com letras espaçadas e os lados vizinhos visíveis no centro.
