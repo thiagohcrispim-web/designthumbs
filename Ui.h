@@ -154,7 +154,7 @@ struct Surface {
 };
 
 // Caminho SVG (subconjunto: M L H V C A Z, absolutos e relativos) -> geometria Direct2D, escalado e deslocado.
-inline ID2D1PathGeometry* SvgPath(ID2D1Factory* f, const char* d, float sc, float ox, float oy) {
+inline ID2D1PathGeometry* SvgPath(ID2D1Factory* f, const char* d, float sc, float ox, float oy, bool filled = false) {
     ID2D1PathGeometry* g = nullptr; ID2D1GeometrySink* k = nullptr;
     if (FAILED(f->CreatePathGeometry(&g)) || FAILED(g->Open(&k))) { if (g) g->Release(); return nullptr; }
     const char* p = d;
@@ -165,7 +165,7 @@ inline ID2D1PathGeometry* SvgPath(ID2D1Factory* f, const char* d, float sc, floa
     auto skip = [&]() { while (*p == ' ' || *p == ',' || *p == '\n') ++p; };
     auto num = [&]() { skip(); char* e; float v = strtof(p, &e); p = e; return v; };
     auto hasNum = [&]() { skip(); return (*p >= '0' && *p <= '9') || *p == '-' || *p == '.' || *p == '+'; };
-    auto begin = [&](float x, float y) { if (open) k->EndFigure(D2D1_FIGURE_END_OPEN); k->BeginFigure(P(x, y), D2D1_FIGURE_BEGIN_HOLLOW); open = true; sx = x; sy = y; };
+    auto begin = [&](float x, float y) { if (open) k->EndFigure(D2D1_FIGURE_END_OPEN); k->BeginFigure(P(x, y), filled ? D2D1_FIGURE_BEGIN_FILLED : D2D1_FIGURE_BEGIN_HOLLOW); open = true; sx = x; sy = y; };
     while (true) {
         skip();
         if (!*p) break;
