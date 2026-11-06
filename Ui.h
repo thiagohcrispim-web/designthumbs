@@ -5,6 +5,10 @@
 #include <d2d1_1.h>
 #include <dwrite.h>
 #include <string>
+#include <cstring>
+#include <cstdlib>
+#include <cmath>
+#include "Feather.h"
 
 namespace ui {
 
@@ -14,7 +18,7 @@ enum { kThemeLight = 0, kThemeDark, kThemeWindows, kThemeCrispy }; // Minimalist
 
 struct Theme {
     bool dark = true, glass = false, neon = false; // neon: brilho laranja (tema Crispy)
-    const wchar_t* font = L"Segoe UI Variable Text";
+    const wchar_t* font = L"Bahnschrift";
     D2D1_COLOR_F tint;        // fundo da janela (sobre o desfoque)
     D2D1_COLOR_F panel;       // cartões / cápsulas
     D2D1_COLOR_F panelHot;    // cartão sob o mouse
@@ -65,7 +69,6 @@ inline Theme MakeTheme(int mode, bool glass) {
     bool dark = mode == kThemeDark || (mode == kThemeWindows && SystemDark());
     t.dark = dark; t.glass = glass;
     if (mode == kThemeDark) { // preto x chumbo, sem cor
-        t.font = L"Segoe UI Variable Text";
         t.tint = glass ? Rgba(0x0B0B0C, 0.80f) : Rgba(0x0B0B0C);
         t.panel = Rgba(0xFFFFFF, 0.05f); t.panelHot = Rgba(0xFFFFFF, 0.10f); t.stroke = Rgba(0xFFFFFF, 0.10f);
         t.text = Rgba(0xEDEDEF); t.text2 = Rgba(0x8D8D93);
@@ -148,6 +151,75 @@ struct Surface {
     void Resize(UINT w, UINT h) { if (rt) rt->Resize(D2D1::SizeU(w, h)); }
     void Release() { if (rt) { rt->Release(); rt = nullptr; } }
 };
+
+// Caminho SVG (subconjunto: M L H V C A Z, absolutos e relativos) -> geometria Direct2D, escalado e deslocado.
+inline ID2D1PathGeometry* SvgPath(ID2D1Factory* f, const char* d, float sc, float ox, float oy) {
+    ID2D1PathGeometry* g = nullptr; ID2D1GeometrySink* k = nullptr;
+    if (FAILED(f->CreatePathGeometry(&g)) || FAILED(g->Open(&k))) { if (g) g->Release(); return nullptr; }
+    const char* p = d;
+    char cmd = 0;
+    float cx = 0, cy = 0, sx = 0, sy = 0;
+    bool open = false;
+    auto P = [&](float x, float y) { return D2D1::Point2F(ox + x * sc, oy + y * sc); };
+    auto skip = [&]() { while (*p == ' ' || *p == ',' || *p == '\n') ++p; };
+    auto num = [&]() { skip(); char* e; float v = strtof(p, &e); p = e; return v; };
+    auto hasNum = [&]() { skip(); return (*p >= '0' && *p <= '9') || *p == '-' || *p == '.' || *p == '+'; };
+    auto begin = [&](float x, float y) { if (open) k->EndFigure(D2D1_FIGURE_END_OPEN); k->BeginFigure(P(x, y), D2D1_FIGURE_BEGIN_HOLLOW); open = true; sx = x; sy = y; };
+    while (true) {
+        skip();
+        if (!*p) break;
+        if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z')) cmd = *p++;
+        bool rel = cmd >= 'a';
+        float bx = rel ? cx : 0, by = rel ? cy : 0;
+        switch (cmd | 32) {
+        case 'm': { float x = num() + bx, y = num() + by; begin(x, y); cx = x; cy = y; cmd = rel ? 'l' : 'L'; break; }
+        case 'l': { float x = num() + bx, y = num() + by; k->AddLine(P(x, y)); cx = x; cy = y; break; }
+        case 'h': { float x = num() + bx; k->AddLine(P(x, cy)); cx = x; break; }
+        case 'v': { float y = num() + by; k->AddLine(P(cx, y)); cy = y; break; }
+        case 'c': {
+            float x1 = num() + bx, y1 = num() + by, x2 = num() + bx, y2 = num() + by, x = num() + bx, y = num() + by;
+            k->AddBezier(D2D1::BezierSegment(P(x1, y1), P(x2, y2), P(x, y))); cx = x; cy = y; break;
+        }
+        case 'a': {
+            float rx = num(), ry = num(), rot = num(), large = num(), sweep = num(), x = num() + bx, y = num() + by;
+            if (rx <= 0 || ry <= 0 || (x == cx && y == cy)) { k->AddLine(P(x, y)); cx = x; cy = y; break; }
+            { // arco SVG -> curvas Bézier (o mesmo resultado em qualquer renderizador)
+                const float PI = 3.14159265f;
+                float ph = rot * PI / 180, co = cosf(ph), si = sinf(ph);
+                float dx2 = (cx - x) / 2, dy2 = (cy - y) / 2, x1p = co * dx2 + si * dy2, y1p = -si * dx2 + co * dy2;
+                rx = fabsf(rx); ry = fabsf(ry);
+                float lam = x1p * x1p / (rx * rx) + y1p * y1p / (ry * ry);
+                if (lam > 1) { float q = sqrtf(lam); rx *= q; ry *= q; }
+                float num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p, den = rx * rx * y1p * y1p + ry * ry * x1p * x1p;
+                float coef = (large != sweep ? 1.0f : -1.0f) * sqrtf(fmaxf(0.0f, den > 0 ? num / den : 0));
+                float cxp = coef * rx * y1p / ry, cyp = -coef * ry * x1p / rx;
+                float ecx = co * cxp - si * cyp + (cx + x) / 2, ecy = si * cxp + co * cyp + (cy + y) / 2;
+                auto ang = [](float ux, float uy, float vx, float vy) { return atan2f(ux * vy - uy * vx, ux * vx + uy * vy); };
+                float t1 = ang(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry), dt = ang((x1p - cxp) / rx, (y1p - cyp) / ry, (-x1p - cxp) / rx, (-y1p - cyp) / ry);
+                if (sweep == 0 && dt > 0) dt -= 2 * PI; else if (sweep != 0 && dt < 0) dt += 2 * PI;
+                int n = (int)ceilf(fabsf(dt) / (PI / 2) - 0.001f); if (n < 1) n = 1;
+                float d = dt / n, tk = 4.0f / 3 * tanf(d / 4);
+                auto E = [&](float t, float* px, float* py) { *px = ecx + rx * co * cosf(t) - ry * si * sinf(t); *py = ecy + rx * si * cosf(t) + ry * co * sinf(t); };
+                auto D = [&](float t, float* px, float* py) { *px = -rx * co * sinf(t) - ry * si * cosf(t); *py = -rx * si * sinf(t) + ry * co * cosf(t); };
+                for (int i = 0; i < n; ++i) {
+                    float a0 = t1 + i * d, a1 = a0 + d, ax, ay, bx2, by2, dax, day, dbx, dby;
+                    E(a0, &ax, &ay); E(a1, &bx2, &by2); D(a0, &dax, &day); D(a1, &dbx, &dby);
+                    if (i == n - 1) { bx2 = x; by2 = y; }
+                    k->AddBezier(D2D1::BezierSegment(P(ax + tk * dax, ay + tk * day), P(bx2 - tk * dbx, by2 - tk * dby), P(bx2, by2)));
+                }
+            }
+            cx = x; cy = y; break;
+        }
+        case 'z': if (open) { k->EndFigure(D2D1_FIGURE_END_CLOSED); open = false; } cx = sx; cy = sy; break;
+        default: ++p; continue;
+        }
+        if ((cmd | 32) == 'z') continue;
+        if (!hasNum() && *p && !((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z'))) ++p;
+    }
+    if (open) k->EndFigure(D2D1_FIGURE_END_OPEN);
+    k->Close(); k->Release();
+    return g;
+}
 
 // ---------- pintor ----------
 
@@ -248,7 +320,24 @@ public:
         if (f) f->Release();
         return width;
     }
+    // Ícone Feather pelo nome (traço com pontas redondas, como no feathericons.com).
+    void Feather(const char* d, const D2D1_RECT_F& r, float box, D2D1_COLOR_F c, float stroke = 2) {
+        if (!d) return;
+        ID2D1Factory* f = nullptr; rt->GetFactory(&f);
+        float sc = box / 24, ox = (r.left + r.right) / 2 - box / 2, oy = (r.top + r.bottom) / 2 - box / 2;
+        ID2D1PathGeometry* g = SvgPath(f, d, sc, ox, oy);
+        ID2D1StrokeStyle* st = nullptr;
+        f->CreateStrokeStyle(D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND, D2D1_LINE_JOIN_ROUND), nullptr, 0, &st);
+        ID2D1SolidColorBrush* b = nullptr;
+        if (g && SUCCEEDED(rt->CreateSolidColorBrush(c, &b))) { rt->DrawGeometry(g, b, (stroke * sc) > 1.1f ? stroke * sc : 1.1f, st); b->Release(); }
+        if (st) st->Release();
+        if (g) g->Release();
+        f->Release();
+    }
+    void FeatherIcon(const char* name, const D2D1_RECT_F& r, float box, D2D1_COLOR_F c) { Feather(feather::Find(name), r, box, c); }
     void Icon(const wchar_t* glyph, const D2D1_RECT_F& r, float size, D2D1_COLOR_F c) {
+        if (glyph && glyph[0] && !glyph[1]) // glifo conhecido: desenha o equivalente Feather
+            if (const char* d = feather::ForGlyph(glyph[0])) { Feather(d, r, size * 1.3f * s, c); return; }
         IDWriteTextFormat* f = Format(size, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER, IconFont());
         ID2D1SolidColorBrush* b = nullptr;
         if (f && SUCCEEDED(rt->CreateSolidColorBrush(c, &b))) { rt->DrawText(glyph, (UINT32)wcslen(glyph), f, r, b); b->Release(); }

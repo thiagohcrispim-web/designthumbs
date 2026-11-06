@@ -123,6 +123,8 @@ static const struct { int id; UINT mod, vk; } kOpenKeys[] = {
 enum { kRefreshTimer = 1, kFlashTimer, kAltTimer, kToastTimer, kSelTimer, kAnimTimer, kUpdateTimer };
 static const float kCaption = 56, kPad = 18;
 static ui::Theme g_theme = ui::MakeTheme(ui::kThemeDark, false);
+static std::wstring g_uiFont; // fonte da interface escolhida pelo usuário (vazio = Bahnschrift)
+static void ClockRender();
 static DWORD g_animStart;
 
 static std::wstring ClassOf(HWND h) {
@@ -1055,9 +1057,11 @@ static void ApplyTheme() {
     for (HWND w : {g_wnd, g_toastWnd, g_settingsWnd})
         if (w) glass &= ui::EnableGlass(w, dark);
     g_theme = ui::MakeTheme((int)g_cfg.themeMode, glass);
+    if (!g_uiFont.empty()) g_theme.font = g_uiFont.c_str();
     SetMenuDarkMode(dark);
     SafeRelease(g_checker);
     for (HWND w : {g_wnd, g_toastWnd, g_settingsWnd}) if (w) InvalidateRect(w, nullptr, FALSE);
+    ClockRender();
 }
 
 // ---------- janela do preview ----------
@@ -2223,8 +2227,11 @@ static LRESULT CALLBACK ToastProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 static void SetAutostart(bool on);
 static bool AutostartEnabled();
 
+#include "Clock.inc.h"
+
 enum { kTogSpace = 1, kTogAlt, kDelayMinus, kDelayPlus, kDpi72, kDpi300, kPdfSmall, kPdfRaw, kQualMinus, kQualPlus, kTogAuto, kBtnFolder, kBtnQuit, kBtnClose,
-       kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate, kBtnPresets, kTheme0, kTheme1, kTheme2, kTheme3, kWebpMinus, kWebpPlus, kTogTray, kTogTempDel, kNeon0, kNeon1, kNeon2, kNeon3, kNeon4, kNeon5, kNeonRgb };
+       kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate, kBtnPresets, kTheme0, kTheme1, kTheme2, kTheme3, kWebpMinus, kWebpPlus, kTogTray, kTogTempDel, kNeon0, kNeon1, kNeon2, kNeon3, kNeon4, kNeon5, kNeonRgb,
+       kClockOn, kClockFont, kPomoT0, kPomoT1, kPomoT2, kPomoC0, kPomoC1, kPomoC2, kPomoC3, kTheftHist, kUiFont };
 static const UINT kNeonPresets[6] = {0xFF6633, 0xFF2D95, 0x00E5FF, 0xB6FF3B, 0xA855F7, 0xFFD400};
 
 static std::wstring PresetsPath();
@@ -2309,6 +2316,16 @@ static void SettingsAction(int id) {
             g_cfg.neon = GetRValue(cc.rgbResult) << 16 | GetGValue(cc.rgbResult) << 8 | GetBValue(cc.rgbResult);
             ui::NeonColor() = g_cfg.neon; SaveConfig(); ApplyTheme();
         }
+        return;
+    }
+    case kClockOn: ClockEnable(!g_clock.on); break;
+    case kClockFont: if (PickFont(g_settingsWnd, &g_clock.font, &g_clock.fontPx)) { ClockSave(); ClockRender(); } break;
+    case kPomoT0: case kPomoT1: case kPomoT2: g_clock.pomoTimes = id - kPomoT0; ClockSave(); break;
+    case kPomoC0: case kPomoC1: case kPomoC2: case kPomoC3: g_clock.pomoColors = id - kPomoC0; ClockSave(); ClockRender(); break;
+    case kTheftHist: ShowTheftHistory(); return;
+    case kUiFont: {
+        std::wstring f = g_uiFont.empty() ? L"Bahnschrift" : g_uiFont;
+        if (PickFont(g_settingsWnd, &f, nullptr)) { g_uiFont = f == L"Bahnschrift" ? L"" : f; WriteStr(L"UiFont", g_uiFont); ApplyTheme(); }
         return;
     }
     case kTogTempDel: g_cfg.tempPermanent = !g_cfg.tempPermanent; break;
@@ -2447,6 +2464,48 @@ static void PaintSettings(HWND h) {
     }
     y = c.bottom + 22 * s;
 
+    section(L"DESKTOPCLOCK");
+    c = card(g_clock.on ? 5 : 1);
+    toggle(kClockOn, c, label(0, c, T(L"Ativar DesktopClock", L"Enable DesktopClock", L"Activar DesktopClock"),
+                                  T(L"Relógio na área de trabalho com agenda, Pomodoro e roubo de tempo", L"Desktop clock with agenda, Pomodoro and time theft", L"Reloj de escritorio con agenda, Pomodoro y robo de tiempo")), g_clock.on);
+    if (g_clock.on) {
+        {
+            float ry = label(1, c, T(L"Fonte do relógio", L"Clock font", L"Fuente del reloj"), T(L"Qualquer fonte instalada no Windows", L"Any font installed in Windows", L"Cualquier fuente instalada en Windows"));
+            D2D1_RECT_F r = rightBox(c, ry, 170 * s);
+            wchar_t b[96]; swprintf(b, 96, L"%ls · %lu px", g_clock.font.c_str(), g_clock.fontPx);
+            p.Pill(r, b, hit(kClockFont, r));
+        }
+        {
+            float ry = label(2, c, L"Pomodoro", T(L"Foco · pausa · pausa longa (min)", L"Focus · break · long break (min)", L"Enfoque · pausa · pausa larga (min)"));
+            D2D1_RECT_F r = rightBox(c, ry, 270 * s), parts[3];
+            std::wstring l[3] = {L"25 · 5 · 15", L"50 · 10 · 20", L"15 · 3 · 10"};
+            int hot = g_setHot >= kPomoT0 && g_setHot <= kPomoT2 ? g_setHot - kPomoT0 : -1;
+            p.Segmented(r, l, 3, (int)g_clock.pomoTimes, hot, parts);
+            for (int i = 0; i < 3; ++i) hit(kPomoT0 + i, parts[i]);
+        }
+        {
+            float ry = label(3, c, T(L"Cores do Pomodoro", L"Pomodoro colors", L"Colores del Pomodoro"), T(L"Foco / pausa", L"Focus / break", L"Enfoque / pausa"));
+            D2D1_RECT_F box = rightBox(c, ry, 4 * 50 * s);
+            float cy = (box.top + box.bottom) / 2;
+            for (int i = 0; i < 4; ++i) {
+                float x0 = box.left + i * 50 * s + 6 * s;
+                D2D1_RECT_F a = D2D1::RectF(x0, cy - 11 * s, x0 + 19 * s, cy + 11 * s), b2 = D2D1::RectF(x0 + 19 * s, cy - 11 * s, x0 + 38 * s, cy + 11 * s);
+                D2D1_RECT_F all = D2D1::RectF(x0 - 4 * s, cy - 15 * s, x0 + 42 * s, cy + 15 * s);
+                bool h = hit(kPomoC0 + i, all), sel = (int)g_clock.pomoColors == i;
+                p.Fill(D2D1::RectF(a.left, a.top, b2.right, a.bottom), 11 * s, ui::Rgba(kPomoPairs[i][1]));
+                p.Fill(D2D1::RectF(a.left, a.top, a.right + 8 * s, a.bottom), 11 * s, ui::Rgba(kPomoPairs[i][0]));
+                p.Fill(D2D1::RectF(a.right, a.top, a.right + 8 * s, a.bottom), 0, ui::Rgba(kPomoPairs[i][1]));
+                if (sel || h) p.Stroke(all, 15 * s, sel ? th.text : th.text2, 1.4f * s);
+            }
+        }
+        {
+            float ry = label(4, c, T(L"Roubo de tempo", L"Time theft", L"Robo de tiempo"), T(L"Caveira ao lado do relógio: clique para contar, clique de novo para registrar", L"Skull next to the clock: click to count, click again to log", L"Calavera junto al reloj: clic para contar, clic otra vez para registrar"));
+            D2D1_RECT_F r = rightBox(c, ry, 110 * s);
+            p.Pill(r, T(L"Histórico", L"History", L"Historial"), hit(kTheftHist, r));
+        }
+    }
+    y = c.bottom + 22 * s;
+
     section(T(L"LIMPEZA", L"CLEANUP", L"LIMPIEZA"));
     c = card(1);
     toggle(kTogTempDel, c, label(0, c, T(L"Excluir temporários direto", L"Delete temp files permanently", L"Eliminar temporales directamente"),
@@ -2456,7 +2515,7 @@ static void PaintSettings(HWND h) {
     section(T(L"SISTEMA", L"SYSTEM", L"SISTEMA"));
     bool crispyOn = g_cfg.themeMode == ui::kThemeCrispy;
     int o = crispyOn ? 1 : 0;
-    c = card(5 + o);
+    c = card(6 + o);
     {
         float ry = label(0, c, T(L"Tema", L"Theme", L"Tema"));
         D2D1_RECT_F r = rightBox(c, ry, 300 * s), parts[4];
@@ -2485,6 +2544,12 @@ static void PaintSettings(HWND h) {
             }
         }
     }
+    {
+        float ry = label(1 + o, c, T(L"Fonte da interface", L"Interface font", L"Fuente de la interfaz"), T(L"Qualquer fonte instalada no Windows", L"Any font installed in Windows", L"Cualquier fuente instalada en Windows"));
+        D2D1_RECT_F r = rightBox(c, ry, 150 * s);
+        p.Pill(r, g_uiFont.empty() ? std::wstring(L"Bahnschrift") : g_uiFont, hit(kUiFont, r));
+    }
+    o += 1;
     toggle(kTogAuto, c, label(1 + o, c, T(L"Iniciar com o Windows", L"Start with Windows", L"Iniciar con Windows")), AutostartEnabled());
     toggle(kTogTray, c, label(2 + o, c, T(L"Ícone na área de notificação", L"Notification area icon", L"Icono en el área de notificación"),
                               T(L"Reiniciar ou encerrar com um clique", L"Restart or quit in one click", L"Reiniciar o salir con un clic")), g_cfg.tray);
@@ -3228,7 +3293,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     g_wnd = CreateWindowExW(exStyle, L"DesignPeekWnd", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
     g_altWnd = CreateWindowExW(exStyle | WS_EX_LAYERED, L"DesignPeekAlt", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
     g_toastWnd = CreateWindowExW(exStyle, L"DesignPeekToast", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
+    g_uiFont = ReadStr(L"UiFont", L"");
     ApplyTheme(); // vidro + tema
+    ClockLoad();
     g_taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
     UpdateTrayIcon();
 
