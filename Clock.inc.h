@@ -106,7 +106,9 @@ static LONGLONG Minutes(const SYSTEMTIME& t) { FILETIME f; SystemTimeToFileTime(
 static bool AgendaSoon(std::wstring* next) { // evento na próxima hora?
     SYSTEMTIME now; GetLocalTime(&now);
     LONGLONG m = Minutes(now), best = LLONG_MAX;
-    for (auto& a : LoadAgenda()) {
+    static std::vector<AgendaItem> cache; static ULONGLONG at = 0; // relê o arquivo no máximo a cada 10 s
+    if (!at || GetTickCount64() - at > 10000) { cache = LoadAgenda(); at = GetTickCount64(); }
+    for (auto& a : cache) {
         LONGLONG d = Minutes(a.when) - m;
         if (d >= 0 && d <= 60 && d < best) { best = d; if (next) { wchar_t b[16]; swprintf(b, 16, L"%02d:%02d ", a.when.wHour, a.when.wMinute); *next = b + a.title; } }
     }
@@ -459,7 +461,7 @@ static void ClockMenu(POINT pt) {
         of.lpstrFilter = L"Aplicativos (*.exe)\0*.exe\0Todos (*.*)\0*.*\0";
         of.Flags = OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
         if (GetOpenFileNameW(&of)) { g_clock.app = file; ClockSave(); }
-        else if (MessageBoxW(g_clock.wnd, T(L"Voltar a abrir o ChatGPT no botão?", L"Go back to opening ChatGPT from the button?", L"¿Volver a abrir ChatGPT con el botón?"), L"DesktopClock", MB_YESNO | MB_ICONQUESTION) == IDYES) { g_clock.app = L"https://chatgpt.com"; ClockSave(); }
+        else if (MessageBoxW(g_clock.wnd, T(L"Voltar a abrir o ChatGPT no botão?", L"Go back to opening ChatGPT from the button?", L"¿Volver a abrir ChatGPT con el botón?"), L"Vizu", MB_YESNO | MB_ICONQUESTION) == IDYES) { g_clock.app = L"https://chatgpt.com"; ClockSave(); }
         break;
     }
     case 7: ClockDefaultPos(); break;
@@ -547,7 +549,7 @@ void ClockEnable(bool on) {
         WNDCLASSW wc = {}; wc.lpfnWndProc = ClockProc; wc.hInstance = g_inst; wc.lpszClassName = L"DesignThumbsClock";
         RegisterClassW(&wc); reg = true;
     }
-    g_clock.wnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE, L"DesignThumbsClock", L"DesktopClock", WS_POPUP,
+    g_clock.wnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE, L"DesignThumbsClock", L"Vizu", WS_POPUP,
                                   0, 0, 10, 10, nullptr, nullptr, g_inst, nullptr);
     ClockRender();
     DWORD x = ReadDword(L"ClockX", 0x80000000), y = ReadDword(L"ClockY", 0x80000000);
@@ -582,7 +584,7 @@ static void SetTrayClock(bool docking) {
 
 void ClockDock(bool on) {
     RECT t;
-    if (on && !TaskbarRect(&t)) { MessageBoxW(g_clock.wnd, T(L"A barra de tarefas precisa estar na horizontal (embaixo ou em cima).", L"The taskbar must be horizontal (bottom or top).", L"La barra de tareas debe estar en horizontal."), L"DesktopClock", MB_OK | MB_ICONINFORMATION); return; }
+    if (on && !TaskbarRect(&t)) { MessageBoxW(g_clock.wnd, T(L"A barra de tarefas precisa estar na horizontal (embaixo ou em cima).", L"The taskbar must be horizontal (bottom or top).", L"La barra de tareas debe estar en horizontal."), L"Vizu", MB_OK | MB_ICONINFORMATION); return; }
     g_clock.docked = on;
     WriteDword(L"ClockDocked", on);
     SetTrayClock(on);

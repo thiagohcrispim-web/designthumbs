@@ -9,7 +9,6 @@ static D2D1_COLOR_F AccentOf(const ui::Theme& th) {
 static D2D1_COLOR_F OnAccentOf(const ui::Theme& th) {
     return th.neon || (th.dark && g_cfg.themeMode != ui::kThemeWindows) ? ui::Rgba(0x0E0E10) : ui::Rgba(0xFFFFFF);
 }
-static ULONGLONG FileMinutes(const SYSTEMTIME& t) { return (ULONGLONG)Minutes(t); }
 static SYSTEMTIME AddDays(SYSTEMTIME t, int d) {
     FILETIME f; SystemTimeToFileTime(&t, &f);
     ULONGLONG u = ((ULONGLONG)f.dwHighDateTime << 32 | f.dwLowDateTime) + (LONGLONG)d * 864000000000LL;
@@ -412,7 +411,7 @@ static void OpenAgendaWindow() {
     GetLocalTime(&g_ag.day);
     g_ag.hot = 0;
     AgResetForm();
-    g_ag.wnd = CreateWindowExW(WS_EX_APPWINDOW, L"DesignThumbsAgenda", T(L"Agenda — DesktopClock", L"Agenda — DesktopClock", L"Agenda — DesktopClock"), WS_POPUP | WS_MINIMIZEBOX | WS_SYSMENU,
+    g_ag.wnd = CreateWindowExW(WS_EX_APPWINDOW, L"DesignThumbsAgenda", T(L"Agenda — Vizu", L"Agenda — Vizu", L"Agenda — Vizu"), WS_POPUP | WS_MINIMIZEBOX | WS_SYSMENU,
                                mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - w) / 2, mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - h) / 2, w, h,
                                nullptr, nullptr, g_inst, nullptr);
     ui::EnableGlass(g_ag.wnd, g_theme.dark);
@@ -552,7 +551,7 @@ static void ShowReminder(const AgendaItem& a, int level) {
     if (!reg) { WNDCLASSW wc = {}; wc.lpfnWndProc = ReminderProc; wc.hInstance = g_inst; wc.lpszClassName = L"DesignThumbsReminder"; RegisterClassW(&wc); reg = true; }
     g_rem.item = a; g_rem.level = level; g_rem.shownAt = GetTickCount64(); g_rem.hot = -1;
     g_rem.s = GetDpiForSystem() / 96.0f;
-    g_rem.wnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE, L"DesignThumbsReminder", L"DesktopClock", WS_POPUP,
+    g_rem.wnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE, L"DesignThumbsReminder", L"Vizu", WS_POPUP,
                                 0, 0, 10, 10, nullptr, nullptr, g_inst, nullptr);
     ReminderRender();
     ShowWindow(g_rem.wnd, SW_SHOWNOACTIVATE);

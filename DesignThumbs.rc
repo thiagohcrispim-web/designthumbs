@@ -10,12 +10,12 @@ BEGIN
     BLOCK "041604B0"
     BEGIN
       VALUE "CompanyName", "Thiago Crispim"
-      VALUE "FileDescription", "DesignThumbs - miniaturas e painel de visualização"
+      VALUE "FileDescription", "Vizu - miniaturas e painel de visualização"
       VALUE "FileVersion", "9.6.0"
       VALUE "InternalName", "DesignThumbs"
       VALUE "LegalCopyright", "MIT License - Thiago Crispim"
       VALUE "OriginalFilename", "DesignThumbs.dll"
-      VALUE "ProductName", "DesignThumbs"
+      VALUE "ProductName", "Vizu"
       VALUE "ProductVersion", "9.6.0"
     END
   END

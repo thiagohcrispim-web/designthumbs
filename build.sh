@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")"
 CXX=x86_64-w64-mingw32-g++
 RC=x86_64-w64-mingw32-windres
-FLAGS="-O2 -DUNICODE -D_UNICODE -static -s -Ithird_party/mingw-w64-headers"
+FLAGS="-O2 -DUNICODE -D_UNICODE -static -s -ffunction-sections -fdata-sections -Wl,--gc-sections -Ithird_party/mingw-w64-headers"
 $RC -c 65001 DesignThumbs.rc -O coff -o DesignThumbs.res.o
 $CXX $FLAGS -shared -o DesignThumbs.dll DesignThumbs.cpp DesignThumbs.res.o DesignThumbs.def -lshlwapi -lwindowscodecs -ld2d1 -ldwrite -lole32 -luuid -lgdi32 -lruntimeobject -lshcore
 # libwebp (só o codificador): compila uma vez em build/webp

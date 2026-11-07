@@ -362,13 +362,13 @@ static bool RegisterClsid(const wchar_t* clsidStr, const wchar_t* name, const wc
 STDAPI DllRegisterServer() {
     wchar_t path[MAX_PATH];
     GetModuleFileNameW(g_module, path, MAX_PATH);
-    if (!RegisterClsid(kClsidStr, L"DesignThumbs Thumbnail Provider", path) ||
-        !RegisterClsid(kPreviewClsidStr, L"DesignThumbs Preview Handler", path))
+    if (!RegisterClsid(kClsidStr, L"Vizu Thumbnail Provider", path) ||
+        !RegisterClsid(kPreviewClsidStr, L"Vizu Preview Handler", path))
         return SELFREG_E_CLASS;
     std::wstring prev = std::wstring(L"Software\\Classes\\CLSID\\") + kPreviewClsidStr;
     SetKey(prev, L"AppID", kPrevhostAppId);
-    SetKey(prev, L"DisplayName", L"DesignThumbs");
-    SetKey(kPreviewHandlers, kPreviewClsidStr, L"DesignThumbs Preview Handler");
+    SetKey(prev, L"DisplayName", L"Vizu");
+    SetKey(kPreviewHandlers, kPreviewClsidStr, L"Vizu Preview Handler");
     for (auto ext : fmt::kExtensions) {
         if (SetKey(std::wstring(L"Software\\Classes\\") + ext + kThumbKey, nullptr, kClsidStr) ||
             SetKey(std::wstring(L"Software\\Classes\\") + ext + kPreviewKey, nullptr, kPreviewClsidStr))
