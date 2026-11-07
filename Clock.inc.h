@@ -39,6 +39,7 @@ struct ClockState {
     float s = 1;
     bool reminderOpen = false;
     bool ocr = true;          // botão e atalho Ctrl+Alt+T do OCR
+    bool theftOn = true, pomoOn = true, agendaOn = true; // recursos do relógio que o usuário pode desligar
     DWORD scalePct = 100;     // tamanho: 100, 90 ou 70%
     bool docked = false;      // anexado à barra de tarefas
     RECT tb{};                // barra de tarefas quando anexado
@@ -235,6 +236,7 @@ static void ClockRender() {
         th.dark = dk;
         th.text = dk ? ui::Rgba(0xFFFFFF, 0.95f) : ui::Rgba(0x1D1D1F);
         th.text2 = dk ? ui::Rgba(0xFFFFFF, 0.6f) : ui::Rgba(0x000000, 0.55f);
+        th.icon = th.text;
     }
     g_clock.s = s;
     float H = 64 * s, M = docked ? 0 : 14 * s, fpx = (float)g_clock.fontPx;
@@ -254,7 +256,8 @@ static void ClockRender() {
         }
     }
     float timeW = 2 * w2 + wc, chip = 40 * s, gap = 6 * s, theftW = g_clock.theft ? 104 * s : chip;
-    float Wc = 14 * s + 20 * s + 12 * s + timeW + 12 * s + theftW + gap + chip + gap + chip + (g_clock.ocr ? gap + chip : 0) + 10 * s;
+    bool showTri = pomo || g_clock.agendaOn;
+    float Wc = 14 * s + (showTri ? 20 * s + 12 * s : 0) + timeW + 12 * s + (g_clock.theftOn ? theftW + gap : 0) + (g_clock.pomoOn ? chip + gap : 0) + chip + (g_clock.ocr ? gap + chip : 0) + 10 * s;
     UINT W = (UINT)(Wc + 2 * M), Ht = (UINT)(H + 2 * M);
     fmt::Canvas cv(W, Ht);
     if (!cv.rt) return;
@@ -291,11 +294,14 @@ static void ClockRender() {
     float x = card.left + 14 * s, cy = (card.top + card.bottom) / 2;
     D2D1_COLOR_F hotBg = th.dark ? ui::Rgba(0xFFFFFF, 0.14f) : ui::Rgba(0x000000, 0.09f), chipBg = th.dark ? ui::Rgba(0xFFFFFF, 0.07f) : ui::Rgba(0x000000, 0.05f);
     // 1) ícone da esquerda: agenda (triângulo) ou fase do Pomodoro
-    g_clock.rTri = D2D1::RectF(x - 6 * s, cy - 16 * s, x + 26 * s, cy + 16 * s);
-    if (g_clock.hot == kClkTri) p.Fill(g_clock.rTri, 10 * s, hotBg);
-    if (pomo) p.FeatherIcon(g_clock.phase == 1 ? "target" : "coffee", D2D1::RectF(x, cy - 10 * s, x + 20 * s, cy + 10 * s), 19 * s, ui::Rgba(pc));
-    else p.FeatherIcon("alert-triangle", D2D1::RectF(x, cy - 10 * s, x + 20 * s, cy + 10 * s), 19 * s, AgendaSoon(nullptr) ? ui::Rgba(0xFF3B30) : th.text2);
-    x += 20 * s + 12 * s;
+    g_clock.rTri = D2D1::RectF(0, 0, 0, 0);
+    if (showTri) {
+        g_clock.rTri = D2D1::RectF(x - 6 * s, cy - 16 * s, x + 26 * s, cy + 16 * s);
+        if (g_clock.hot == kClkTri) p.Fill(g_clock.rTri, 10 * s, hotBg);
+        if (pomo) p.FeatherIcon(g_clock.phase == 1 ? "target" : "coffee", D2D1::RectF(x, cy - 10 * s, x + 20 * s, cy + 10 * s), 19 * s, ui::Rgba(pc));
+        else p.FeatherIcon("alert-triangle", D2D1::RectF(x, cy - 10 * s, x + 20 * s, cy + 10 * s), 19 * s, AgendaSoon(nullptr) ? ui::Rgba(0xFF3B30) : th.text2);
+        x += 20 * s + 12 * s;
+    }
 
     // 2) hora, ou contagem do Pomodoro
     SYSTEMTIME now; GetLocalTime(&now);
@@ -331,8 +337,10 @@ static void ClockRender() {
 
     // 3) três botões: caveira (roubo de tempo), Pomodoro/pausa, atalho/parar
     auto chipRect = [&](float wdt) { D2D1_RECT_F r = D2D1::RectF(x, cy - chip / 2, x + wdt, cy + chip / 2); x += wdt + gap; return r; };
-    g_clock.rChip[0] = chipRect(theftW);
-    if (g_clock.theft) {
+    for (auto& r : g_clock.rChip) r = D2D1::RectF(0, 0, 0, 0);
+    if (g_clock.theftOn) g_clock.rChip[0] = chipRect(theftW);
+    if (!g_clock.theftOn) {}
+    else if (g_clock.theft) {
         D2D1_RECT_F r = g_clock.rChip[0];
         for (int i = 3; i >= 1; --i) { float g = i * 1.8f * s; p.Stroke(D2D1::RectF(r.left - g, r.top - g, r.right + g, r.bottom + g), chip / 2 + g, ui::Rgba(0xFF3B5C, 0.09f * (4 - i)), 1.4f * s); }
         p.Fill(r, chip / 2, ui::Rgba(0xFF3B5C, g_clock.hot == kClkChip0 ? 0.26f : 0.16f));
@@ -343,27 +351,25 @@ static void ClockRender() {
         p.Text(tb, D2D1::RectF(r.left + 30 * s, r.top, r.right - 10 * s, r.bottom), 13, ui::Rgba(0xFF7A8F), DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
     } else {
         p.Fill(g_clock.rChip[0], chip / 2, g_clock.hot == kClkChip0 ? hotBg : chipBg);
-        p.FeatherIcon("skull", g_clock.rChip[0], 18 * s, th.text);
+        p.FeatherIcon("skull", g_clock.rChip[0], 18 * s, th.icon);
     }
-    g_clock.rChip[1] = chipRect(chip);
+    if (g_clock.pomoOn) g_clock.rChip[1] = chipRect(chip);
     g_clock.rChip[2] = chipRect(chip);
     if (pomo) {
         p.Fill(g_clock.rChip[1], chip / 2, ui::Rgba(pc, g_clock.hot == kClkChip1 ? 0.8f : 1.0f));
         UINT on = (pc >> 16 & 255) * 3 + (pc >> 8 & 255) * 6 + (pc & 255) > 1700 ? 0x0B0B0C : 0xFFFFFF; // texto legível sobre a cor
         p.FeatherIcon(g_clock.paused ? "play" : "pause", g_clock.rChip[1], 16 * s, ui::Rgba(on));
         p.Fill(g_clock.rChip[2], chip / 2, g_clock.hot == kClkChip2 ? hotBg : chipBg);
-        p.FeatherIcon("square", g_clock.rChip[2], 16 * s, th.text);
+        p.FeatherIcon("square", g_clock.rChip[2], 16 * s, th.icon);
     } else {
-        p.Fill(g_clock.rChip[1], chip / 2, g_clock.hot == kClkChip1 ? hotBg : chipBg);
-        p.FeatherIcon("timer", g_clock.rChip[1], 18 * s, th.text);
+        if (g_clock.pomoOn) { p.Fill(g_clock.rChip[1], chip / 2, g_clock.hot == kClkChip1 ? hotBg : chipBg); p.FeatherIcon("timer", g_clock.rChip[1], 18 * s, th.icon); }
         p.Fill(g_clock.rChip[2], chip / 2, g_clock.hot == kClkChip2 ? hotBg : chipBg);
-        p.FeatherIcon("message-circle", g_clock.rChip[2], 18 * s, th.text);
+        p.FeatherIcon("message-circle", g_clock.rChip[2], 18 * s, th.icon);
     }
-    g_clock.rChip[3] = D2D1::RectF(0, 0, 0, 0);
     if (g_clock.ocr) { // ler texto da tela (OCR)
         g_clock.rChip[3] = chipRect(chip);
         p.Fill(g_clock.rChip[3], chip / 2, g_clock.hot == kClkChip3 ? hotBg : chipBg);
-        p.FeatherIcon("scan-text", g_clock.rChip[3], 18 * s, th.text);
+        p.FeatherIcon("scan-text", g_clock.rChip[3], 18 * s, th.icon);
     }
 
     HBITMAP bmp = nullptr;
@@ -474,7 +480,7 @@ static LRESULT CALLBACK ClockProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             g_clock.lastSec = t.wSecond;
             if (g_clock.docked) SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); // fica por cima da barra
             ClockRender();
-            CheckReminders();
+            if (g_clock.agendaOn) CheckReminders();
         }
         return 0;
     }
@@ -492,7 +498,7 @@ static LRESULT CALLBACK ClockProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         int hit = ClockHit(pt);
         if (hit < 0) { ReleaseCapture(); SendMessage(h, WM_NCLBUTTONDOWN, HTCAPTION, 0); return 0; } // arrastar
         if (hit == kClkTri) {
-            OpenAgendaWindow();
+            if (g_clock.agendaOn) OpenAgendaWindow();
         } else if (hit == kClkChip0) ToggleTheft();
         else if (hit == kClkChip1) PomoPauseResume();
         else if (hit == kClkChip2) {
@@ -502,7 +508,6 @@ static LRESULT CALLBACK ClockProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         ClockRender();
         return 0;
     }
-    case WM_HOTKEY: if (wp == 7) StartOcr(); return 0;
     case WM_RBUTTONUP: { POINT pt; GetCursorPos(&pt); ClockMenu(pt); return 0; }
     case WM_MOVING:
         if (g_clock.docked && TaskbarRect(&g_clock.tb)) {
@@ -553,7 +558,6 @@ void ClockEnable(bool on) {
     if (g_clock.docked) ClockDock(true);
     ClockRender();
     SetTimer(g_clock.wnd, 1, 200, nullptr);
-    if (g_clock.ocr) RegisterHotKey(g_clock.wnd, 7, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'T');
 }
 
 // Relógio do Windows na bandeja ("Mostrar hora e data na bandeja do sistema", Windows 11): desligado enquanto o
@@ -603,6 +607,9 @@ static void ClockLoad() {
     g_clock.pomoColors = min(3ul, (unsigned long)ReadDword(L"PomoColors", 0));
     g_clock.app = ReadStr(L"ClockApp", L"https://chatgpt.com");
     g_clock.ocr = ReadDword(L"OcrOn", 1) != 0;
+    g_clock.theftOn = ReadDword(L"ClockTheft", 1) != 0;
+    g_clock.pomoOn = ReadDword(L"ClockPomo", 1) != 0;
+    g_clock.agendaOn = ReadDword(L"ClockAgenda", 1) != 0;
     { DWORD sc = ReadDword(L"ClockScale", 100); g_clock.scalePct = sc == 90 || sc == 70 ? sc : 100; }
     g_clock.docked = ReadDword(L"ClockDocked", 0) != 0;
     if (ReadDword(L"ClockOn", 0)) ClockEnable(true); // desligado até o usuário ativar

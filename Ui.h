@@ -15,7 +15,7 @@ namespace ui {
 
 // ---------- tema ----------
 
-enum { kThemeLight = 0, kThemeDark, kThemeWindows, kThemeCrispy }; // Minimalista Claro/Escuro, Padrão Windows, Crispy
+enum { kThemeLight = 0, kThemeDark, kThemeWindows, kThemeCrispy, kThemeClassic }; // Claro, Escuro, Windows, Vizu Crispy, Vizu Classic
 
 struct Theme {
     bool dark = true, glass = false, neon = false; // neon: brilho laranja (tema Crispy)
@@ -26,6 +26,9 @@ struct Theme {
     D2D1_COLOR_F stroke;      // borda de luz
     D2D1_COLOR_F text, text2; // texto principal / secundário
     D2D1_COLOR_F accent, onAccent, danger, track, knob, knobOn;
+    D2D1_COLOR_F segFill, segText; // item selecionado do controle segmentado
+    D2D1_COLOR_F icon;             // cor dos ícones
+    bool classic = false;          // Vizu Classic: chapado, laranja só como preenchimento
     UINT glow = 0xFFFFFF;     // cor do brilho que segue o mouse no anel
     float glowA = 0.10f;
 };
@@ -55,17 +58,33 @@ inline Theme CrispyTheme(bool glass) {
     Theme t;
     t.dark = true; t.glass = glass; t.neon = true;
     t.font = L"Bahnschrift";
-    t.tint = glass ? Rgba(0x0A0A0B, 0.88f) : Rgba(0x0A0A0B);
+    t.tint = glass ? Rgba(0x0A0A0B, 0.85f) : Rgba(0x0A0A0B); // 85%: vidro translúcido
     t.panel = Rgba(0xFFFFFF, 0.045f); t.panelHot = Rgba(NeonColor(), 0.16f); t.stroke = Rgba(NeonColor(), 0.32f);
     t.text = Rgba(0xF2F2F2); t.text2 = Rgba(0x9A9AA1);
     t.accent = Rgba(NeonColor()); t.onAccent = Rgba(0x0E0E10); t.danger = Rgba(0xFF3B5C);
     t.track = Rgba(0xFFFFFF, 0.10f); t.knob = Rgba(0xF2F2F2); t.knobOn = Rgba(0xF2F2F2);
     t.glow = NeonColor(); t.glowA = 0.40f;
+    t.segFill = Rgba(NeonColor(), 0.18f); t.segText = Rgba(NeonColor()); t.icon = t.text;
+    return t;
+}
+
+// Vizu Classic: o Design System Vizu (grafite e Ardósia, laranja #FF6633 só como preenchimento, sem brilhos).
+inline Theme ClassicTheme() {
+    Theme t;
+    t.dark = true; t.glass = false; t.classic = true;
+    t.tint = Rgba(0x2E333B);
+    t.panel = Rgba(0x4A4F57); t.panelHot = Rgba(0x5C6472); t.stroke = Rgba(0x5C6472);
+    t.text = Rgba(0xFFFFFF); t.text2 = Rgba(0xBCC2CC);
+    t.accent = Rgba(0xFF6633); t.onAccent = Rgba(0x000000); t.danger = Rgba(0xFF6961);
+    t.track = Rgba(0x23272E); t.knob = Rgba(0xBCC2CC); t.knobOn = Rgba(0x000000);
+    t.segFill = Rgba(0xFF6633); t.segText = Rgba(0x000000); t.icon = Rgba(0xFFFFFF);
+    t.glow = 0xFFFFFF; t.glowA = 0.05f;
     return t;
 }
 
 inline Theme MakeTheme(int mode, bool glass) {
     if (mode == kThemeCrispy) return CrispyTheme(glass);
+    if (mode == kThemeClassic) return ClassicTheme();
     Theme t;
     bool dark = mode == kThemeDark || (mode == kThemeWindows && SystemDark());
     t.dark = dark; t.glass = glass;
@@ -73,8 +92,9 @@ inline Theme MakeTheme(int mode, bool glass) {
         t.tint = glass ? Rgba(0x0B0B0C, 0.80f) : Rgba(0x0B0B0C);
         t.panel = Rgba(0xFFFFFF, 0.05f); t.panelHot = Rgba(0xFFFFFF, 0.10f); t.stroke = Rgba(0xFFFFFF, 0.10f);
         t.text = Rgba(0xEDEDEF); t.text2 = Rgba(0x8D8D93);
-        t.accent = Rgba(0xE6E6E8); t.onAccent = Rgba(0x0B0B0C); t.danger = Rgba(0xFF6961);
-        t.track = Rgba(0xFFFFFF, 0.12f); t.knob = Rgba(0xE6E6E8); t.knobOn = Rgba(0x111113);
+        t.accent = Rgba(0x4A4F57); t.onAccent = Rgba(0xFFFFFF); t.danger = Rgba(0xFF6961); // grafite (Ardósia) da Vizu
+        t.track = Rgba(0xFFFFFF, 0.12f); t.knob = Rgba(0x9AA1AD); t.knobOn = Rgba(0xFFFFFF);
+        t.segFill = Rgba(0x4A4F57); t.segText = Rgba(0xFFFFFF); t.icon = Rgba(0x9AA1AD);
         t.glow = 0xFFFFFF; t.glowA = 0.10f;
     } else if (dark) { // Padrão Windows, escuro
         t.tint = glass ? Rgba(0x1C1C1E, 0.62f) : Rgba(0x1C1C1E);
@@ -82,6 +102,7 @@ inline Theme MakeTheme(int mode, bool glass) {
         t.text = Rgba(0xFFFFFF, 0.96f); t.text2 = Rgba(0xFFFFFF, 0.58f);
         t.accent = Rgba(SystemAccent()); t.onAccent = Rgba(0xFFFFFF); t.danger = Rgba(0xFF6961);
         t.track = Rgba(0xFFFFFF, 0.18f); t.knob = Rgba(0xFFFFFF); t.knobOn = Rgba(0xFFFFFF);
+        t.segFill = Rgba(0xFFFFFF, 0.14f); t.segText = t.text; t.icon = t.text;
         t.glow = SystemAccent(); t.glowA = 0.22f;
     } else { // claro: minimalista (grafite) ou Padrão Windows (cor de destaque do sistema)
         t.tint = glass ? Rgba(0xF5F5F7, 0.70f) : Rgba(0xF5F5F7);
@@ -91,12 +112,14 @@ inline Theme MakeTheme(int mode, bool glass) {
         t.accent = win ? Rgba(SystemAccent()) : Rgba(0x1D1D1F); t.onAccent = Rgba(0xFFFFFF); t.danger = Rgba(0xD70015);
         t.track = Rgba(0x000000, 0.10f); t.knob = Rgba(0xFFFFFF); t.knobOn = Rgba(0xFFFFFF);
         t.glow = win ? SystemAccent() : 0xFFFFFF; t.glowA = win ? 0.16f : 0.30f;
+        t.segFill = Rgba(0xFFFFFF); t.segText = t.text; t.icon = t.text;
     }
     return t;
 }
 
 // Fundo de vidro: halos suaves de luz (no Crispy, degradê neon laranja sobre preto).
 inline void Backdrop(ID2D1RenderTarget* rt, const Theme& th, float w, float h) {
+    if (th.classic) return; // Vizu Classic: fundo chapado
     struct B { float x, y, r; UINT c; float a; };
     B bl[3] = {{w * 0.05f, h * 0.0f, (w > h ? w : h) * 0.55f, th.neon ? NeonColor() : th.dark ? 0x5A5A62u : 0xFFFFFFu, th.neon ? 0.22f : th.dark ? 0.16f : 0.55f},
                {w * 1.0f, h * 1.05f, (w > h ? w : h) * 0.55f, th.neon ? NeonColor() : th.dark ? 0x3A3A40u : 0xD0D4DCu, th.neon ? 0.05f : th.dark ? 0.14f : 0.35f},
@@ -159,8 +182,8 @@ inline ID2D1PathGeometry* SvgPath(ID2D1Factory* f, const char* d, float sc, floa
     if (FAILED(f->CreatePathGeometry(&g)) || FAILED(g->Open(&k))) { if (g) g->Release(); return nullptr; }
     const char* p = d;
     char cmd = 0;
-    float cx = 0, cy = 0, sx = 0, sy = 0;
-    bool open = false;
+    float cx = 0, cy = 0, sx = 0, sy = 0, lcx = 0, lcy = 0; // lcx/lcy: último ponto de controle (para 's')
+    bool open = false; char lastCmd = 0;
     auto P = [&](float x, float y) { return D2D1::Point2F(ox + x * sc, oy + y * sc); };
     auto skip = [&]() { while (*p == ' ' || *p == ',' || *p == '\n') ++p; };
     auto num = [&]() { skip(); char* e; float v = strtof(p, &e); p = e; return v; };
@@ -179,7 +202,13 @@ inline ID2D1PathGeometry* SvgPath(ID2D1Factory* f, const char* d, float sc, floa
         case 'v': { float y = num() + by; k->AddLine(P(cx, y)); cy = y; break; }
         case 'c': {
             float x1 = num() + bx, y1 = num() + by, x2 = num() + bx, y2 = num() + by, x = num() + bx, y = num() + by;
-            k->AddBezier(D2D1::BezierSegment(P(x1, y1), P(x2, y2), P(x, y))); cx = x; cy = y; break;
+            k->AddBezier(D2D1::BezierSegment(P(x1, y1), P(x2, y2), P(x, y))); lcx = x2; lcy = y2; cx = x; cy = y; break;
+        }
+        case 's': {
+            bool prevCubic = (lastCmd | 32) == 'c' || (lastCmd | 32) == 's';
+            float x1 = prevCubic ? 2 * cx - lcx : cx, y1 = prevCubic ? 2 * cy - lcy : cy;
+            float x2 = num() + bx, y2 = num() + by, x = num() + bx, y = num() + by;
+            k->AddBezier(D2D1::BezierSegment(P(x1, y1), P(x2, y2), P(x, y))); lcx = x2; lcy = y2; cx = x; cy = y; break;
         }
         case 'a': {
             float rx = num(), ry = num(), rot = num(), large = num(), sweep = num(), x = num() + bx, y = num() + by;
@@ -214,6 +243,7 @@ inline ID2D1PathGeometry* SvgPath(ID2D1Factory* f, const char* d, float sc, floa
         case 'z': if (open) { k->EndFigure(D2D1_FIGURE_END_CLOSED); open = false; } cx = sx; cy = sy; break;
         default: ++p; continue;
         }
+        lastCmd = cmd;
         if ((cmd | 32) == 'z') continue;
         if (!hasNum() && *p && !((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z'))) ++p;
     }
@@ -368,7 +398,7 @@ public:
         if (hot) Fill(r, rad, th.panelHot);
         if (hot && th.neon) Glow(r, rad);
         Stroke(r, rad, hot ? (th.neon ? th.accent : th.stroke) : th.stroke);
-        Icon(glyph, r, 13, hot ? (th.neon ? th.accent : th.text) : th.text2);
+        Icon(glyph, r, 13, hot ? (th.neon ? th.accent : th.icon) : th.text2);
     }
     // Interruptor estilo iOS.
     void Toggle(const D2D1_RECT_F& r, bool on, bool hot) {
@@ -390,11 +420,11 @@ public:
             D2D1_RECT_F p = D2D1::RectF(r.left + 2 * s + i * w, r.top + 2 * s, r.left + 2 * s + (i + 1) * w, r.bottom - 2 * s);
             parts[i] = p;
             if (i == sel) {
-                Fill(p, (h - 4 * s) / 2, th.neon ? Rgba(NeonColor(), 0.18f) : th.dark ? Rgba(0xFFFFFF, 0.14f) : Rgba(0xFFFFFF));
-                Stroke(p, (h - 4 * s) / 2, th.neon ? th.accent : th.stroke);
+                Fill(p, (h - 4 * s) / 2, th.segFill);
+                if (th.neon || !th.classic) Stroke(p, (h - 4 * s) / 2, th.neon ? th.accent : th.stroke);
             }
             else if (i == hot) Fill(p, (h - 4 * s) / 2, Rgba(th.dark ? 0xFFFFFF : 0x000000, 0.06f));
-            Text(labels[i], p, 12.5f, i == sel ? (th.neon ? th.accent : th.text) : th.text2, i == sel ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
+            Text(labels[i], p, 12.5f, i == sel ? th.segText : th.text2, i == sel ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
         }
     }
     // [ − valor + ]; minus/plus recebem os retângulos clicáveis.
