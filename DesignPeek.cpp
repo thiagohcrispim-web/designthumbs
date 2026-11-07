@@ -1309,17 +1309,25 @@ static bool WriteStoredZip(const std::wstring& out, const std::vector<std::wstri
             FindClose(h);
             return;
         }
+        // lê em blocos: o arquivo nunca vai inteiro para a memória (o tamanho e o CRC são gravados depois)
+        WIN32_FILE_ATTRIBUTE_DATA fa;
+        if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa) || fa.nFileSizeHigh || fa.nFileSizeLow > 0xFFFFFFF0u) { ok = false; return; } // sem ZIP64
         FILE* f = _wfopen(path.c_str(), L"rb");
         if (!f) { ok = false; return; }
-        std::vector<char> data; char buf[65536]; size_t n;
-        while ((n = fread(buf, 1, sizeof(buf), f)) > 0) data.insert(data.end(), buf, buf + n);
-        fclose(f);
-        if (data.size() > 0xFFFFFFF0u) { ok = false; return; }
-        uint32_t crc = 0xFFFFFFFFu; for (char ch : data) crc = table[(crc ^ (uint8_t)ch) & 255] ^ (crc >> 8); crc ^= 0xFFFFFFFFu;
-        Entry e{utf8(rel), crc, (uint32_t)data.size(), (uint32_t)ftell(z)};
-        put32(0x04034b50); put16(20); put16(0x0800); put16(0); put16(0); put16(0x21); put32(e.crc); put32(e.size); put32(e.size);
+        Entry e{utf8(rel), 0, 0, (uint32_t)ftell(z)};
+        put32(0x04034b50); put16(20); put16(0x0800); put16(0); put16(0); put16(0x21); put32(0); put32(0); put32(0);
         put16((uint16_t)e.name.size()); put16(0); fwrite(e.name.data(), 1, e.name.size(), z);
-        if (!data.empty()) fwrite(data.data(), 1, data.size(), z);
+        static char buf[1 << 16]; size_t n;
+        uint32_t crc = 0xFFFFFFFFu, size = 0;
+        while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
+            for (size_t i = 0; i < n; ++i) crc = table[(crc ^ (uint8_t)buf[i]) & 255] ^ (crc >> 8);
+            fwrite(buf, 1, n, z); size += (uint32_t)n;
+        }
+        fclose(f);
+        e.crc = crc ^ 0xFFFFFFFFu; e.size = size;
+        long end = ftell(z);
+        fseek(z, (long)e.offset + 14, SEEK_SET); put32(e.crc); put32(e.size); put32(e.size); // completa o cabeçalho
+        fseek(z, end, SEEK_SET);
         entries.push_back(e);
     };
     for (auto& f : files) add(f, conv::DirOf(f) == dir ? std::wstring(PathFindFileNameW(f.c_str())) : std::wstring(PathFindFileNameW(f.c_str())));
@@ -1376,67 +1384,6 @@ static void StartZip(std::vector<std::wstring> files) {
 
 // ---------- predefinições (%LOCALAPPDATA%\DesignThumbs\predefinicoes.txt) ----------
 
-struct Preset { std::wstring name; ops::Format format; UINT maxPx, quality, dpi; };
-
-static std::wstring DataFile(const wchar_t* name, const char* defaultUtf8) {
-    wchar_t dir[MAX_PATH];
-    if (!GetEnvironmentVariableW(L"LOCALAPPDATA", dir, MAX_PATH)) return L"";
-    std::wstring d = std::wstring(dir) + L"\\DesignThumbs";
-    CreateDirectoryW(d.c_str(), nullptr);
-    std::wstring f = d + L"\\" + name;
-    if (GetFileAttributesW(f.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        HANDLE h = CreateFileW(f.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (h != INVALID_HANDLE_VALUE) { DWORD w; WriteFile(h, defaultUtf8, (DWORD)strlen(defaultUtf8), &w, nullptr); CloseHandle(h); }
-    }
-    return f;
-}
-
-static std::wstring PresetsPath() {
-    return DataFile(L"predefinicoes.txt",
-        "\xEF\xBB\xBF" "# Predefinições do menu circular (segure Alt). Uma por linha:\r\n"
-        "# Nome | formato | maior lado em px (0 = original) | qualidade % | dpi\r\n"
-        "# Formatos: png, jpg, webp, tiff, gif, bmp, ico, pdf\r\n"
-        "WhatsApp | jpg | 1600 | 80\r\n"
-        "Instagram | jpg | 1080 | 90\r\n"
-        "Web | webp | 1920 | 82\r\n"
-        "E-mail | jpg | 1280 | 75\r\n"
-        "Impressão | pdf | 0 | 95 | 300\r\n"
-        "Ícone | ico\r\n");
-}
-
-static std::vector<Preset> LoadPresets() {
-    std::vector<Preset> out;
-    HANDLE h = CreateFileW(PresetsPath().c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
-    if (h == INVALID_HANDLE_VALUE) return out;
-    char buf[16384]; DWORD n = 0;
-    ReadFile(h, buf, sizeof(buf) - 1, &n, nullptr);
-    CloseHandle(h);
-    std::string txt(buf, n);
-    if (txt.compare(0, 3, "\xEF\xBB\xBF") == 0) txt.erase(0, 3);
-    std::wstring w = fmt::Widen(txt), line;
-    auto trim = [](std::wstring s) { s.erase(0, s.find_first_not_of(L" \t")); s.erase(s.find_last_not_of(L" \t") + 1); return s; };
-    for (wchar_t c : w + L"\n") {
-        if (c != L'\n' && c != L'\r') { line += c; continue; }
-        line = trim(line);
-        if (!line.empty() && line[0] != L'#') {
-            std::vector<std::wstring> f;
-            size_t p = 0;
-            for (;;) { size_t e = line.find(L'|', p); f.push_back(trim(line.substr(p, e == std::wstring::npos ? std::wstring::npos : e - p))); if (e == std::wstring::npos) break; p = e + 1; }
-            std::wstring fm = f.size() > 1 ? Lower(f[1]) : L"png";
-            static const wchar_t* names[] = {L"png", L"jpg", L"pdf", L"webp", L"tiff", L"bmp", L"gif", L"ico"};
-            int fi = -1;
-            for (int i = 0; i < 8; ++i) if (fm == names[i]) fi = i;
-            if (fm == L"jpeg") fi = ops::kJpg;
-            if (fm == L"tif") fi = ops::kTiff;
-            if (!f[0].empty() && fi >= 0 && out.size() < 10)
-                out.push_back({f[0], (ops::Format)fi, f.size() > 2 ? (UINT)_wtoi(f[2].c_str()) : 0u,
-                               f.size() > 3 && _wtoi(f[3].c_str()) ? (UINT)_wtoi(f[3].c_str()) : g_cfg.quality,
-                               f.size() > 4 && _wtoi(f[4].c_str()) ? (UINT)_wtoi(f[4].c_str()) : (g_cfg.dpi300 ? 300u : 72u)});
-        }
-        line.clear();
-    }
-    return out;
-}
 
 // ---------- tipos de arquivo da seleção ----------
 
@@ -1556,28 +1503,10 @@ static int RingHit(POINT p) {
     return (int)(a / step) % (int)n;
 }
 
-static POINT g_ringMouse = {-1, -1};  // posição do mouse no anel (o brilho laranja acompanha)
-static DWORD g_ringLastDraw;
 
-// Granulado fino e fixo (o "noise" do vidro), gerado uma vez.
-static const std::vector<UINT32>& NoiseTile() {
-    static std::vector<UINT32> t;
-    if (t.empty()) {
-        t.resize(96 * 96);
-        UINT32 seed = 2166136261u;
-        for (auto& px : t) {
-            seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
-            BYTE a = (BYTE)(seed % 22), v = (BYTE)(seed >> 8 & 1 ? 255 : 0); // pontos claros e escuros bem sutis
-            BYTE c = (BYTE)(v * a / 255);
-            px = (UINT32)a << 24 | (UINT32)c << 16 | (UINT32)c << 8 | c;     // pré-multiplicado
-        }
-    }
-    return t;
-}
 
 static void RenderRing() {
     if (!g_altWnd || g_sides.empty()) return;
-    g_ringLastDraw = GetTickCount();
     UINT S = (UINT)RingS();
     fmt::Canvas cv(S, S); // bitmap com transparência (janela "layered", sem moldura)
     if (!cv.rt) return;
@@ -1587,29 +1516,19 @@ static void RenderRing() {
     const ui::Theme& th = g_theme;
     float s = g_ringScale, c = S / 2.0f, rIn = RingIn(), rOut = RingOut();
     D2D1_POINT_2F C = D2D1::Point2F(c, c);
-    D2D1_ELLIPSE disc = D2D1::Ellipse(C, rOut, rOut);
     ID2D1Factory* fac = nullptr; rt->GetFactory(&fac);
     ID2D1SolidColorBrush* br = nullptr;
     auto solid = [&](D2D1_COLOR_F col) { if (br) br->Release(); rt->CreateSolidColorBrush(col, &br); return br; };
     bool crispy = th.neon;
     bool classic = th.classic, winTheme = g_cfg.themeMode == ui::kThemeWindows;
-    bool sculpt = true; // disco esculpido em todos os temas (Padrão Windows usa o claro/escuro com a cor de destaque)
     D2D1_COLOR_F orange = ui::Rgba(ui::NeonColor());
 
     // sombra suave
-    if (sculpt && !th.dark) for (int i = 12; i >= 1; --i) rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(c, c + 5 * s), rOut + i * 2.2f * s, rOut + i * 2.2f * s), solid(ui::Rgba(0x1E2232, 0.011f)));
+    if (!th.dark) for (int i = 12; i >= 1; --i) rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(c, c + 5 * s), rOut + i * 2.2f * s, rOut + i * 2.2f * s), solid(ui::Rgba(0x1E2232, 0.011f)));
     else for (int i = 5; i >= 1; --i) rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(c, c + 3 * s), rOut + i * 3.5f * s, rOut + i * 3.5f * s), solid(ui::Rgba(0x000000, th.dark ? 0.07f : 0.035f)));
     // Vidro líquido calculado pixel a pixel (idêntico em qualquer PC): base translúcida, brilho laranja que segue
     // o mouse, reflexo no alto, borda de luz e granulado fino.
     {
-        float baseR, baseG, baseB, baseA;
-        if (crispy) { baseR = 14; baseG = 14; baseB = 16; baseA = 0.95f; }
-        else if (g_cfg.themeMode == ui::kThemeDark) { baseR = 18; baseG = 18; baseB = 20; baseA = 0.90f; }
-        else if (th.dark) { baseR = 28; baseG = 28; baseB = 30; baseA = 0.88f; }
-        else { baseR = 246; baseG = 246; baseB = 248; baseA = 0.92f; }
-        float gx = g_ringMouse.x >= 0 ? (float)g_ringMouse.x : c, gy = g_ringMouse.x >= 0 ? (float)g_ringMouse.y : c - rOut * 0.55f;
-        float ga = th.glowA, glowR = rOut * 1.05f;
-        float hiA = th.dark ? 0.09f : 0.40f, noiseAmp = th.dark ? 7.0f : 5.0f;
         // Disco esculpido (v9.4.2): Crispy (neon), Minimalista Escuro (sem luzes) e Minimalista Claro (porcelana).
         // Vincos/divisórias entre fatias, centro rebaixado e a fatia ativa em vidro com cantos arredondados.
         size_t cn = g_sides[g_side].items.size();
@@ -1740,24 +1659,7 @@ static void RenderRing() {
             for (UINT x = 0; x < S; ++x) {
                 float dx = x + 0.5f - c, dy = y + 0.5f - c, r = sqrtf(dx * dx + dy * dy);
                 if (r > rOut + 1) continue;
-                if (sculpt) { px[(size_t)y * S + x] = SculptPixel(dx, dy, r, rOut); continue; }
-                float cov = max(0.0f, min(1.0f, rOut + 0.5f - r)); // borda suavizada
-                float R = baseR, G = baseG, B = baseB, A = baseA;
-                auto blend = [&](float cr, float cg, float cb, float a) { R += (cr - R) * a; G += (cg - G) * a; B += (cb - B) * a; A += (1 - A) * a * 0.6f; };
-                float gd = sqrtf((x - gx) * (x - gx) + (y - gy) * (y - gy)) / glowR, f = max(0.0f, 1 - gd);
-                f = f * f * (3 - 2 * f);
-                if (f > 0) { blend((float)(th.glow >> 16 & 255), (float)(th.glow >> 8 & 255), (float)(th.glow & 255), ga * f); }                       // brilho laranja
-                if (dy < 0) blend(255, 255, 255, hiA * (-dy / rOut) * (-dy / rOut)); // reflexo no alto
-                float rim = fabsf(r - (rOut - 1.2f * s));
-                if (rim < 1.1f * s) { // borda de luz: forte em cima, fraca embaixo
-                    float t = 0.5f - 0.5f * dy / max(r, 1.0f), ra = (1 - rim / (1.1f * s)) * (0.15f + 0.6f * t);
-                    if (crispy) blend(nR, nG, nB, ra * 0.9f); else blend(255, 255, 255, ra * (th.dark ? 0.55f : 1.0f));
-                }
-                UINT32 hsh = (x * 73856093u) ^ (y * 19349663u); hsh ^= hsh >> 13; hsh *= 0x5bd1e995u; hsh ^= hsh >> 15;
-                float nz = ((hsh & 255) / 255.0f - 0.5f) * 2 * noiseAmp;          // granulado
-                R = max(0.0f, min(255.0f, R + nz)); G = max(0.0f, min(255.0f, G + nz)); B = max(0.0f, min(255.0f, B + nz));
-                A = min(1.0f, A) * cov;
-                px[(size_t)y * S + x] = (UINT32)(A * 255) << 24 | (UINT32)(R * A) << 16 | (UINT32)(G * A) << 8 | (UINT32)(B * A);
+                px[(size_t)y * S + x] = SculptPixel(dx, dy, r, rOut);
             }
         ID2D1Bitmap* bg = nullptr;
         if (SUCCEEDED(rt->CreateBitmap(D2D1::SizeU(S, S), px.data(), S * 4, D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)), &bg))) {
@@ -1765,8 +1667,6 @@ static void RenderRing() {
             bg->Release();
         }
     }
-    if (sculpt) {}
-    else if (!th.dark) rt->DrawEllipse(disc, solid(ui::Rgba(0x000000, 0.07f)), 1 * s);
 
     const Side& side = g_sides[g_side];
     size_t n = side.items.size();
@@ -1777,39 +1677,24 @@ static void RenderRing() {
         float a0 = -3.14159265f / 2 - step / 2 + i * step, a1 = a0 + step, am = (a0 + a1) / 2;
         bool hot = (int)i == g_ringHot;
         float rm = (rIn + rOut) / 2 + 3 * s, cx = c + rm * cosf(am), cy = c + rm * sinf(am);
-        if (hot && !sculpt) { // destaque: um disco de vidro macio com halo, sem cantos duros
-            float pr = min(36 * s, rm * sinf(step / 2) - 2 * s);
-            D2D1_COLOR_F halo = crispy ? ui::Rgba(ui::NeonColor()) : g_cfg.themeMode == ui::kThemeWindows ? th.accent : th.dark ? ui::Rgba(0xFFFFFF) : ui::Rgba(0x000000);
-            for (int q = 10; q >= 1; --q) { // halo difuso
-                float hr = pr + q * 1.6f * s; halo.a = (crispy ? 0.05f : 0.018f) * (11 - q) / 10;
-                rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), hr, hr), solid(halo));
-            }
-            D2D1_ELLIPSE pk = D2D1::Ellipse(D2D1::Point2F(cx, cy), pr, pr);
-            rt->FillEllipse(pk, solid(crispy ? ui::Rgba(ui::NeonColor(), 0.18f) : g_cfg.themeMode == ui::kThemeWindows ? D2D1::ColorF(th.accent.r, th.accent.g, th.accent.b, 0.18f) : th.dark ? ui::Rgba(0xFFFFFF, 0.10f) : ui::Rgba(0xFFFFFF, 0.85f)));
-            D2D1_ELLIPSE top = D2D1::Ellipse(D2D1::Point2F(cx, cy - pr * 0.35f), pr * 0.75f, pr * 0.5f); // reflexo no alto
-            rt->FillEllipse(top, solid(ui::Rgba(0xFFFFFF, th.dark ? 0.04f : 0.35f)));
-            rt->DrawEllipse(pk, solid(crispy ? ui::Rgba(ui::NeonColor(), 0.55f) : th.dark ? ui::Rgba(0xFFFFFF, 0.16f) : ui::Rgba(0x000000, 0.08f)), 1 * s);
-        }
-        D2D1_COLOR_F col = hot && crispy ? ui::Rgba(0xFFFFFF) : crispy ? ui::Rgba(0x8E8E95) : th.text;
-        if (sculpt) col = hot ? (classic ? ui::Rgba(0x000000) : th.dark ? ui::Rgba(0xFFFFFF) : ui::Rgba(0x1D1D1F))
+        D2D1_COLOR_F col = hot ? (classic ? ui::Rgba(0x000000) : th.dark ? ui::Rgba(0xFFFFFF) : ui::Rgba(0x1D1D1F))
                               : classic ? ui::Rgba(0xFFFFFF) : crispy ? ui::Rgba(0x6C6C73) : th.dark ? ui::Rgba(0x66666C) : ui::Rgba(0xBDBDC3);
-        if (sculpt && hot && crispy) // sombra escura atrás do nome, para separar do brilho
+        if (hot && crispy) // sombra escura atrás do nome, para separar do brilho
             for (int q = 8; q >= 1; --q) rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy + 2 * s), (26 + q * 1.6f) * s, (14 + q * 1.2f) * s), solid(ui::Rgba(0x000000, 0.035f)));
         float bw = min(rm * step * 0.95f, 96 * s);
         if (formats) { // só o nome do formato
             const std::wstring& lab = side.items[i].label;
             D2D1_RECT_F lr = D2D1::RectF(cx - bw / 2, cy - 11 * s, cx + bw / 2, cy + 11 * s);
-            if (sculpt) p.TextSpaced(lab, lr, hot ? 15.5f : 13, col, hot ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_SEMI_BOLD, 0.1f); // letras espaçadas
-            else p.Text(lab, lr, 14, col, hot ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+            p.TextSpaced(lab, lr, hot ? 15.5f : 13, col, hot ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_SEMI_BOLD, 0.1f); // letras espaçadas
         } else {
-            p.Icon(side.items[i].icon, D2D1::RectF(cx - 20 * s, cy - 23 * s, cx + 20 * s, cy - 3 * s), 14, hot ? col : sculpt ? col : (crispy ? orange : th.text2));
+            p.Icon(side.items[i].icon, D2D1::RectF(cx - 20 * s, cy - 23 * s, cx + 20 * s, cy - 3 * s), 14, col);
             p.Text(side.items[i].label, D2D1::RectF(cx - bw / 2, cy, cx + bw / 2, cy + 18 * s), 11, col, hot ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
         }
     }
     // centro: lente de vidro com o nome do lado
     D2D1_ELLIPSE lens = D2D1::Ellipse(C, rIn - 8 * s, rIn - 8 * s);
     std::wstring cnt = std::to_wstring(g_convFiles.size()) + (g_convFiles.size() == 1 ? T(L" arquivo", L" file", L" archivo") : T(L" arquivos", L" files", L" archivos"));
-    if (sculpt) {
+    {
         D2D1_COLOR_F titleCol = crispy ? orange : th.dark ? ui::Rgba(0xFFFFFF) : ui::Rgba(0x1D1D1F), muted = classic ? ui::Rgba(0xBCC2CC) : th.dark ? ui::Rgba(0x8E8E95) : ui::Rgba(0x7A7A82);
         if (g_ringHot == -1) {
             if (crispy) { rt->DrawEllipse(lens, solid(ui::Rgba(ui::NeonColor(), 0.9f)), 1.5f * s); rt->DrawEllipse(lens, solid(ui::Rgba(ui::NeonColor(), 0.25f)), 5 * s); }
@@ -1830,17 +1715,6 @@ static void RenderRing() {
                                          solid((int)i == g_side ? (crispy ? orange : classic ? ui::Rgba(0xFF6633) : winTheme ? th.accent : th.dark ? ui::Rgba(0x9AA1AD) : ui::Rgba(0x1D1D1F)) : (th.dark ? ui::Rgba(0xFFFFFF, 0.18f) : ui::Rgba(0x000000, 0.14f))));
                 x += w2 + gapd;
             }
-        }
-    } else {
-        rt->FillEllipse(lens, solid(g_ringHot == -1 ? th.panelHot : (th.dark ? ui::Rgba(0xFFFFFF, 0.04f) : ui::Rgba(0xFFFFFF, 0.65f))));
-        rt->DrawEllipse(lens, solid(th.dark ? ui::Rgba(0xFFFFFF, 0.16f) : ui::Rgba(0x000000, 0.08f)), 1 * s);
-        p.Text(side.name, D2D1::RectF(c - rIn, c - 20 * s, c + rIn, c - 1 * s), 12.5f, th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
-        p.Text(cnt, D2D1::RectF(c - rIn, c - 1 * s, c + rIn, c + 14 * s), 10, th.text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
-        if (g_sides.size() > 1) { // indicador de lados: traços finos
-            float dw = 7 * s, gapd = 4 * s, total = g_sides.size() * dw + (g_sides.size() - 1) * gapd, x = c - total / 2;
-            for (size_t i = 0; i < g_sides.size(); ++i, x += dw + gapd)
-                rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(x, c + 23 * s, x + dw, c + 25.5f * s), 1.5f * s, 1.5f * s),
-                                         solid((int)i == g_side ? th.accent : th.track));
         }
     }
     if (br) br->Release();
@@ -1875,7 +1749,6 @@ static void ShowAltPopup() {
     int x = max((int)mi.rcWork.left, min((int)mi.rcWork.right - S, (int)pt.x - S / 2));
     int y = max((int)mi.rcWork.top, min((int)mi.rcWork.bottom - S, (int)pt.y - S / 2));
     g_ringHot = -2;
-    g_ringMouse = {pt.x - x, pt.y - y};
     g_ringAlpha = 60;
     SetWindowPos(g_altWnd, HWND_TOPMOST, x, y, S, S, SWP_NOACTIVATE | SWP_SHOWWINDOW);
     RenderRing();
@@ -1898,8 +1771,7 @@ static LRESULT CALLBACK AltProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_MOUSEMOVE: {
         POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         int hot = RingHit(p);
-        g_ringMouse = p;
-        if (hot != g_ringHot || GetTickCount() - g_ringLastDraw >= 16) { g_ringHot = hot; RenderRing(); }
+        if (hot != g_ringHot) { g_ringHot = hot; RenderRing(); } // só redesenha quando a fatia muda
         TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, h, 0};
         TrackMouseEvent(&tme);
         return 0;
@@ -1915,7 +1787,6 @@ static LRESULT CALLBACK AltProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_MOUSELEAVE:
         g_ringHot = -2;
-        g_ringMouse = {-1, -1};
         if (GetAsyncKeyState(VK_MENU) >= 0) HideAltPopup(); // soltou o Alt e saiu de cima: some
         else RenderRing();
         return 0;
@@ -2079,7 +1950,7 @@ static void OpenDialog(int mode) {
     int w = (int)(460 * s), h = (int)((mode == 0 ? 330 : 230) * s);
     int x = max((int)mi.rcWork.left, min((int)mi.rcWork.right - w, (int)pt.x - w / 2));
     int y = max((int)mi.rcWork.top, min((int)mi.rcWork.bottom - h, (int)pt.y - h / 2));
-    g_dlgWnd = CreateWindowExW(WS_EX_TOPMOST, L"DesignPeekDialog", L"DesignPeek", WS_POPUP, x, y, w, h, nullptr, nullptr, g_inst, nullptr);
+    g_dlgWnd = CreateWindowExW(WS_EX_TOPMOST, L"DesignPeekDialog", L"Vizu", WS_POPUP, x, y, w, h, nullptr, nullptr, g_inst, nullptr);
     ui::EnableGlass(g_dlgWnd, g_theme.dark);
     if (mode == 1) {
         g_dlgEdit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0, 0, 10, 10, g_dlgWnd, nullptr, g_inst, nullptr);
@@ -2318,7 +2189,7 @@ static void OpenCropEditor() {
     MONITORINFO mi = {sizeof(mi)};
     GetMonitorInfoW(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi);
     int w = (int)((mi.rcWork.right - mi.rcWork.left) * 0.7), h = (int)((mi.rcWork.bottom - mi.rcWork.top) * 0.8);
-    g_cropWnd = CreateWindowExW(WS_EX_APPWINDOW, L"DesignPeekCrop", T(L"DesignPeek — Recortar", L"DesignPeek — Crop", L"DesignPeek — Recortar"), WS_POPUP,
+    g_cropWnd = CreateWindowExW(WS_EX_APPWINDOW, L"DesignPeekCrop", T(L"Vizu — Recortar", L"Vizu — Crop", L"Vizu — Recortar"), WS_POPUP,
                                 mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - w) / 2, mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - h) / 2, w, h,
                                 nullptr, nullptr, g_inst, nullptr);
     ui::EnableGlass(g_cropWnd, g_theme.dark);
@@ -2413,18 +2284,17 @@ static bool AutostartEnabled();
 #include "Hearts.inc.h"
 
 enum { kTogSpace = 1, kTogAlt, kDelayMinus, kDelayPlus, kDpi72, kDpi300, kPdfSmall, kPdfRaw, kQualMinus, kQualPlus, kTogAuto, kBtnFolder, kBtnQuit, kBtnClose,
-       kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate, kBtnPresets, kTheme0, kTheme1, kTheme2, kTheme3, kWebpMinus, kWebpPlus, kTogTray, kTogTempDel, kNeon0, kNeon1, kNeon2, kNeon3, kNeon4, kNeon5, kNeonRgb,
+       kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate, kTheme0, kTheme1, kTheme2, kTheme3, kWebpMinus, kWebpPlus, kTogTray, kTogTempDel, kNeon0, kNeon1, kNeon2, kNeon3, kNeon4, kNeon5, kNeonRgb,
        kClockOn, kClockFont, kPomoT0, kPomoT1, kPomoT2, kPomoC0, kPomoC1, kPomoC2, kPomoC3, kTheftHist, kUiFont, kOcrOn, kOcrKeep, kOcrJoin, kOcrLang, kClk100, kClk90, kClk70, kClockDock, kSte, kTheme4, kTheftOn, kFocoOn, kAgendaOn };
 static const UINT kNeonPresets[6] = {0xFF6633, 0xFF2D95, 0x00E5FF, 0xB6FF3B, 0xA855F7, 0xFFD400};
 
-static std::wstring PresetsPath();
 
 static std::vector<std::wstring> FolderList();
 static std::wstring FolderListPath(bool create);
 static void CheckForUpdates(bool manual);
 
 static const wchar_t* kAbout =
-    L"O DesignThumbs ensina o Explorer a entender arquivos de design e fotografia: miniaturas e painel de visualização (Alt+P) "
+    L"O Vizu ensina o Explorer a entender arquivos de design e fotografia: miniaturas e painel de visualização (Alt+P) "
     L"para Photoshop, Illustrator, InDesign, PDF, EPS, SVG, CorelDRAW, Affinity, XD, Sketch, Krita, Procreate, fontes, paletas e RAW de câmeras.\n\n"
     L"Preview com Espaço: selecione um arquivo e aperte Espaço. Setas trocam de arquivo, a roda do mouse dá zoom e arrastar move. "
     L"Z mostra em 100%, 0 ajusta, PgUp/PgDn troca páginas, Enter abre no programa e Ctrl+C copia a imagem. "
@@ -2437,7 +2307,7 @@ static const wchar_t* kAbout =
     L"Leve: não escuta o teclado e só trabalha quando você pede.";
 
 static const wchar_t* kAboutEn =
-    L"DesignThumbs teaches File Explorer to understand design and photo files: thumbnails and the preview pane (Alt+P) "
+    L"Vizu teaches File Explorer to understand design and photo files: thumbnails and the preview pane (Alt+P) "
     L"for Photoshop, Illustrator, InDesign, PDF, EPS, SVG, CorelDRAW, Affinity, XD, Sketch, Krita, Procreate, fonts, palettes and camera RAW.\n\n"
     L"Space preview: select a file and press Space. Arrows switch files, the mouse wheel zooms and dragging pans. "
     L"Z shows 100%, 0 fits, PgUp/PgDn change pages, Enter opens the file and Ctrl+C copies the image. "
@@ -2450,7 +2320,7 @@ static const wchar_t* kAboutEn =
     L"Lightweight: it doesn't listen to the keyboard and only works when you ask.";
 
 static const wchar_t* kAboutEs =
-    L"DesignThumbs enseña al Explorador a entender archivos de diseño y fotografía: miniaturas y panel de vista previa (Alt+P) "
+    L"Vizu enseña al Explorador a entender archivos de diseño y fotografía: miniaturas y panel de vista previa (Alt+P) "
     L"para Photoshop, Illustrator, InDesign, PDF, EPS, SVG, CorelDRAW, Affinity, XD, Sketch, Krita, Procreate, fuentes, paletas y RAW de cámaras.\n\n"
     L"Vista previa con Espacio: selecciona un archivo y pulsa Espacio. Las flechas cambian de archivo, la rueda del ratón hace zoom y arrastrar mueve. "
     L"Z muestra al 100%, 0 ajusta, RePág/AvPág cambian de página, Enter abre el archivo y Ctrl+C copia la imagen. "
@@ -2531,7 +2401,6 @@ static void SettingsAction(int id) {
     case kWebpMinus: g_cfg.webpQuality = max(30ul, (unsigned long)g_cfg.webpQuality - 5); break;
     case kWebpPlus: g_cfg.webpQuality = min(100ul, (unsigned long)g_cfg.webpQuality + 5); break;
     case kTogTray: g_cfg.tray = !g_cfg.tray; SaveConfig(); UpdateTrayIcon(); return;
-    case kBtnPresets: ShellExecuteW(nullptr, L"open", L"notepad.exe", (L"\"" + PresetsPath() + L"\"").c_str(), nullptr, SW_SHOWNORMAL); return;
     case kTogUpdate: g_cfg.autoUpdate = !g_cfg.autoUpdate; break;
     case kBtnUpdate: CheckForUpdates(true); return;
     case kBtnFolders: ShellExecuteW(nullptr, L"open", L"notepad.exe", (L"\"" + FolderListPath(true) + L"\"").c_str(), nullptr, SW_SHOWNORMAL); return;
@@ -2586,27 +2455,10 @@ static void PaintSettings(HWND h) {
     float top = 92 * s;
     D2D1_RECT_F view = D2D1::RectF(0, top, sz.width, sz.height);
     rt->PushAxisAlignedClip(view, D2D1_ANTIALIAS_MODE_ALIASED);
-    float x = 20 * s, w = sz.width - 40 * s, y = top - g_setScroll, rowH = 50 * s;
+    float x = 20 * s, w = sz.width - 40 * s, y = top - g_setScroll;
     auto section = [&](const wchar_t* title) {
         p.Text(title, D2D1::RectF(x + 10 * s, y, x + w, y + 22 * s), 11.5f, th.text2, DWRITE_FONT_WEIGHT_SEMI_BOLD);
         y += 26 * s;
-    };
-    auto card = [&](int rows) { D2D1_RECT_F c = D2D1::RectF(x, y, x + w, y + rows * rowH); p.Glass(c, 16 * s); return c; };
-    auto label = [&](int row, const D2D1_RECT_F& c, const wchar_t* t, const wchar_t* sub = nullptr) {
-        float ry = c.top + row * rowH;
-        if (row) p.Fill(D2D1::RectF(c.left + 16 * s, ry, c.right - 16 * s, ry + 1 * s), 0, th.stroke);
-        if (sub) {
-            p.Text(t, D2D1::RectF(c.left + 16 * s, ry + 7 * s, c.right - 200 * s, ry + 28 * s), 13, th.text);
-            p.Text(sub, D2D1::RectF(c.left + 16 * s, ry + 26 * s, c.right - 200 * s, ry + 44 * s), 11, th.text2);
-        } else p.Text(t, D2D1::RectF(c.left + 16 * s, ry, c.right - 200 * s, ry + rowH), 13, th.text);
-        return ry;
-    };
-    auto toggle = [&](int id, const D2D1_RECT_F& c, float ry, bool on) {
-        D2D1_RECT_F r = D2D1::RectF(c.right - 16 * s - 46 * s, ry + (rowH - 26 * s) / 2, c.right - 16 * s, ry + (rowH + 26 * s) / 2);
-        p.Toggle(r, on, hit(id, r));
-    };
-    auto rightBox = [&](const D2D1_RECT_F& c, float ry, float bw) {
-        return D2D1::RectF(c.right - 16 * s - bw, ry + (rowH - 30 * s) / 2, c.right - 16 * s, ry + (rowH + 30 * s) / 2);
     };
 
     // Linhas de um cartão: cada uma desenha a si mesma; "sub" = subitem (abre abaixo da opção, como um dropdown).
@@ -2862,7 +2714,9 @@ static LRESULT CALLBACK SettingsProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
     case WM_KEYDOWN: if (wp == VK_ESCAPE) DestroyWindow(h); return 0;
-    case WM_SIZE: g_setSurf.Resize(LOWORD(lp), HIWORD(lp)); return 0;
+    case WM_SIZE: // minimizada: o fundo escuro some junto; restaurada: volta
+        if (g_dimWnd) ShowWindow(g_dimWnd, wp == SIZE_MINIMIZED ? SW_HIDE : SW_SHOWNOACTIVATE);
+        g_setSurf.Resize(LOWORD(lp), HIWORD(lp)); return 0;
     case WM_ERASEBKGND: return 1;
     case WM_PAINT: {
         PAINTSTRUCT ps;
@@ -2888,7 +2742,7 @@ static HWND ShowDim(HMONITOR mon) {
     if (!reg) { WNDCLASSW wc = {}; wc.lpfnWndProc = DimProc; wc.hInstance = g_inst; wc.lpszClassName = L"DesignPeekDim"; wc.hCursor = LoadCursor(nullptr, IDC_ARROW); RegisterClassW(&wc); reg = true; }
     MONITORINFO mi = {sizeof(mi)};
     GetMonitorInfoW(mon, &mi);
-    RECT r = mi.rcMonitor;
+    RECT r = mi.rcWork; // a barra de tarefas continua visível
     HWND h = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_LAYERED, L"DesignPeekDim", L"", WS_POPUP, r.left, r.top, r.right - r.left, r.bottom - r.top, nullptr, nullptr, g_inst, nullptr);
     if (!h) return nullptr;
     // vidro escuro: desfoque "acrylic" com preto a 70%; sem ele, só o preto translúcido
@@ -2930,11 +2784,15 @@ static void OpenSettings() {
 static std::wstring StartupLink() {
     PWSTR startup = nullptr;
     if (FAILED(SHGetKnownFolderPath(FOLDERID_Startup, 0, nullptr, &startup))) return L"";
-    std::wstring lnk = std::wstring(startup) + L"\\DesignPeek.lnk";
+    std::wstring lnk = std::wstring(startup) + L"\\Vizu.lnk";
     CoTaskMemFree(startup);
     return lnk;
 }
-static bool AutostartEnabled() { std::wstring l = StartupLink(); return !l.empty() && GetFileAttributesW(l.c_str()) != INVALID_FILE_ATTRIBUTES; }
+static std::wstring OldLink(const std::wstring& lnk) { return lnk.substr(0, lnk.size() - 8) + L"DesignPeek.lnk"; } // atalho das versões antigas
+static bool AutostartEnabled() {
+    std::wstring l = StartupLink();
+    return !l.empty() && (GetFileAttributesW(l.c_str()) != INVALID_FILE_ATTRIBUTES || GetFileAttributesW(OldLink(l).c_str()) != INVALID_FILE_ATTRIBUTES);
+}
 
 static void CreateLink(const std::wstring& lnk, const wchar_t* args, const wchar_t* desc) {
     wchar_t exe[MAX_PATH];
@@ -2952,7 +2810,8 @@ static void CreateLink(const std::wstring& lnk, const wchar_t* args, const wchar
 static void SetAutostart(bool on) {
     std::wstring lnk = StartupLink();
     if (lnk.empty()) return;
-    if (on) CreateLink(lnk, L"", L"DesignPeek - preview com Espaço");
+    DeleteFileW(OldLink(lnk).c_str());
+    if (on) CreateLink(lnk, L"", L"Vizu");
     else DeleteFileW(lnk.c_str());
 }
 
@@ -2960,9 +2819,10 @@ static void SetAutostart(bool on) {
 static void SetStartMenu(bool on) {
     PWSTR programs = nullptr;
     if (FAILED(SHGetKnownFolderPath(FOLDERID_Programs, 0, nullptr, &programs))) return;
-    std::wstring lnk = std::wstring(programs) + L"\\DesignPeek.lnk";
+    std::wstring lnk = std::wstring(programs) + L"\\Vizu.lnk";
     CoTaskMemFree(programs);
-    if (on) CreateLink(lnk, L"/settings", L"DesignPeek - configurações"); else DeleteFileW(lnk.c_str());
+    DeleteFileW(OldLink(lnk).c_str());
+    if (on) CreateLink(lnk, L"/settings", L"Vizu - configurações"); else DeleteFileW(lnk.c_str());
 }
 
 // ---------- ícone na área de notificação: Configurações, Reiniciar, Encerrar ----------
@@ -2998,7 +2858,7 @@ static void RestartSelf() {
 
 static void ShowTrayMenu() {
     HMENU m = CreatePopupMenu();
-    std::wstring title = std::wstring(L"DesignThumbs ") + upd::kVersion;
+    std::wstring title = std::wstring(L"Vizu ") + upd::kVersion;
     AppendMenuW(m, MF_STRING | MF_GRAYED, 0, title.c_str());
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, kMenuSettings, T(L"Configurações", L"Settings", L"Configuración"));
@@ -3243,9 +3103,9 @@ static void Diagnose(const std::wstring& path) {
     std::wstring r;
     wchar_t t[512];
     auto line = [&](const wchar_t* fmtStr, ...) { va_list ap; va_start(ap, fmtStr); vswprintf(t, 512, fmtStr, ap); va_end(ap); r += t; r += L"\r\n"; };
-    line(L"DesignPeek %ls  ·  %ls", upd::kVersion, path.c_str());
+    line(L"Vizu %ls  ·  %ls", upd::kVersion, path.c_str());
     std::wstring ext = conv::ExtOf(path);
-    line(L"Extensão: %ls  ·  tratada pelo DesignThumbs: %ls", ext.c_str(), fmt::Handles(ext) ? L"sim" : L"NÃO");
+    line(L"Extensão: %ls  ·  tratada pelo Vizu: %ls", ext.c_str(), fmt::Handles(ext) ? L"sim" : L"NÃO");
     IStream* s = nullptr;
     HRESULT hr = SHCreateStreamOnFileEx(path.c_str(), STGM_READ | STGM_SHARE_DENY_NONE, 0, FALSE, nullptr, &s);
     line(L"Abrir arquivo: 0x%08X", (unsigned)hr);
@@ -3289,7 +3149,7 @@ static void Diagnose(const std::wstring& path) {
     line(L"Programa padrão: %ls  ·  painel dele: %ls", prog[0] ? prog : L"(nenhum)", v[0] ? v : L"(nenhum)");
     line(L"");
     line(L"Ctrl+C copia este texto.");
-    MessageBoxW(nullptr, r.c_str(), L"DesignPeek — diagnóstico", MB_OK | MB_ICONINFORMATION);
+    MessageBoxW(nullptr, r.c_str(), L"Vizu — diagnóstico", MB_OK | MB_ICONINFORMATION);
 }
 
 // ---------- instalação (o próprio DesignPeek.exe é o instalador; a DLL vai embutida) ----------
@@ -3364,24 +3224,24 @@ static int InstallerChoice() {
     TASKDIALOG_BUTTON buttons[] = {
         {100, newer ? T(L"Atualizar\nInstala a versão nova mantendo as configurações", L"Update\nInstalls the new version and keeps your settings", L"Actualizar\nInstala la versión nueva y mantiene la configuración")
                     : T(L"Reinstalar\nInstala de novo, mantendo as configurações", L"Reinstall\nInstalls again and keeps your settings", L"Reinstalar\nInstala de nuevo y mantiene la configuración")},
-        {101, T(L"Desinstalar\nRemove o DesignThumbs deste computador", L"Uninstall\nRemoves DesignThumbs from this computer", L"Desinstalar\nElimina DesignThumbs de este equipo")},
+        {101, T(L"Desinstalar\nRemove o Vizu deste computador", L"Uninstall\nRemoves Vizu from this computer", L"Desinstalar\nElimina Vizu de este equipo")},
     };
     TASKDIALOGCONFIG tc = {sizeof(tc)};
     tc.dwFlags = TDF_USE_COMMAND_LINKS | TDF_ALLOW_DIALOG_CANCELLATION | TDF_POSITION_RELATIVE_TO_WINDOW;
     tc.dwCommonButtons = TDCBF_CANCEL_BUTTON;
-    tc.pszWindowTitle = L"DesignThumbs";
+    tc.pszWindowTitle = L"Vizu";
     tc.hInstance = g_inst;
     tc.pszMainIcon = MAKEINTRESOURCEW(1);
     tc.dwFlags |= 0; // ícone do programa (recurso 1)
-    tc.pszMainInstruction = T(L"O DesignThumbs já está instalado", L"DesignThumbs is already installed", L"DesignThumbs ya está instalado");
+    tc.pszMainInstruction = T(L"O Vizu já está instalado", L"Vizu is already installed", L"Vizu ya está instalado");
     tc.pszContent = content.c_str();
     tc.pButtons = buttons;
     tc.cButtons = ARRAYSIZE(buttons);
     tc.nDefaultButton = 100;
     int pressed = IDCANCEL;
     if (FAILED(TaskDialogIndirect(&tc, &pressed, nullptr, nullptr))) // sem a caixa moderna: pergunta simples
-        pressed = MessageBoxW(nullptr, T(L"O DesignThumbs já está instalado.\n\nSim = atualizar/reinstalar\nNão = desinstalar", L"DesignThumbs is already installed.\n\nYes = update/reinstall\nNo = uninstall",
-                                         L"DesignThumbs ya está instalado.\n\nSí = actualizar/reinstalar\nNo = desinstalar"), L"DesignThumbs", MB_YESNOCANCEL | MB_ICONQUESTION) == IDYES ? 100
+        pressed = MessageBoxW(nullptr, T(L"O Vizu já está instalado.\n\nSim = atualizar/reinstalar\nNão = desinstalar", L"Vizu is already installed.\n\nYes = update/reinstall\nNo = uninstall",
+                                         L"Vizu ya está instalado.\n\nSí = actualizar/reinstalar\nNo = desinstalar"), L"Vizu", MB_YESNOCANCEL | MB_ICONQUESTION) == IDYES ? 100
                   : IDCANCEL;
     return pressed;
 }
@@ -3396,10 +3256,10 @@ static int Install(bool silent) {
         silent = false;
         goto install; // já confirmou: não pergunta de novo
     }
-    if (!silent && MessageBoxW(nullptr, T(L"Instalar o DesignThumbs?\n\nMiniaturas, painel de visualização e preview com Espaço para arquivos de design. Não precisa de administrador.\n\nPrivacidade: uma vez por dia o programa consulta o GitHub para ver se há versão nova (pode desligar nas configurações). Nenhum dado seu é enviado.",
-                                         L"Install DesignThumbs?\n\nThumbnails, preview pane and Space preview for design files. No administrator needed.\n\nPrivacy: once a day the program checks GitHub for a new version (you can turn this off in settings). None of your data is sent.",
-                                         L"¿Instalar DesignThumbs?\n\nMiniaturas, panel de vista previa y vista previa con Espacio para archivos de diseño. No requiere administrador.\n\nPrivacidad: una vez al día el programa consulta GitHub para ver si hay una versión nueva (se puede desactivar en la configuración). No se envía ningún dato tuyo."),
-                               L"DesignThumbs", MB_YESNO | MB_ICONQUESTION) != IDYES)
+    if (!silent && MessageBoxW(nullptr, T(L"Instalar o Vizu?\n\nMiniaturas, painel de visualização e preview com Espaço para arquivos de design. Não precisa de administrador.\n\nPrivacidade: uma vez por dia o programa consulta o GitHub para ver se há versão nova (pode desligar nas configurações). Nenhum dado seu é enviado.",
+                                         L"Install Vizu?\n\nThumbnails, preview pane and Space preview for design files. No administrator needed.\n\nPrivacy: once a day the program checks GitHub for a new version (you can turn this off in settings). None of your data is sent.",
+                                         L"¿Instalar Vizu?\n\nMiniaturas, panel de vista previa y vista previa con Espacio para archivos de diseño. No requiere administrador.\n\nPrivacidad: una vez al día el programa consulta GitHub para ver si hay una versión nueva (se puede desactivar en la configuración). No se envía ningún dato tuyo."),
+                               L"Vizu", MB_YESNO | MB_ICONQUESTION) != IDYES)
         return 0;
 install:
     std::wstring dir = InstallDir();
@@ -3412,7 +3272,7 @@ install:
     DeleteFileW((dir + L"\\Uninstall.exe").c_str()); // sobra do instalador antigo
     ok = ok && CallDll(dll, "DllRegisterServer");
     if (!ok) {
-        if (!silent) MessageBoxW(nullptr, T(L"Não foi possível instalar.", L"Installation failed.", L"No se pudo instalar."), L"DesignThumbs", MB_ICONERROR);
+        if (!silent) MessageBoxW(nullptr, T(L"Não foi possível instalar.", L"Installation failed.", L"No se pudo instalar."), L"Vizu", MB_ICONERROR);
         return 1;
     }
     // atalhos (Inicializar, menu Iniciar) e menu Novo, apontando para o EXE instalado
@@ -3423,7 +3283,7 @@ install:
     }
     auto sz = [](const std::wstring& v) { return (DWORD)((v.size() + 1) * sizeof(wchar_t)); };
     std::wstring un = L"\"" + exe + L"\" /uninstall", quiet = un + L" /S";
-    RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"DisplayName", REG_SZ, L"DesignThumbs", 26);
+    RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"DisplayName", REG_SZ, L"Vizu", 10);
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"DisplayVersion", REG_SZ, upd::kVersion, sz(upd::kVersion));
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"Publisher", REG_SZ, L"Thiago Crispim", 30);
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"DisplayIcon", REG_SZ, exe.c_str(), sz(exe));
@@ -3439,15 +3299,15 @@ install:
     STARTUPINFOW si2 = {sizeof(si2)};
     if (CreateProcessW(nullptr, &run[0], nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si2, &pi)) { CloseHandle(pi.hProcess); CloseHandle(pi.hThread); }
     if (!silent)
-        MessageBoxW(nullptr, T(L"DesignThumbs instalado!\n\nAs miniaturas novas aparecem conforme você navega pelas pastas. Para desinstalar: Configurações › Aplicativos.",
-                               L"DesignThumbs installed!\n\nNew thumbnails appear as you browse your folders. To uninstall: Settings › Apps.",
-                               L"¡DesignThumbs instalado!\n\nLas miniaturas nuevas aparecen al navegar por las carpetas. Para desinstalar: Configuración › Aplicaciones."),
-                    L"DesignThumbs", MB_ICONINFORMATION);
+        MessageBoxW(nullptr, T(L"Vizu instalado!\n\nAs miniaturas novas aparecem conforme você navega pelas pastas. Para desinstalar: Configurações › Aplicativos.",
+                               L"Vizu installed!\n\nNew thumbnails appear as you browse your folders. To uninstall: Settings › Apps.",
+                               L"¡Vizu instalado!\n\nLas miniaturas nuevas aparecen al navegar por las carpetas. Para desinstalar: Configuración › Aplicaciones."),
+                    L"Vizu", MB_ICONINFORMATION);
     return 0;
 }
 
 static int Uninstall(bool silent, bool ask) {
-    if (!silent && ask && MessageBoxW(nullptr, T(L"Desinstalar o DesignThumbs?", L"Uninstall DesignThumbs?", L"¿Desinstalar DesignThumbs?"), L"DesignThumbs",
+    if (!silent && ask && MessageBoxW(nullptr, T(L"Desinstalar o Vizu?", L"Uninstall Vizu?", L"¿Desinstalar Vizu?"), L"Vizu",
                                MB_YESNO | MB_ICONQUESTION) != IDYES)
         return 0;
     std::wstring dir = InstallDir();
@@ -3465,7 +3325,7 @@ static int Uninstall(bool silent, bool ask) {
     CleanupOld(dir);
     for (const wchar_t* f : {L"DesignPeek.ico", L"diagnostico.bat", L"README.md", L"Uninstall.exe"}) DeleteFileW((dir + L"\\" + f).c_str());
     RemoveDirectoryW(dir.c_str());
-    if (!silent) MessageBoxW(nullptr, T(L"DesignThumbs removido.", L"DesignThumbs removed.", L"DesignThumbs eliminado."), L"DesignThumbs", MB_ICONINFORMATION);
+    if (!silent) MessageBoxW(nullptr, T(L"Vizu removido.", L"Vizu removed.", L"Vizu eliminado."), L"Vizu", MB_ICONINFORMATION);
     return 0;
 }
 
@@ -3555,9 +3415,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     RegisterClassW(&wc);
 
     DWORD exStyle = WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE;
-    g_wnd = CreateWindowExW(exStyle, L"DesignPeekWnd", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
-    g_altWnd = CreateWindowExW(exStyle | WS_EX_LAYERED, L"DesignPeekAlt", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
-    g_toastWnd = CreateWindowExW(exStyle, L"DesignPeekToast", L"DesignPeek", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
+    g_wnd = CreateWindowExW(exStyle, L"DesignPeekWnd", L"Vizu", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
+    g_altWnd = CreateWindowExW(exStyle | WS_EX_LAYERED, L"DesignPeekAlt", L"Vizu", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
+    g_toastWnd = CreateWindowExW(exStyle, L"DesignPeekToast", L"Vizu", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
     g_uiFont = ReadStr(L"UiFont", L"");
     ApplyTheme(); // vidro + tema
     ClockLoad();

@@ -13,12 +13,12 @@ BEGIN
     BLOCK "041604B0"
     BEGIN
       VALUE "CompanyName", "Thiago Crispim"
-      VALUE "FileDescription", "DesignPeek - preview de arquivos de design com Espaço"
+      VALUE "FileDescription", "Vizu"
       VALUE "FileVersion", "9.6.0"
       VALUE "InternalName", "DesignPeek"
       VALUE "OriginalFilename", "DesignPeek.exe"
       VALUE "LegalCopyright", "MIT License - Thiago Crispim"
-      VALUE "ProductName", "DesignThumbs"
+      VALUE "ProductName", "Vizu"
       VALUE "ProductVersion", "9.6.0"
     END
   END

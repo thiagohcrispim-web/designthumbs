@@ -23,7 +23,7 @@ inline int Compare(const std::wstring& a, const std::wstring& b) {
 
 inline std::string HttpsGet(const wchar_t* host, const wchar_t* path) {
     std::string body;
-    HINTERNET s = WinHttpOpen(L"DesignThumbs-Updater", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    HINTERNET s = WinHttpOpen(L"Vizu-Updater", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!s) return body;
     WinHttpSetTimeouts(s, 5000, 5000, 8000, 8000);
     HINTERNET c = WinHttpConnect(s, host, INTERNET_DEFAULT_HTTPS_PORT, 0);

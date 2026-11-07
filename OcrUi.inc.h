@@ -414,7 +414,7 @@ static void SelFinish() {
         MessageBoxW(nullptr, T(L"O leitor de texto do Windows não está disponível neste PC.\n\nEle vem no Windows 10 e 11; confira em Configurações › Hora e idioma › Idioma se há um idioma com \"Reconhecimento óptico de caracteres\".",
                                L"The Windows text reader isn't available on this PC.\n\nIt ships with Windows 10 and 11; check Settings › Time & language › Language for a language with \"Optical character recognition\".",
                                L"El lector de texto de Windows no está disponible en este PC.\n\nViene con Windows 10 y 11; revisa en Configuración › Hora e idioma › Idioma si hay un idioma con \"Reconocimiento óptico de caracteres\"."),
-                    L"DesktopClock", MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
+                    L"Vizu", MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
         return;
     }
     (void)keep;

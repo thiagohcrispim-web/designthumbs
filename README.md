@@ -130,7 +130,8 @@ se aplica a essa consulta: https://docs.github.com/site-policy/privacy-policies/
   Configurações reorganizadas: Ver · Converter · Outros · Sistema · Temas; Relógio e OCR abrem seus subitens ao
   ativar; Roubo de tempo, Foco (Pomodoro, com tempos e cores) e Agenda podem ser desligados; Ctrl+Alt+T funciona
   com o relógio desligado; Pastas Padrão Vizu; qualidade JPG/PDF padrão 75%; interface em Inter (se instalada) e
-  relógio em Bahnschrift; a tela esmaece para o preto ao abrir as Configurações.
+  relógio em Bahnschrift; a tela esmaece para o preto ao abrir as Configurações (a barra de tarefas continua
+  visível). Nome e ícone Vizu em todo o programa; código sem uso removido e programa mais leve.
 - **v9.5.2** — **Agenda** no DesktopClock (clique no triângulo): dia e semana, linha do tempo com o horário atual,
   novo evento com título, dia, hora, duração e avisos; clique num evento para editar ou excluir. **Avisos** no canto
   inferior direito 10 min antes (some em 20 s) e 5 min antes (com Ok / Adiar 5 min). Ao anexar o relógio à barra
