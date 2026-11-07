@@ -117,6 +117,13 @@ se aplica a essa consulta: https://docs.github.com/site-policy/privacy-policies/
 (leitor de PDF, páginas, registro do painel Alt+P). Ctrl+C copia o texto da janela.
 
 ## Versões
+- **v9.6** — Identidade **Vizu**: logotipo nas Configurações, tema novo **Vizu Classic** (Design System Vizu:
+  grafite e Ardósia, laranja só como preenchimento) e **Vizu Crispy** (o neon, agora translúcido a 85%). Tema Escuro
+  com controles no grafite da Vizu; Padrão Windows com o menu circular claro/escuro e a cor de destaque do sistema.
+  Configurações reorganizadas: Ver · Converter · Outros · Sistema · Temas; Relógio e OCR abrem seus subitens ao
+  ativar; Roubo de tempo, Foco (Pomodoro, com tempos e cores) e Agenda podem ser desligados; Ctrl+Alt+T funciona
+  com o relógio desligado; Pastas Padrão Vizu; qualidade JPG/PDF padrão 75%; interface em Inter (se instalada) e
+  relógio em Bahnschrift; a tela esmaece para o preto ao abrir as Configurações.
 - **v9.5.2** — **Agenda** no DesktopClock (clique no triângulo): dia e semana, linha do tempo com o horário atual,
   novo evento com título, dia, hora, duração e avisos; clique num evento para editar ou excluir. **Avisos** no canto
   inferior direito 10 min antes (some em 20 s) e 5 min antes (com Ok / Adiar 5 min). Ao anexar o relógio à barra
