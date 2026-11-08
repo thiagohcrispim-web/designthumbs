@@ -1427,7 +1427,7 @@ static void BuildSides() {
     { // Converter: formatos (só para imagens, paletas e fontes) e ZIP (qualquer arquivo)
         Side s{T(L"Converter", L"Convert", L"Convertir"), {}};
         if (k & (kSelImage | kSelPalette | kSelFont)) {
-            static const ops::Format order[] = {ops::kPng, ops::kJpg, ops::kPdf, ops::kWebp, ops::kTiff};
+            static const ops::Format order[] = {ops::kPng, ops::kJpg, ops::kPdf, ops::kWebp, ops::kTiff, ops::kSvg, ops::kEps};
             for (ops::Format f : order) {
                 jobs::Job j = BaseJob(); j.format = f;
                 std::wstring name = ops::Name(f);

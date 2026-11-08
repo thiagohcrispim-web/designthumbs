@@ -7,7 +7,7 @@
 
 namespace upd {
 
-static const wchar_t* kVersion = L"9.6.0";
+static const wchar_t* kVersion = L"9.6.1";
 static const wchar_t* kRepoApi = L"/repos/thiagohcrispim-web/designthumbs/releases/latest";
 // Alternativa às Releases: arquivo no próprio repositório com a versão e o link do instalador.
 static const wchar_t* kLatestJson = L"/thiagohcrispim-web/designthumbs/main/latest.json";

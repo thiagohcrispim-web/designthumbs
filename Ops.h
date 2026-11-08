@@ -11,16 +11,16 @@
 namespace ops {
 using std::min; using std::max;
 
-enum Format { kPng, kJpg, kPdf, kWebp, kTiff, kBmp, kGif, kIco, kFormatCount };
+enum Format { kPng, kJpg, kPdf, kWebp, kTiff, kBmp, kGif, kIco, kSvg, kEps, kFormatCount };
 inline const wchar_t* Ext(Format f) {
-    static const wchar_t* e[] = {L".png", L".jpg", L".pdf", L".webp", L".tif", L".bmp", L".gif", L".ico"};
+    static const wchar_t* e[] = {L".png", L".jpg", L".pdf", L".webp", L".tif", L".bmp", L".gif", L".ico", L".svg", L".eps"};
     return e[f];
 }
 inline const wchar_t* Name(Format f) {
-    static const wchar_t* n[] = {L"PNG", L"JPG", L"PDF", L"WEBP", L"TIFF", L"BMP", L"GIF", L"ICO"};
+    static const wchar_t* n[] = {L"PNG", L"JPG", L"PDF", L"WEBP", L"TIFF", L"BMP", L"GIF", L"ICO", L"SVG", L"EPS"};
     return n[f];
 }
-inline bool HasAlpha(Format f) { return f == kPng || f == kWebp || f == kTiff || f == kIco || f == kGif; }
+inline bool HasAlpha(Format f) { return f == kPng || f == kWebp || f == kTiff || f == kIco || f == kGif || f == kSvg; }
 
 struct Edit {
     UINT maxW = 0, maxH = 0;   // cabe dentro (0 = sem limite)
@@ -252,13 +252,13 @@ inline bool SaveWic(const std::vector<HBITMAP>& frames, const std::wstring& path
     return ok;
 }
 
-// PNG em memória (usado no ICO).
-inline bool PngBytes(HBITMAP b, std::vector<BYTE>& out) {
+// Imagem codificada em memória (PNG no ICO e no SVG, JPEG no EPS).
+inline bool EncodedBytes(HBITMAP b, Format f, float quality, std::vector<BYTE>& out) {
     wchar_t tmp[MAX_PATH], file[MAX_PATH];
     GetTempPathW(MAX_PATH, tmp);
     GetTempFileNameW(tmp, L"dti", 0, file);
     DeleteFileW(file);
-    bool ok = SaveWic({b}, file, kPng, 1, 0);
+    bool ok = SaveWic({b}, file, f, quality, 0);
     if (ok) {
         HANDLE h = CreateFileW(file, GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
         DWORD size = GetFileSize(h, nullptr), got = 0;
@@ -269,6 +269,7 @@ inline bool PngBytes(HBITMAP b, std::vector<BYTE>& out) {
     DeleteFileW(file);
     return ok;
 }
+inline bool PngBytes(HBITMAP b, std::vector<BYTE>& out) { return EncodedBytes(b, kPng, 1, out); }
 
 // ICO com vários tamanhos (16 a 256), imagem centralizada num quadrado transparente.
 inline bool SaveIco(HBITMAP b, const std::wstring& path) {
@@ -307,11 +308,65 @@ inline bool SaveIco(HBITMAP b, const std::wstring& path) {
     return WriteFileBytes(path, ico.data(), ico.size());
 }
 
+// SVG: a imagem (PNG, com transparência) dentro de um SVG do mesmo tamanho. Não vetoriza.
+inline bool SaveSvg(HBITMAP b, const std::wstring& path, double dpi) {
+    BYTE* px; UINT w, h;
+    std::vector<BYTE> png;
+    if (!Pixels(b, &px, &w, &h) || !EncodedBytes(b, kPng, 1, png)) return false;
+    static const char* tb = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string b64; b64.reserve((png.size() + 2) / 3 * 4);
+    for (size_t i = 0; i < png.size(); i += 3) {
+        UINT32 v = (UINT32)png[i] << 16 | (i + 1 < png.size() ? (UINT32)png[i + 1] << 8 : 0) | (i + 2 < png.size() ? png[i + 2] : 0);
+        b64 += tb[v >> 18 & 63]; b64 += tb[v >> 12 & 63];
+        b64 += i + 1 < png.size() ? tb[v >> 6 & 63] : '='; b64 += i + 2 < png.size() ? tb[v & 63] : '=';
+    }
+    double sc = dpi > 0 ? 96.0 / dpi : 1; // tamanho de exibição em px CSS (respeita o DPI)
+    char head[512];
+    snprintf(head, sizeof(head), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%.2f\" height=\"%.2f\" viewBox=\"0 0 %u %u\">\n<image width=\"%u\" height=\"%u\" href=\"data:image/png;base64,",
+             w * sc, h * sc, w, h, w, h);
+    std::string doc = std::string(head) + b64 + "\"/>\n</svg>\n";
+    return WriteFileBytes(path, (const BYTE*)doc.data(), doc.size());
+}
+
+// EPS (PostScript nível 2): a imagem em JPEG (DCTDecode) codificada em ASCII85. Não vetoriza.
+inline bool SaveEps(HBITMAP b, const std::wstring& path, float quality, double dpi) {
+    BYTE* px; UINT w, h;
+    std::vector<BYTE> jpg;
+    if (!Pixels(b, &px, &w, &h) || !EncodedBytes(b, kJpg, quality, jpg)) return false;
+    double d = dpi > 0 ? dpi : 72, pw = w * 72.0 / d, ph = h * 72.0 / d; // tamanho em pontos
+    char head[1024];
+    snprintf(head, sizeof(head),
+             "%%!PS-Adobe-3.0 EPSF-3.0\n%%%%BoundingBox: 0 0 %d %d\n%%%%HiResBoundingBox: 0 0 %.3f %.3f\n%%%%Creator: Vizu\n%%%%LanguageLevel: 2\n%%%%EndComments\n"
+             "save\n/DeviceRGB setcolorspace\n%.3f %.3f scale\n"
+             "<< /ImageType 1 /Width %u /Height %u /BitsPerComponent 8 /Decode [0 1 0 1 0 1] /ImageMatrix [%u 0 0 -%u 0 %u]\n"
+             "   /DataSource currentfile /ASCII85Decode filter /DCTDecode filter >> image\n",
+             (int)(pw + 0.999), (int)(ph + 0.999), pw, ph, pw, ph, w, h, w, h, h);
+    std::string doc = head;
+    doc.reserve(doc.size() + jpg.size() * 5 / 4 + jpg.size() / 60 + 64);
+    int col = 0;
+    for (size_t i = 0; i < jpg.size(); i += 4) { // ASCII85
+        size_t n = min<size_t>(4, jpg.size() - i);
+        UINT32 v = 0;
+        for (size_t k = 0; k < 4; ++k) v = v << 8 | (k < n ? jpg[i + k] : 0);
+        if (v == 0 && n == 4) { doc += 'z'; col++; }
+        else {
+            char c[5];
+            for (int k = 4; k >= 0; --k) { c[k] = (char)('!' + v % 85); v /= 85; }
+            doc.append(c, n + 1); col += (int)n + 1;
+        }
+        if (col >= 72) { doc += '\n'; col = 0; }
+    }
+    doc += "~>\nrestore\nshowpage\n%%EOF\n";
+    return WriteFileBytes(path, (const BYTE*)doc.data(), doc.size());
+}
+
 // Grava `frames` no formato pedido. Formatos de uma página gravam só a primeira.
 inline bool Save(const std::vector<HBITMAP>& frames, const std::wstring& path, Format f, float quality, double dpi) {
     if (frames.empty()) return false;
     if (f == kWebp) return SaveWebp(frames[0], path, quality);
     if (f == kIco) return SaveIco(frames[0], path);
+    if (f == kSvg) return SaveSvg(frames[0], path, dpi);
+    if (f == kEps) return SaveEps(frames[0], path, quality, dpi);
     if (f == kTiff) return SaveWic(frames, path, f, quality, dpi);
     return SaveWic({frames[0]}, path, f, quality, dpi);
 }
