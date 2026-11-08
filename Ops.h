@@ -322,7 +322,7 @@ inline bool SaveSvg(HBITMAP b, const std::wstring& path, double dpi) {
     }
     double sc = dpi > 0 ? 96.0 / dpi : 1; // tamanho de exibição em px CSS (respeita o DPI)
     char head[512];
-    snprintf(head, sizeof(head), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"%.2f\" height=\"%.2f\" viewBox=\"0 0 %u %u\">\n<image width=\"%u\" height=\"%u\" href=\"data:image/png;base64,",
+    snprintf(head, sizeof(head), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"%.2f\" height=\"%.2f\" viewBox=\"0 0 %u %u\">\n<image width=\"%u\" height=\"%u\" xlink:href=\"data:image/png;base64,",
              w * sc, h * sc, w, h, w, h);
     std::string doc = std::string(head) + b64 + "\"/>\n</svg>\n";
     return WriteFileBytes(path, (const BYTE*)doc.data(), doc.size());

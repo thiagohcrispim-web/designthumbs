@@ -149,6 +149,7 @@ https://docs.github.com/site-policy/privacy-policies/github-general-privacy-stat
 <details>
 <summary><b>Histórico de versões</b></summary>
 
+- **v9.6.2** — SVG convertido agora abre no Illustrator (antes aparecia em branco).
 - **v9.6.1** — Converter agora também gera **SVG** e **EPS** (a imagem vai embutida no arquivo; não é vetorização).
 - **v9.6** — Identidade **Vizu**: logotipo nas Configurações, tema novo **Vizu Classic** (Design System Vizu:
   grafite e Ardósia, laranja só como preenchimento) e **Vizu Crispy** (o neon, agora translúcido a 85%). Tema Escuro
