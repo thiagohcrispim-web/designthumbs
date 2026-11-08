@@ -36,7 +36,7 @@ e clique para copiar.
 
 Selecione arquivos e segure **Alt**: um menu circular aparece em volta do mouse, só com o que faz sentido para eles.
 
-- **Converter** para PNG, JPG, PDF, WEBP ou TIFF, ou **compactar em ZIP**.
+- **Converter** para PNG, JPG, PDF, WEBP, TIFF, SVG ou EPS, ou **compactar em ZIP**.
 - **Ferramentas**: redimensionar, recortar com proporções prontas, girar, espelhar, tons de cinza, tirar metadados.
 - **PDF**: juntar na ordem em que você clicou, dividir, extrair páginas, comprimir.
 - **Extras**: exportar camadas do PSD, folha de cores, HEX/CSS, converter paletas ASE ⇄ ACO, amostra de fonte.
@@ -149,6 +149,7 @@ https://docs.github.com/site-policy/privacy-policies/github-general-privacy-stat
 <details>
 <summary><b>Histórico de versões</b></summary>
 
+- **v9.6.1** — Converter agora também gera **SVG** e **EPS** (a imagem vai embutida no arquivo; não é vetorização).
 - **v9.6** — Identidade **Vizu**: logotipo nas Configurações, tema novo **Vizu Classic** (Design System Vizu:
   grafite e Ardósia, laranja só como preenchimento) e **Vizu Crispy** (o neon, agora translúcido a 85%). Tema Escuro
   com controles no grafite da Vizu; Padrão Windows com o menu circular claro/escuro e a cor de destaque do sistema.
