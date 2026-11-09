@@ -3,7 +3,6 @@
 # Usa os headers mais novos do mingw-w64 em third_party/mingw-w64-headers.
 set -e
 cd "$(dirname "$0")"
-python3 tools/prepare_vector_engine.py
 CXX=x86_64-w64-mingw32-g++
 RC=x86_64-w64-mingw32-windres
 FLAGS="-O2 -DUNICODE -D_UNICODE -static -s -ffunction-sections -fdata-sections -Wl,--gc-sections -Ithird_party/mingw-w64-headers"
@@ -18,5 +17,5 @@ if [ ! -f build/webp/libwebp.a ]; then
   x86_64-w64-mingw32-ar rcs build/webp/libwebp.a build/webp/*.o
 fi
 $RC -c 65001 DesignPeek.rc -O coff -o DesignPeek.res.o # embute a DLL no EXE
-$CXX $FLAGS -municode -mwindows -D_WIN32_WINNT=0x0A00 -o DesignPeek.exe DesignPeek.cpp DesignPeek.res.o build/webp/libwebp.a -lshlwapi -lole32 -loleaut32 -luuid -lgdi32 -ldwmapi -lshell32 -ld2d1 -ldwrite -lwindowscodecs -lruntimeobject -lshcore -lwinhttp -lurlmon -lcomctl32 -lcomdlg32 -lxmllite
+$CXX $FLAGS -municode -mwindows -D_WIN32_WINNT=0x0A00 -o DesignPeek.exe DesignPeek.cpp DesignPeek.res.o build/webp/libwebp.a -lshlwapi -lole32 -loleaut32 -luuid -lgdi32 -ldwmapi -lshell32 -ld2d1 -ldwrite -lwindowscodecs -lruntimeobject -lshcore -lwinhttp -lurlmon -lcomctl32 -lcomdlg32 -lxmllite -lbcrypt
 cp DesignPeek.exe DesignThumbs-Setup.exe # o próprio DesignPeek é o instalador

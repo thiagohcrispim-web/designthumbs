@@ -1,4 +1,5 @@
 {
-  "version": "9.7.0",
-  "url": "https://github.com/thiagohcrispim-web/designthumbs/releases/download/v9.7/DesignThumbs-Setup.exe"
+  "version": "9.8.0",
+  "url": "https://github.com/thiagohcrispim-web/designthumbs/raw/main/dist/DesignThumbs-Setup.exe",
+  "sha256": "b2b573290fc0f434b7137977501fb28edf83535e23fb939a1646a41eb2950e0b"
 }

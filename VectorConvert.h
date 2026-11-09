@@ -75,7 +75,11 @@ struct Temp {
     }
     ~Temp() {
         if (dir.empty()) return;
-        for (const wchar_t* f : {L"source.cdr", L"source.svg", L"document.svg", L"output.eps", L"engine.log"}) DeleteFileW(At(f).c_str());
+        WIN32_FIND_DATAW d; HANDLE f = FindFirstFileW(At(L"*").c_str(), &d);
+        if (f != INVALID_HANDLE_VALUE) {
+            do if (!(d.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) DeleteFileW(At(d.cFileName).c_str()); while (FindNextFileW(f, &d));
+            FindClose(f);
+        }
         RemoveDirectoryW(dir.c_str());
     }
     Temp(const Temp&) = delete; Temp& operator=(const Temp&) = delete;
@@ -105,14 +109,22 @@ inline std::wstring Engine() {
     }
     return L"";
 }
-inline bool Selected() {
-    DWORD enabled = 1, size = sizeof(enabled);
-    RegGetValueW(HKEY_CURRENT_USER, L"Software\\DesignThumbs", L"VectorConverterInstalled", RRF_RT_REG_DWORD, nullptr, &enabled, &size);
-    return enabled != 0;
+// Edição instalada: 0 = Vizu Lite (prévia e miniaturas), 1 = Vizu (+ conversões), 2 = Vizu Ultra (+ SVG/EPS vetorial).
+enum { kLite = 0, kStandard = 1, kUltra = 2 };
+inline DWORD Edition() {
+    DWORD v = 0, size = sizeof(v);
+    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\DesignThumbs", L"Edition", RRF_RT_REG_DWORD, nullptr, &v, &size) == ERROR_SUCCESS)
+        return v > kUltra ? kStandard : v;
+    // Sem a chave (atualização de versões antigas): quem já tinha o conversor da 9.7 fica no Ultra; os demais no Vizu.
+    size = sizeof(v);
+    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\DesignThumbs", L"VectorConverterInstalled", RRF_RT_REG_DWORD, nullptr, &v, &size) == ERROR_SUCCESS && v)
+        return kUltra;
+    return kStandard;
 }
+inline bool Selected() { return Edition() == kUltra; }
 inline bool Available() { return Selected() && !Engine().empty(); }
 inline bool Run(const std::wstring& engine, const std::vector<std::wstring>& args,
-                const std::wstring& logPath, std::wstring& log, std::wstring& error, DWORD timeout = 120000) {
+                const std::wstring& logPath, std::wstring& log, std::wstring& error, DWORD timeout = 300000) {
     std::wstring cmd = Quote(engine);
     for (const auto& a : args) cmd += L" " + Quote(a);
     std::vector<wchar_t> command(cmd.begin(), cmd.end()); command.push_back(0);
@@ -160,7 +172,7 @@ inline bool Run(const std::wstring& engine, const std::vector<std::wstring>& arg
 }
 
 struct Audit {
-    unsigned objects = 0, paths = 0, groups = 0, texts = 0, pages = 0;
+    unsigned images = 0, objects = 0, paths = 0, groups = 0, texts = 0, pages = 0;
     std::wstring width, height, viewBox;
     std::set<std::wstring> epsBlocks;
 };
@@ -198,7 +210,8 @@ inline bool AuditSvg(const std::wstring& path, Audit& a, std::wstring& error) {
         if (svg && definitionDepth == ~0u && !reader->IsEmptyElement())
             for (const wchar_t* container : {L"defs", L"symbol", L"clipPath", L"mask", L"pattern", L"marker"})
                 if (tag == container) { definitionDepth = depth; break; }
-        if (svg && (tag == L"image" || tag == L"feImage" || tag == L"foreignObject" || tag == L"script" ||
+        if (svg && tag == L"image") ++a.images;
+        if (svg && (tag == L"feImage" || tag == L"foreignObject" || tag == L"script" ||
                     tag == L"style" || tag == L"animate" || tag == L"animateTransform" || tag == L"set")) {
             error = L"SVG recusado: elemento " + tag + L" (bitmap, conteúdo ativo ou estilo não auditável)."; break;
         }
@@ -206,9 +219,9 @@ inline bool AuditSvg(const std::wstring& path, Audit& a, std::wstring& error) {
             if (tag == L"path") ++a.paths;
             if (tag == L"g") ++a.groups;
             if (tag == L"text") ++a.texts;
-            for (const wchar_t* shape : {L"path", L"rect", L"circle", L"ellipse", L"line", L"polyline", L"polygon", L"text", L"use"})
+            for (const wchar_t* shape : {L"path", L"rect", L"circle", L"ellipse", L"line", L"polyline", L"polygon", L"text", L"use", L"image"})
                 if (tag == shape) { ++a.objects; if (definitionDepth == ~0u) ++renderable; break; }
-            for (const wchar_t* effect : {L"filter", L"mask", L"pattern", L"linearGradient", L"radialGradient", L"meshgradient", L"meshGradient"})
+            for (const wchar_t* effect : {L"filter", L"mask", L"pattern", L"meshgradient", L"meshGradient"})
                 if (tag == effect) a.epsBlocks.insert(tag);
         }
         if (tag == L"page") ++a.pages;
@@ -227,7 +240,10 @@ inline bool AuditSvg(const std::wstring& path, Audit& a, std::wstring& error) {
             std::wstring key = Lower(p.first), val = Trim(p.second), low = Lower(val);
             if (key.size() > 2 && key.substr(0, 2) == L"on") { error = L"Evento ativo no SVG."; break; }
             if (key == L"href") {
-                if (val.empty() || val[0] != L'#') { error = L"Referência externa ou imagem no SVG."; break; }
+                bool embedded = tag == L"image" && low.compare(0, 11, L"data:image/") == 0 &&
+                    (low.compare(11, 4, L"png;") == 0 || low.compare(11, 5, L"jpeg;") == 0 || low.compare(11, 4, L"jpg;") == 0);
+                if (embedded) continue; // bitmap embutido no próprio documento (comum em CDR)
+                if (val.empty() || val[0] != L'#') { error = L"Referência externa no SVG."; break; }
                 refs.insert(val.substr(1));
             }
             size_t pos = 0;
@@ -267,12 +283,13 @@ inline bool AuditSvg(const std::wstring& path, Audit& a, std::wstring& error) {
     if (a.pages > 1) a.epsBlocks.insert(L"múltiplas páginas");
     return error.empty();
 }
-inline bool AuditEps(const std::wstring& path, std::wstring& error) {
+inline bool AuditEps(const std::wstring& path, bool allowImages, std::wstring& error) {
     std::string s;
     if (!Read(path, s) || s.find("%!PS-Adobe-") != 0 || s.substr(0, 100).find("EPSF-") == std::string::npos || s.find("%%BoundingBox:") == std::string::npos) {
         error = L"Cabeçalho EPS inválido."; return false;
     }
     auto a = s.find("%%BeginProlog"), b = s.find("%%EndProlog");
+    if (allowImages) return true; // bitmaps do original: o operador image é legítimo
     if (a != std::string::npos && b != std::string::npos && b > a) s.erase(a, b + 11 - a);
     s += '\n'; // Flush the last PostScript token, even without a trailing newline.
     // Engine-generated Cairo EPS only: reject image invocation in the page body.
@@ -329,7 +346,7 @@ inline Result Convert(const std::wstring& source, const std::wstring& destinatio
         output = tmp.At(L"output.eps");
         args = {svg, L"--export-type=eps", L"--export-area-page", L"--export-ignore-filters", L"--export-filename=" + output};
         if (curves) args.push_back(L"--export-text-to-path");
-        if (!Run(engine, args, tmp.At(L"engine.log"), logs, r.error) || !AuditEps(output, r.error)) { r.error += L"\n" + logs; return r; }
+        if (!Run(engine, args, tmp.At(L"engine.log"), logs, r.error) || !AuditEps(output, audit.images > 0, r.error)) { r.error += L"\n" + logs; return r; }
     }
     // Destination chosen with UniquePath, but CREATE_NEW semantics still prevent races/overwrites.
     if (!CopyFileW(output.c_str(), destination.c_str(), TRUE)) { r.error = L"Não foi possível salvar a saída; o destino pode já existir."; return r; }
@@ -341,7 +358,8 @@ inline Result Convert(const std::wstring& source, const std::wstring& destinatio
         L"\r\nTextos em curvas: " + (curves ? L"sim" : L"não") +
         L"\r\nSem rasterização. A auditoria estrutural não certifica equivalência visual com o CDR.\r\n"
         L"Fontes, cores CMYK/spot/ICC e perdas silenciosas do importador precisam de revisão.\r\n"
-        L"EPS pode reorganizar grupos e textos. Gradientes e transparências são bloqueados nesta versão.\r\n\r\nLog do motor:\r\n" + logs;
+        L"Bitmaps embutidos no original: " + std::to_wstring(audit.images) + L" (mantidos como imagem).\r\n"
+        L"EPS pode reorganizar grupos e textos. Transparências, filtros e máscaras são bloqueados no EPS.\r\n\r\nLog do motor:\r\n" + logs;
     r.report = destination + L".vizu.txt";
     if (!WriteNew(r.report, report)) r.report.clear();
     return r;

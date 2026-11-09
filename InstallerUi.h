@@ -8,7 +8,7 @@
 
 namespace installui {
 using Progress = std::function<void(int, const std::wstring&)>;
-using Work = std::function<bool(bool, const Progress&, std::wstring&)>;
+using Work = std::function<bool(int, const Progress&, std::wstring&)>;
 struct Window {
     HWND hwnd = nullptr;
     ID2D1Factory* factory = nullptr;
@@ -18,8 +18,9 @@ struct Window {
     Work work;
     std::thread worker;
     std::mutex mutex;
-    bool installed = false, vectors = true, success = false, preview = false;
-    int page = 0, hot = 0, focus = 1, result = 0, percent = 0;
+    int edition = 1; // 0 Lite, 1 Vizu, 2 Ultra
+    bool installed = false, success = false, preview = false;
+    int page = 0, hot = 0, focus = 2, result = 0, percent = 0;
     std::wstring phase, error;
     std::vector<std::pair<int, D2D1_RECT_F>> hits;
     static constexpr UINT Changed = WM_APP + 180, Finished = WM_APP + 181;
@@ -39,29 +40,35 @@ struct Window {
             return hot == id;
         };
         ui::Brand(rt, theme, 32*s, 30*s, 38*s);
-        p.Text(L"v9.7", rect(width-130,32,width-32,62), 13, theme.text2, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_TEXT_ALIGNMENT_TRAILING);
+        p.Text(L"v9.8", rect(width-130,32,width-32,62), 13, theme.text2, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_TEXT_ALIGNMENT_TRAILING);
         if (page == 0) {
             p.Text(installed ? T(L"Seu Vizu, atualizado.",L"Your Vizu, updated.",L"Tu Vizu, actualizado.") : T(L"Veja seus arquivos de outro jeito.",L"See your files in a new way.",L"Mira tus archivos de otra forma."), rect(32,105,width-32,147), 25, theme.text, DWRITE_FONT_WEIGHT_BOLD);
             p.Paragraph(T(L"Miniaturas, prévias e ferramentas para o seu dia a dia.",L"Thumbnails, previews and tools for your everyday work.",L"Miniaturas, vistas previas y herramientas para tu día a día."), 32*s,157*s,w-64*s,13,theme.text2);
-            const wchar_t* labels[] = {T(L"Miniaturas",L"Thumbnails",L"Miniaturas"),T(L"Prévia com Espaço",L"Space preview",L"Vista con Espacio"),T(L"Ferramentas",L"Tools",L"Herramientas")};
-            const wchar_t* icons[] = {L"\uE91B",L"\uE8A7",L"\uE713"};
-            float card = (width-88)/3;
+            struct Ed { const wchar_t* name; const wchar_t* line1; const wchar_t* line2; const wchar_t* size; };
+            Ed eds[3] = {
+                {L"Vizu Lite", T(L"Prévia com Espaço",L"Space preview",L"Vista con Espacio"), T(L"Miniaturas no Explorer",L"Explorer thumbnails",L"Miniaturas en el Explorador"), L"~2 MB"},
+                {L"Vizu", T(L"Tudo do Lite, mais",L"All of Lite, plus",L"Todo lo de Lite, más"), T(L"converter, PDF, OCR, relógio",L"convert, PDF, OCR, clock",L"convertir, PDF, OCR, reloj"), L"~2 MB"},
+                {L"Vizu Ultra", T(L"Tudo do Vizu, mais",L"All of Vizu, plus",L"Todo lo de Vizu, más"), T(L"CDR/SVG em SVG e EPS vetorial",L"CDR/SVG to vector SVG and EPS",L"CDR/SVG a SVG y EPS vectorial"), T(L"+ ~100 MB baixados",L"+ ~100 MB download",L"+ ~100 MB descarga")},
+            };
+            float card=(width-88)/3;
             for (int i=0;i<3;++i) {
                 float x=32+i*(card+12);
-                p.Glass(rect(x,207,x+card,290),12*s);
-                p.Icon(icons[i],rect(x+14,218,x+42,244),21,theme.accent);
-                p.Text(labels[i],rect(x+14,251,x+card-10,278),12,theme.text);
+                auto box=rect(x,212,x+card,402);
+                bool sel=edition==i, hov=hit(10+i,box);
+                p.Glass(box,14*s,hov);
+                if(sel) p.Stroke(box,14*s,theme.accent,2*s);
+                auto dot=rect(x+16,228,x+36,248);
+                p.Fill(dot,10*s,sel?theme.accent:theme.track);
+                p.Stroke(dot,10*s,sel?theme.accent:theme.text2);
+                if(sel) p.Icon(L"\uE73E",dot,12,theme.onAccent);
+                p.Text(eds[i].name,rect(x+16,262,x+card-12,292),16,theme.text,DWRITE_FONT_WEIGHT_BOLD);
+                p.Paragraph(eds[i].line1,(x+16)*s,298*s,(card-28)*s,12,theme.text2);
+                p.Paragraph(eds[i].line2,(x+16)*s,318*s,(card-28)*s,12,theme.text);
+                p.Text(eds[i].size,rect(x+16,368,x+card-12,392),11,theme.text2);
             }
-            auto option=rect(32,312,width-32,415);
-            bool hovered=hit(1,option);
-            p.Glass(option,14*s,hovered);
-            auto check=rect(49,332,71,354);
-            p.Fill(check,5*s,vectors?theme.accent:theme.track);
-            p.Stroke(check,5*s,vectors?theme.accent:theme.text2);
-            if(vectors) p.Icon(L"\uE73E",check,14,theme.onAccent);
-            p.Text(T(L"Instalar Conversor de Arquivos Vetoriais",L"Install Vector File Converter",L"Instalar Conversor de Archivos Vectoriales"),rect(85,326,width-50,359),14,theme.text,DWRITE_FONT_WEIGHT_SEMI_BOLD);
-            p.Paragraph(T(L"Converta CDR e SVG em SVG/EPS com elementos vetoriais editáveis.",L"Convert CDR and SVG to SVG/EPS with editable vector elements.",L"Convierte CDR y SVG a SVG/EPS con elementos vectoriales editables."),85*s,363*s,w-137*s,12,theme.text2);
-            p.Text(vectors?T(L"Incluído nesta instalação. Nenhuma configuração adicional.",L"Included in this installation. No extra setup.",L"Incluido en esta instalación. Sin configuración adicional."):T(L"Sem esta opção, SVG e EPS não aparecem no menu Converter.",L"Without this option, SVG and EPS are hidden from Convert.",L"Sin esta opción, SVG y EPS no aparecen en Convertir."),rect(32,426,width-32,455),11.5f,theme.text2);
+            p.Text(edition==2?T(L"O Ultra baixa o motor vetorial (Inkscape) uma única vez, com verificação de integridade.",L"Ultra downloads the vector engine (Inkscape) once, with an integrity check.",L"Ultra descarga el motor vectorial (Inkscape) una sola vez, con verificación de integridad."):
+                   edition==0?T(L"O Lite não tem menu circular, conversões, OCR nem relógio.",L"Lite has no radial menu, conversions, OCR or clock.",L"Lite no tiene menú circular, conversiones, OCR ni reloj."):
+                   T(L"Você pode trocar de edição depois, abrindo o instalador de novo.",L"You can switch editions later by running the installer again.",L"Puedes cambiar de edición después, abriendo el instalador de nuevo."),rect(32,420,width-32,450),11.5f,theme.text2);
             p.Pill(rect(width-225,493,width-32,539),installed?T(L"Atualizar / reinstalar",L"Update / reinstall",L"Actualizar / reinstalar"):T(L"Instalar Vizu",L"Install Vizu",L"Instalar Vizu"),hit(2,rect(width-225,493,width-32,539)),true);
             p.Pill(rect(32,493,132,539),T(L"Cancelar",L"Cancel",L"Cancelar"),hit(3,rect(32,493,132,539)));
             if(installed) p.Text(T(L"Desinstalar",L"Uninstall",L"Desinstalar"),rect(148,493,252,539),12,hot==4?theme.danger:theme.text2);
@@ -80,7 +87,7 @@ struct Window {
                 p.Text(T(L"Estamos preparando tudo para você.",L"We're getting everything ready for you.",L"Estamos preparando todo para ti."),rect(32,461,width-32,490),12,theme.text2);
             } else {
                 p.Paragraph(success?T(L"Selecione um arquivo no Explorer e aperte Espaço para visualizar. Segure Alt para acessar as ferramentas.",L"Select a file in Explorer and press Space to preview. Hold Alt to access tools.",L"Selecciona un archivo en el Explorador y pulsa Espacio para verlo. Mantén Alt para acceder a las herramientas."):error.substr(0,500),32*s,204*s,w-64*s,14,theme.text2);
-                if(success) p.Text(vectors?T(L"Conversor vetorial instalado e pronto para usar.",L"Vector converter installed and ready.",L"Conversor vectorial instalado y listo."):T(L"Instalação concluída sem o conversor vetorial.",L"Installed without the vector converter.",L"Instalado sin el conversor vectorial."),rect(32,373,width-32,410),13,theme.text);
+                if(success) p.Text(edition==2?T(L"Vizu Ultra instalado, com o conversor vetorial.",L"Vizu Ultra installed, with the vector converter.",L"Vizu Ultra instalado, con el conversor vectorial."):edition==0?T(L"Vizu Lite instalado.",L"Vizu Lite installed.",L"Vizu Lite instalado."):T(L"Vizu instalado.",L"Vizu installed.",L"Vizu instalado."),rect(32,373,width-32,410),13,theme.text);
                 p.Pill(rect(width-195,493,width-32,539),T(L"Concluir",L"Finish",L"Finalizar"),hit(2,rect(width-195,493,width-32,539)),true);
             }
         }
@@ -93,7 +100,7 @@ struct Window {
     void Action(int id) {
         if(page==1) return;
         if(page==2) { if(id==2) DestroyWindow(hwnd); return; }
-        if(id==1) { vectors=!vectors; InvalidateRect(hwnd,nullptr,FALSE); }
+        if(id>=10 && id<=12) { edition=id-10; InvalidateRect(hwnd,nullptr,FALSE); }
         if(id==3 || id==4) { result=id==4?3:0; DestroyWindow(hwnd); }
         if(id==2 && !preview) {
             page=1; percent=2; phase=T(L"Preparando a instalação…",L"Preparing installation…",L"Preparando la instalación…");
@@ -101,7 +108,7 @@ struct Window {
             worker=std::thread([this] {
                 CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
                 try {
-                    success=work(vectors,[this](int value,const std::wstring& text) {
+                    success=work(edition,[this](int value,const std::wstring& text) {
                         {std::lock_guard<std::mutex> lock(mutex);percent=value;phase=text;}
                         PostMessageW(hwnd,Changed,0,0);
                     },error);
@@ -125,7 +132,8 @@ struct Window {
         case WM_SETCURSOR:if(LOWORD(lp)==HTCLIENT){SetCursor(LoadCursor(nullptr,self->hot?IDC_HAND:IDC_ARROW));return TRUE;}break;
         case WM_LBUTTONUP:{POINT pt={GET_X_LPARAM(lp),GET_Y_LPARAM(lp)};for(auto&hit:self->hits)if(ui::Hit(hit.second,pt)){int id=hit.first;self->focus=id;self->Action(id);break;}return 0;}
         case WM_KEYDOWN:
-            if(wp==VK_TAB){int count=self->installed?4:3;self->focus=self->page==2?2:1+(self->focus+(GetKeyState(VK_SHIFT)<0?count-2:0))%count;InvalidateRect(h,nullptr,FALSE);return 0;}
+            if(wp==VK_TAB){int count=self->installed?3:2;self->focus=self->page==2?2:2+(self->focus-2+(GetKeyState(VK_SHIFT)<0?count-1:1))%count;InvalidateRect(h,nullptr,FALSE);return 0;}
+            if(self->page==0 && (wp==VK_LEFT||wp==VK_RIGHT)){self->edition=(self->edition+(wp==VK_LEFT?2:1))%3;InvalidateRect(h,nullptr,FALSE);return 0;}
             if(wp==VK_SPACE){self->Action(self->focus);return 0;}
             if(wp==VK_RETURN){self->Action(2);return 0;}
             if(wp==VK_ESCAPE && (self->page!=1 || self->preview)){DestroyWindow(h);return 0;}break;

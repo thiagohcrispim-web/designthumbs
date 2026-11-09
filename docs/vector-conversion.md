@@ -20,27 +20,26 @@ Isso explica o EPS como imagem. O SVG em branco relatado pelo usuário não foi 
 - Processos ocultos, argumentos escapados sem shell, stdout/stderr capturados, Job Object e timeout por etapa. Uma cópia temporária do original é usada durante todo o processamento.
 - O destino existente nunca é substituído. Um relatório `<saída>.vizu.txt` acompanha a saída quando puder ser gravado; erros vão para um diagnóstico no Vizu.
 
-## Motor incluído no instalador
+## Edições e motor vetorial (9.8)
 
-Na **9.7 estável**, a opção **Instalar Conversor de Arquivos Vetoriais** controla a instalação do conversor. Ela vem marcada na primeira instalação e preserva a escolha nas reinstalações e atualizações silenciosas. Se for desmarcada, o motor anterior é removido e SVG/EPS ficam ocultos no menu, mesmo com Inkscape externo instalado. O instalador inclui o pacote portátil completo do Inkscape 1.4.2 (Windows x64). O usuário não instala, baixa nem configura outro programa.
+O instalador (~2 MB) oferece três edições, gravadas em `HKCU\Software\DesignThumbs\Edition`:
+**0 = Vizu Lite** (prévia com Espaço e miniaturas), **1 = Vizu** (+ menu circular, conversões, OCR, relógio),
+**2 = Vizu Ultra** (+ SVG/EPS vetorial). Sem a chave (atualizações antigas), quem tinha `VectorConverterInstalled=1`
+vira Ultra e os demais Vizu: nenhuma atualização silenciosa baixa o motor sem o usuário ter escolhido.
 
-O build obtém o arquivo oficial por HTTPS e verifica o SHA-256 fixado em `tools/prepare_vector_engine.py`. O pacote é embutido como recurso do instalador. Durante a instalação:
+No Ultra, o instalador baixa o Inkscape 1.4.2 portátil oficial de `media.inkscape.org`, confere o SHA-256 fixado em
+`VectorBundle.h`, extrai com o `tar.exe` do Windows numa pasta de preparação, verifica e move para
+`vector-engine/inkscape`. Se o motor já está na versão certa (`VIZU-BUNDLE.txt`), atualizações não baixam nem extraem
+de novo. Trocar para Lite/Vizu remove o motor. A desinstalação remove a pasta privada do motor.
 
-1. O pacote é extraído em uma pasta de preparação, usando o `tar.exe` nativo do Windows 10 1803+/Windows 11, sem shell ou rede.
-2. O instalador verifica executável, biblioteca CDR, licenças e inicialização do motor.
-3. A pasta completa é colocada em `vector-engine/inkscape` ao lado do Vizu instalado. Na reinstalação, o motor anterior é preservado até a nova pasta estar pronta; a troca é revertida se falhar.
-4. O Vizu prioriza esse motor automaticamente, antes de variáveis de ambiente ou instalações externas. Nenhum ícone ou associação do Inkscape é registrado.
-5. A desinstalação remove a pasta privada do motor. A remoção não percorre junctions/symlinks e só aceita caminhos de motor filhos da pasta do aplicativo.
-
-A instalação inteira usa uma única janela com a identidade visual do Vizu (mesmo logotipo vetorial, tema, fonte e componentes), seleção de componente, progresso geral e conclusão. A extração do motor é silenciosa dentro desse progresso e pode levar alguns instantes. O instalador é maior porque contém o motor completo; a instalação não depende de conexão à internet. O SHA-256 fixado, o pacote original e a procedência estão em `third_party/inkscape/NOTICE.md`. As licenças originais ficam preservadas dentro do pacote instalado, em `vector-engine/inkscape/share/inkscape/doc`.
-
-O instalador instalado continua contendo os recursos embutidos; portanto o espaço ocupado inclui o arquivo comprimido e a pasta extraída. O ZIP de distribuição contém o instalador completo. Apenas executar um EXE fora da instalação com `/portable` não extrai os recursos automaticamente; use a instalação normal para preparar o motor.
-
-Para desenvolvimento, continuam disponíveis os fallbacks `VIZU_INKSCAPE` e a instalação padrão do Inkscape. A versão distribuída ao usuário usa primeiro o motor privado.
+Auditoria: bitmaps embutidos (`data:image/png|jpeg`) são aceitos e mantidos como imagem; referências externas continuam
+recusadas. No EPS, gradientes são permitidos (o Cairo os escreve como shading PostScript); transparências, filtros,
+máscaras e padrões continuam bloqueados. Erros de conversão aparecem como aviso curto; o detalhe vai para
+`%TEMP%\Vizu-conversao.txt`.
 
 ## Build e testes
 
-O build MinGW existente prepara/verifica o pacote do motor e liga `-lxmllite`. O workflow `vector-bundle-tests.yml` testa extração offline, descoberta, conversões SVG/EPS, reinstalação e remoção em uma pasta isolada, sem registrar o Vizu no sistema. O workflow `vector-tests.yml` compila e executa os testes de auditoria no Windows; o workflow de build original continua compilando o aplicativo completo no Linux/MinGW.
+O build MinGW liga `-lxmllite -lbcrypt`; o motor não é embutido. O workflow `vector-bundle-tests.yml` testa download com SHA-256, extração, descoberta, conversões SVG/EPS, reinstalação e remoção em uma pasta isolada, sem registrar o Vizu no sistema. O workflow `vector-tests.yml` compila e executa os testes de auditoria no Windows; o workflow de build original continua compilando o aplicativo completo no Linux/MinGW.
 
 Em um Developer Command Prompt do Visual Studio:
 

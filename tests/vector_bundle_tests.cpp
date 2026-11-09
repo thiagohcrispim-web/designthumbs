@@ -19,16 +19,16 @@ int wmain() {
         Check(!vbundle::Owned(root.dir, root.dir + L"\\..\\vector-engine"), "reject escaped path");
         Check(!vbundle::Remove(root.dir, root.dir + L"\\unrelated"), "reject unrelated directory");
         Check(vec::WriteNew(root.At(L"source.svg"), L"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"50\"><path d=\"M1 1C5 30 50 40 90 1Z\"/></svg>"), "test source");
-        Check(vbundle::Prepare(root.dir, stage, error), "extract and verify embedded engine");
+        Check(vbundle::Prepare(root.dir, stage, error), "download, verify and extract engine");
         Check(vbundle::Commit(root.dir, stage, error), "install embedded engine");
         std::wstring engine = vec::BundledEngine(root.dir);
         Check(!engine.empty(), "discover installed engine automatically");
         SetEnvironmentVariableW(L"VIZU_INKSCAPE", engine.c_str());
-        DWORD disabled=0, enabled=1;
-        Check(RegSetKeyValueW(HKEY_CURRENT_USER,L"Software\\DesignThumbs",L"VectorConverterInstalled",REG_DWORD,&disabled,sizeof(disabled))==ERROR_SUCCESS,"save opted-out component");
+        DWORD disabled=1, enabled=2; // Vizu / Vizu Ultra
+        Check(RegSetKeyValueW(HKEY_CURRENT_USER,L"Software\\DesignThumbs",L"Edition",REG_DWORD,&disabled,sizeof(disabled))==ERROR_SUCCESS,"save opted-out component");
         Check(!vec::Selected() && !vec::Available(),"opt-out hides exports even with an external engine");
         Check(!vec::Convert(root.At(L"source.svg"),root.At(L"document.svg"),false,false).ok,"opt-out blocks direct vector conversion");
-        Check(RegSetKeyValueW(HKEY_CURRENT_USER,L"Software\\DesignThumbs",L"VectorConverterInstalled",REG_DWORD,&enabled,sizeof(enabled))==ERROR_SUCCESS,"save enabled component");
+        Check(RegSetKeyValueW(HKEY_CURRENT_USER,L"Software\\DesignThumbs",L"Edition",REG_DWORD,&enabled,sizeof(enabled))==ERROR_SUCCESS,"save enabled component");
         auto svg = vec::Convert(root.At(L"source.svg"), root.At(L"document.svg"), false, false);
         if (!svg.ok) std::wcerr << svg.error << L"\n";
         Check(svg.ok, "SVG conversion using installed engine");

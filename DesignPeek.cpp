@@ -47,6 +47,7 @@ enum {
 
 struct Config { DWORD themeMode = 0, webpQuality = 75, neon = 0xFF6633; bool tray = true; bool space = true, alt = true, picker = true, autoUpdate = true, dpi300 = false, pdfRaw = false, vectorTextPaths = false, tempPermanent = false; DWORD altDelay = 500, quality = 75; };
 static Config g_cfg;
+static bool g_lite = false; // Vizu Lite: só prévia com Espaço e miniaturas
 static const wchar_t* kCfgKey = L"Software\\DesignThumbs";
 
 static DWORD ReadDword(const wchar_t* name, DWORD def) {
@@ -57,7 +58,8 @@ static DWORD ReadDword(const wchar_t* name, DWORD def) {
 static void WriteDword(const wchar_t* name, DWORD v) { RegSetKeyValueW(HKEY_CURRENT_USER, kCfgKey, name, REG_DWORD, &v, sizeof(v)); }
 static void LoadConfig() {
     g_cfg.space = ReadDword(L"SpacePreview", 1) != 0;
-    g_cfg.alt = ReadDword(L"AltButtons", 1) != 0;
+    g_lite = vec::Edition() == vec::kLite;
+    g_cfg.alt = !g_lite && ReadDword(L"AltButtons", 1) != 0;
     g_cfg.altDelay = max(150ul, min(3000ul, (unsigned long)ReadDword(L"AltDelay", 500)));
     g_cfg.quality = max(50ul, min(100ul, (unsigned long)ReadDword(L"JpgQuality", 75)));
     g_cfg.dpi300 = ReadDword(L"ConvertDpi", 72) == 300;
@@ -681,6 +683,7 @@ static std::vector<std::wstring> g_convFiles;
 static bool g_converting;
 static std::wstring g_toastTitle, g_toastText;
 static int g_toastState;           // 0 convertendo, 1 pronto, 2 erro
+static std::wstring g_toastLog;    // detalhes do último erro de conversão
 static int g_toastAction;          // clique: 0 mostra os arquivos, 1 instala a atualização
 static upd::Release g_release;
 static UINT g_toastDone, g_toastTotal;
@@ -1110,13 +1113,20 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             g_toastAction = 0;
             ShowToast(T(L"Pronto · clique para ver na pasta", L"Done · click to show in folder", L"Listo · clic para ver en la carpeta"), text, 7000, 1);
         }
-        if (!r->errors.empty()) {
+        if (!r->errors.empty()) { // detalhes técnicos vão para um arquivo; o aviso fica curto
             std::wstring details;
-            for (const auto& e : r->errors) {
-                if (details.size() > 12000) { details += L"\n…"; break; }
-                details += e.substr(0, 4000) + L"\n\n";
+            for (const auto& e : r->errors) details += e + L"\r\n\r\n";
+            wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp);
+            g_toastLog = std::wstring(tmp) + L"Vizu-conversao.txt";
+            std::string u = vec::Utf8(L"\xFEFF" + details);
+            HANDLE f = CreateFileW(g_toastLog.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+            if (f != INVALID_HANDLE_VALUE) { DWORD n; WriteFile(f, u.data(), (DWORD)u.size(), &n, nullptr); CloseHandle(f); }
+            if (r->outputs.empty()) {
+                std::wstring first = r->errors[0].substr(0, r->errors[0].find(L'\n'));
+                if (first.size() > 140) first = first.substr(0, 140) + L"…";
+                g_toastAction = 3;
+                ShowToast(T(L"Não foi possível converter · clique para detalhes", L"Couldn't convert · click for details", L"No se pudo convertir · clic para detalles"), first, 9000, 2);
             }
-            MessageBoxW(h, details.c_str(), T(L"Diagnóstico de conversão vetorial", L"Vector conversion diagnostics", L"Diagnóstico de conversión vectorial"), MB_OK | MB_ICONWARNING);
         }
         delete r;
         return 0;
@@ -2244,14 +2254,15 @@ static LRESULT CALLBACK ToastProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             g_toastAction = 2;
             g_toastDone = 0; g_toastTotal = 0;
             ShowToast(T(L"Baixando atualização…", L"Downloading update…", L"Descargando actualización…"), g_release.tag, 0, 0);
-            std::wstring url = g_release.url;
+            std::wstring url = g_release.url; std::string sha = g_release.sha256;
             HWND wnd = g_wnd;
-            std::thread([url, wnd] {
+            std::thread([url, sha, wnd] {
                 std::wstring path;
-                auto* p = new std::wstring(upd::Download(url, &path) ? path : L"");
+                auto* p = new std::wstring(upd::Download(url, &path, sha) ? path : L"");
                 if (!PostMessage(wnd, WM_UPDATE_READY, 0, (LPARAM)p)) delete p;
             }).detach();
         } else if (g_toastAction == 0) RevealOutputs();
+        else if (g_toastAction == 3) ShellExecuteW(nullptr, L"open", g_toastLog.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         return 0;
     case WM_RBUTTONUP: if (!g_converting) ShowWindow(h, SW_HIDE); return 0;
     case WM_SIZE: g_toastSurf.Resize(LOWORD(lp), HIWORD(lp)); return 0;
@@ -2523,6 +2534,7 @@ static void PaintSettings(HWND h) {
     };
     drawCard(rows);
 
+    if (!g_lite) { // Lite: só VER, SISTEMA e TEMAS
     // CONVERTER
     section(T(L"CONVERTER", L"CONVERT", L"CONVERTIR"));
     rows = {
@@ -2583,6 +2595,7 @@ static void PaintSettings(HWND h) {
         rlabel(r, T(L"Pastas Padrão Vizu", L"Vizu folder set", L"Carpetas estándar Vizu"), names.c_str()); rpill(r, kBtnFolders, T(L"Editar", L"Edit", L"Editar"), 90 * s); }});
     rows.push_back({RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Limpeza", L"Cleanup", L"Limpieza"), T(L"Excluir temporários direto, sem passar pela Lixeira", L"Delete temp files directly, skipping the Recycle Bin", L"Eliminar temporales directamente, sin pasar por la Papelera")); rtoggle(kTogTempDel, r, g_cfg.tempPermanent); }});
     drawCard(rows);
+    } // !g_lite
 
     // SISTEMA
     section(T(L"SISTEMA", L"SYSTEM", L"SISTEMA"));
@@ -3227,14 +3240,17 @@ struct InstallLock {
     ~InstallLock() { if (owned) ReleaseMutex(handle); if (handle) CloseHandle(handle); }
 };
 
-static bool InstallFiles(bool vectors, const installui::Progress& progress, std::wstring& error) {
+static bool InstallFiles(int edition, const installui::Progress& progress, std::wstring& error) {
+    bool vectors = edition == vec::kUltra;
     std::wstring dir = InstallDir();
     if (SHCreateDirectoryExW(nullptr, dir.c_str(), nullptr) != ERROR_SUCCESS && GetFileAttributesW(dir.c_str()) == INVALID_FILE_ATTRIBUTES) {
         error = T(L"Não foi possível criar a pasta do Vizu.",L"Could not create the Vizu folder.",L"No se pudo crear la carpeta de Vizu."); return false;
     }
     QuitRunning();
-    progress(15, vectors ? T(L"Preparando o Conversor de Arquivos Vetoriais…",L"Preparing the Vector File Converter…",L"Preparando el Conversor de Archivos Vectoriales…") : T(L"Preparando os arquivos do Vizu…",L"Preparing Vizu files…",L"Preparando los archivos de Vizu…"));
+    progress(10, vectors ? T(L"Baixando o motor vetorial (cerca de 100 MB)…",L"Downloading the vector engine (about 100 MB)…",L"Descargando el motor vectorial (unos 100 MB)…") : T(L"Preparando os arquivos do Vizu…",L"Preparing Vizu files…",L"Preparando los archivos de Vizu…"));
     if (!vbundle::Configure(dir, vectors, error)) return false;
+    WriteDword(L"Edition", (DWORD)edition); // antes do /autostart (menu Novo depende da edição)
+    WriteDword(L"VectorConverterInstalled", vectors ? 1 : 0);
     progress(65, T(L"Instalando arquivos e miniaturas…",L"Installing files and thumbnails…",L"Instalando archivos y miniaturas…"));
     std::wstring exe = dir + L"\\DesignPeek.exe", dll = dir + L"\\DesignThumbs.dll";
     HRSRC r = FindResourceW(nullptr, MAKEINTRESOURCEW(2), RT_RCDATA);
@@ -3262,12 +3278,11 @@ static bool InstallFiles(bool vectors, const installui::Progress& progress, std:
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"InstallLocation", REG_SZ, dir.c_str(), sz(dir));
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"UninstallString", REG_SZ, un.c_str(), sz(un));
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"QuietUninstallString", REG_SZ, quiet.c_str(), sz(quiet));
-    DWORD one = 1, size = vectors ? 900000 : 100000; // Includes the complete portable engine and embedded archive.
+    DWORD one = 1, size = vectors ? 450000 : 4000; // KB; o Ultra inclui o motor vetorial extraído
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"NoModify", REG_DWORD, &one, 4);
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"NoRepair", REG_DWORD, &one, 4);
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"EstimatedSize", REG_DWORD, &size, 4);
 
-    WriteDword(L"VectorConverterInstalled", vectors ? 1 : 0);
     progress(100, T(L"Instalação concluída.",L"Installation complete.",L"Instalación completada."));
     return true;
 }
@@ -3287,7 +3302,7 @@ static int Install(bool silent) {
     LoadConfig();
     if(silent) {
         std::wstring error;
-        bool ok=InstallFiles(vec::Selected(), [](int,const std::wstring&){}, error);
+        bool ok=InstallFiles((int)vec::Edition(), [](int,const std::wstring&){}, error);
         if(ok) StartInstalledApp(false);
         return ok?0:1;
     }
@@ -3295,7 +3310,7 @@ static int Install(bool silent) {
     installui::Window ui;
     HKEY existing;
     if(RegOpenKeyExW(HKEY_CURRENT_USER,kUninstKey,0,KEY_READ,&existing)==ERROR_SUCCESS){ui.installed=true;RegCloseKey(existing);}
-    ui.vectors=vec::Selected();
+    ui.edition=(int)vec::Edition();
     ui.theme=ui::MakeTheme(ReadDword(L"Theme2",ui::kThemeClassic),false);
     ui.work=InstallFiles;
     int result=ui.Show(g_inst);
@@ -3342,7 +3357,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
         bool on = args.find(L"/noautostart") == std::wstring::npos;
         SetAutostart(on);
         SetStartMenu(on);
-        SetNewMenu(on);
+        SetNewMenu(on && vec::Edition() != vec::kLite); // Lite: sem Pastas Padrão no menu Novo
         CoUninitialize();
         return 0;
     }

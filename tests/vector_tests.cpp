@@ -25,24 +25,25 @@ int wmain(int argc, wchar_t** argv) {
             if (expected) Check(!a.epsBlocks.empty() == epsBlocked, "EPS blockers");
         };
         audit(L"<g transform=\"translate(2 3)\"><path d=\"M0 0C1 2 3 4 5 6\"/></g>", true);
-        audit(L"<image href=\"data:image/png;base64,AAAA\"/>", false);
+        audit(L"<image href=\"data:image/png;base64,AAAA\"/>", true); // bitmap embutido do CDR: mantido
+        audit(L"<image href=\"https://example.com/a.png\"/>", false);
         audit(L"<path d=\"M0 0L1 1\"/><style>path{fill:red}</style>", false);
         audit(L"<use href=\"https://example.com/a.svg#a\"/>", false);
         audit(L"<use href=\"#missing\"/>", false);
         audit(L"<defs><path id=\"p\" d=\"M0 0L10 10\"/></defs><use href=\"#p\"/>", true);
         audit(L"<rect width=\"10\" height=\"10\" opacity=\".5\"/>", true, true);
         audit(L"<rect width=\"10\" height=\"10\" style=\"fill-opacity:50%\"/>", true, true);
-        audit(L"<defs><linearGradient id=\"g\"/></defs><path fill=\"url(#g)\" d=\"M0 0L1 1\"/>", true, true);
+        audit(L"<defs><linearGradient id=\"g\"/></defs><path fill=\"url(#g)\" d=\"M0 0L1 1\"/>", true, false); // gradiente vira shading PostScript
         audit(L"", false);
         audit(L"<defs><path id=\"unused\" d=\"M0 0L10 10\"/></defs>", false);
         Check(vec::Quote(L"C:\\nome com espaço\\") == L"\"C:\\nome com espaço\\\\\"", "Windows argument escaping");
         Check(!vec::IsInput(L"preview.png") && vec::IsInput(L"desenho.CDR"), "input types");
         auto eps = t.At(L"output.eps"); std::wstring error;
         Check(vec::WriteNew(eps, L"%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 10 10\n%%BeginProlog\n/cairo_image { image } def\n%%EndProlog\n0 0 moveto 10 10 lineto stroke\n"), "EPS fixture");
-        Check(vec::AuditEps(eps, error), "unused image helper allowed");
+        Check(vec::AuditEps(eps, false, error), "unused image helper allowed");
         DeleteFileW(eps.c_str());
         Check(vec::WriteNew(eps, L"%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 10 10\n1 1 cairo_image\n"), "raster EPS fixture");
-        Check(!vec::AuditEps(eps, error), "raster EPS blocked");
+        Check(!vec::AuditEps(eps, false, error), "raster EPS blocked");
         if (argc == 4) {
             SetEnvironmentVariableW(L"VIZU_INKSCAPE", argv[1]);
             std::wstring base = argv[3];

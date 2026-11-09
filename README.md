@@ -14,7 +14,13 @@ InDesign, CorelDRAW, Affinity, Sketch, fotos RAW e muito mais. Sem abrir nenhum 
 instalados. E, de quebra, junta no mesmo lugar as ferramentas que você usa o dia todo: converter, recortar, ler texto
 de imagens, traduzir, cronometrar o foco e organizar o seu dia.
 
-**Vizu 9.7 estável:** instalador com o visual do aplicativo e conversor vetorial opcional. Marque **Instalar Conversor de Arquivos Vetoriais** para habilitar SVG/EPS; o motor é preparado automaticamente. [Baixar a versão 9.7](https://github.com/thiagohcrispim-web/designthumbs/releases/tag/v9.7).
+**Vizu 9.8:** escolha a edição no instalador (cerca de 2 MB):
+
+| Edição | O que tem |
+|---|---|
+| **Vizu Lite** | Prévia com Espaço e miniaturas no Explorer |
+| **Vizu** | Tudo do Lite + menu circular (converter, ferramentas, PDF, extras), OCR, relógio e agenda |
+| **Vizu Ultra** | Tudo do Vizu + CDR/SVG para **SVG e EPS vetorial** (baixa o motor Inkscape, ~100 MB, uma única vez) |
 
 ## Veja tudo, sem abrir nada
 
@@ -153,6 +159,9 @@ https://docs.github.com/site-policy/privacy-policies/github-general-privacy-stat
 <details>
 <summary><b>Histórico de versões</b></summary>
 
+- **v9.8** — Instalador com três edições: **Lite**, **Vizu** e **Ultra**. O instalador volta a ter ~2 MB: o Ultra baixa o
+  motor vetorial com verificação SHA-256 e não o reinstala nas atualizações. SVG aceita bitmaps embutidos no CDR e o EPS
+  aceita gradientes; erros de conversão viram um aviso curto com o detalhe num arquivo. Atualizações conferem o SHA-256.
 - **v9.6.2** — SVG convertido agora abre no Illustrator (antes aparecia em branco).
 - **v9.6.1** — Converter agora também gera **SVG** e **EPS** (a imagem vai embutida no arquivo; não é vetorização).
 - **v9.6** — Identidade **Vizu**: logotipo nas Configurações, tema novo **Vizu Classic** (Design System Vizu:

@@ -1,8 +1,38 @@
-// Offline installation of the complete, pinned engine resource. No global Inkscape installation.
+// Vizu Ultra: baixa o Inkscape portátil oficial (versão e SHA-256 fixos), extrai numa pasta privada do Vizu.
+// O instalador continua pequeno; só quem escolhe o Ultra baixa o motor, uma única vez.
 #pragma once
 #include "VectorConvert.h"
+#include <bcrypt.h>
+#include <urlmon.h>
 
 namespace vbundle {
+static const wchar_t* kUrl = L"https://media.inkscape.org/dl/resources/file/inkscape-1.4.2_2025-05-13_f4327f4-x64.7z";
+static const char* kSha256 = "757e0358512630e65505a4cca89885369087f2908469439bc41b5a346604cbd4";
+static const wchar_t* kMarker = L"Inkscape 1.4.2 (f4327f4) portable x64";
+inline std::string FileSha256(const std::wstring& path) {
+    std::string hex;
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return hex;
+    BCRYPT_ALG_HANDLE alg = nullptr; BCRYPT_HASH_HANDLE hash = nullptr;
+    if (BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, nullptr, 0)) &&
+        BCRYPT_SUCCESS(BCryptCreateHash(alg, &hash, nullptr, 0, nullptr, 0, 0))) {
+        std::vector<BYTE> buf(1 << 20); DWORD n = 0; bool ok = true;
+        while (ok && ReadFile(f, buf.data(), (DWORD)buf.size(), &n, nullptr) && n) ok = BCRYPT_SUCCESS(BCryptHashData(hash, buf.data(), n, 0));
+        BYTE digest[32];
+        if (ok && BCRYPT_SUCCESS(BCryptFinishHash(hash, digest, 32, 0)))
+            for (BYTE b : digest) { char t[3]; snprintf(t, 3, "%02x", b); hex += t; }
+    }
+    if (hash) BCryptDestroyHash(hash);
+    if (alg) BCryptCloseAlgorithmProvider(alg, 0);
+    CloseHandle(f);
+    return hex;
+}
+// Motor já instalado na versão certa? (atualizações não baixam nem extraem de novo)
+inline bool Current(const std::wstring& root) {
+    std::string marker;
+    return !vec::BundledEngine(root).empty() && vec::Read(root + L"\\vector-engine\\VIZU-BUNDLE.txt", marker) &&
+           marker.find(vec::Utf8(kMarker)) != std::string::npos;
+}
 inline std::wstring Full(const std::wstring& path) {
     wchar_t result[32768] = {};
     DWORD n = GetFullPathNameW(path.c_str(), ARRAYSIZE(result), result, nullptr);
@@ -53,22 +83,16 @@ inline std::wstring Unique(const std::wstring& root, const wchar_t* prefix) {
     return Full(root) + L"\\" + prefix + name;
 }
 inline bool Prepare(const std::wstring& root, std::wstring& staging, std::wstring& error) {
-    HRSRC resource = FindResourceW(nullptr, MAKEINTRESOURCEW(3), RT_RCDATA);
-    HGLOBAL loaded = resource ? LoadResource(nullptr, resource) : nullptr;
-    DWORD size = resource ? SizeofResource(nullptr, resource) : 0;
-    const void* bytes = loaded ? LockResource(loaded) : nullptr;
-    if (!bytes || !size) { error = L"O instalador não contém o motor vetorial. Baixe o instalador completo do Vizu."; return false; }
     staging = Unique(root, L"vector-engine-stage-");
     if (staging.empty() || !Owned(root, staging) || !CreateDirectoryW(staging.c_str(), nullptr)) {
         error = L"Não foi possível preparar a pasta do motor vetorial."; return false;
     }
     auto fail = [&]() { Remove(root, staging); staging.clear(); return false; };
     std::wstring archive = staging + L"\\engine.7z";
-    HANDLE file = CreateFileW(archive.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-    DWORD written = 0;
-    bool saved = file != INVALID_HANDLE_VALUE && WriteFile(file, bytes, size, &written, nullptr) && written == size;
-    if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
-    if (!saved) { error = L"Não foi possível gravar o pacote do motor. Verifique o espaço disponível."; return fail(); }
+    if (FAILED(URLDownloadToFileW(nullptr, kUrl, archive.c_str(), 0, nullptr))) {
+        error = L"Não foi possível baixar o motor vetorial (inkscape.org). Verifique a internet e tente de novo, ou instale a edição Vizu."; return fail();
+    }
+    if (FileSha256(archive) != kSha256) { error = L"O motor vetorial baixado não confere com a assinatura esperada (SHA-256). Instalação recusada."; return fail(); }
     wchar_t system[32768] = {}; GetSystemDirectoryW(system, ARRAYSIZE(system));
     std::wstring log;
     if (!vec::Run(std::wstring(system) + L"\\tar.exe", {L"-xf", archive, L"-C", staging}, staging + L"\\install.log", log, error, 300000)) {
@@ -85,7 +109,7 @@ inline bool Prepare(const std::wstring& root, std::wstring& staging, std::wstrin
         error = L"O motor instalado não passou na verificação de inicialização.\n" + error + L"\n" + log; return fail();
     }
     DeleteFileW((staging + L"\\install.log").c_str());
-    vec::WriteNew(staging + L"\\VIZU-BUNDLE.txt", L"Inkscape 1.4.2 (f4327f4) portable x64\r\n"
+    vec::WriteNew(staging + L"\\VIZU-BUNDLE.txt", std::wstring(kMarker) + L"\r\n"
         L"Archive SHA256: 757e0358512630e65505a4cca89885369087f2908469439bc41b5a346604cbd4\r\n"
         L"Original licenses: inkscape/share/inkscape/doc\r\n"
         L"Sources: https://inkscape.org/release/inkscape-1.4.2/source/\r\n");
@@ -125,6 +149,7 @@ inline bool Configure(const std::wstring& root, bool enabled, std::wstring& erro
         if (!Cleanup(root, true)) { error = L"Não foi possível remover o conversor anterior. Feche os processos de conversão e tente novamente."; return false; }
         return true;
     }
+    if (Current(root)) { Cleanup(root, false); return true; }
     std::wstring staging;
     if (!Prepare(root, staging, error)) return false;
     if (!Commit(root, staging, error)) { Remove(root, staging); return false; }
