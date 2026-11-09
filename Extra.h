@@ -242,8 +242,8 @@ public:
 inline HRESULT RenderFont(const Bytes& data, UINT cx, HBITMAP* out) {
     FontFile ff;
     if (!ff.Open(data)) return E_FAIL;
-    bool small = cx < 400;
-    UINT W = cx, H = small ? cx : (UINT)(cx * 1.3f);
+    bool compactPreview = cx < 400;
+    UINT W = cx, H = compactPreview ? cx : (UINT)(cx * 1.3f);
     Canvas c(W, H);
     if (!c.Ok()) return E_FAIL;
     c.rt->Clear(D2D1::ColorF(0xFFFFFF));
@@ -251,7 +251,7 @@ inline HRESULT RenderFont(const Bytes& data, UINT cx, HBITMAP* out) {
     auto sample = [&](const std::wstring& t, float y, float size, bool wrap = false, float hh = 0) {
         c.Text(t, D2D1::RectF(W * 0.06f, y, W * 0.94f, y + (hh ? hh : size * 1.5f)), size, ink, ff.weight, ff.family.c_str(), ff.coll, ff.fstyle, ff.stretch, wrap);
     };
-    if (small) { // miniatura: "Aa" grande
+    if (compactPreview) { // miniatura: "Aa" grande
         sample(L"Aa", H * 0.18f, W * 0.42f);
         c.Text(ff.family, D2D1::RectF(W * 0.06f, H * 0.78f, W * 0.94f, H * 0.94f), W * 0.08f, soft);
         return c.Finish(out);

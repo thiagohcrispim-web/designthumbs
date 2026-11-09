@@ -42,7 +42,7 @@ enum {
 
 // ---------- configurações (HKCU\Software\DesignThumbs) ----------
 
-struct Config { DWORD themeMode = 0, webpQuality = 75, neon = 0xFF6633; bool tray = true; bool space = true, alt = true, picker = true, autoUpdate = true, dpi300 = false, pdfRaw = false, tempPermanent = false; DWORD altDelay = 500, quality = 75; };
+struct Config { DWORD themeMode = 0, webpQuality = 75, neon = 0xFF6633; bool tray = true; bool space = true, alt = true, picker = true, autoUpdate = true, dpi300 = false, pdfRaw = false, vectorTextPaths = false, tempPermanent = false; DWORD altDelay = 500, quality = 75; };
 static Config g_cfg;
 static const wchar_t* kCfgKey = L"Software\\DesignThumbs";
 
@@ -67,13 +67,14 @@ static void LoadConfig() {
     g_cfg.tray = ReadDword(L"TrayIcon", 1) != 0;
     g_cfg.autoUpdate = ReadDword(L"AutoUpdate", 1) != 0;
     g_cfg.pdfRaw = ReadDword(L"PdfUncompressed", 0) != 0;
+    g_cfg.vectorTextPaths = ReadDword(L"VectorTextPaths", 0) != 0;
     g_cfg.tempPermanent = ReadDword(L"TempPermanent", 0) != 0;
     g_cfg.neon = ReadDword(L"NeonColor", 0xFF6633) & 0xFFFFFF; ui::NeonColor() = g_cfg.neon;
 }
 static void SaveConfig() {
     WriteDword(L"SpacePreview", g_cfg.space); WriteDword(L"AltButtons", g_cfg.alt);
     WriteDword(L"AltDelay", g_cfg.altDelay); WriteDword(L"JpgQuality", g_cfg.quality);
-    WriteDword(L"ConvertDpi", g_cfg.dpi300 ? 300 : 72); WriteDword(L"ColorPicker", g_cfg.picker); WriteDword(L"Theme2", g_cfg.themeMode); WriteDword(L"WebpQuality", g_cfg.webpQuality); WriteDword(L"TrayIcon", g_cfg.tray); WriteDword(L"AutoUpdate", g_cfg.autoUpdate); WriteDword(L"PdfUncompressed", g_cfg.pdfRaw); WriteDword(L"TempPermanent", g_cfg.tempPermanent); WriteDword(L"NeonColor", g_cfg.neon);
+    WriteDword(L"ConvertDpi", g_cfg.dpi300 ? 300 : 72); WriteDword(L"ColorPicker", g_cfg.picker); WriteDword(L"Theme2", g_cfg.themeMode); WriteDword(L"WebpQuality", g_cfg.webpQuality); WriteDword(L"TrayIcon", g_cfg.tray); WriteDword(L"AutoUpdate", g_cfg.autoUpdate); WriteDword(L"PdfUncompressed", g_cfg.pdfRaw); WriteDword(L"VectorTextPaths", g_cfg.vectorTextPaths); WriteDword(L"TempPermanent", g_cfg.tempPermanent); WriteDword(L"NeonColor", g_cfg.neon);
 }
 
 // ---------- estado ----------
@@ -1106,6 +1107,14 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             g_toastAction = 0;
             ShowToast(T(L"Pronto · clique para ver na pasta", L"Done · click to show in folder", L"Listo · clic para ver en la carpeta"), text, 7000, 1);
         }
+        if (!r->errors.empty()) {
+            std::wstring details;
+            for (const auto& e : r->errors) {
+                if (details.size() > 12000) { details += L"\n…"; break; }
+                details += e.substr(0, 4000) + L"\n\n";
+            }
+            MessageBoxW(h, details.c_str(), T(L"Diagnóstico de conversão vetorial", L"Vector conversion diagnostics", L"Diagnóstico de conversión vectorial"), MB_OK | MB_ICONWARNING);
+        }
         delete r;
         return 0;
     }
@@ -1255,6 +1264,7 @@ static jobs::Job BaseJob() {
     j.webpQuality = g_cfg.webpQuality / 100.0f;
     j.dpi = g_cfg.dpi300 ? 300 : 72;
     j.pdfRaw = g_cfg.pdfRaw;
+    j.textToPaths = g_cfg.vectorTextPaths;
     return j;
 }
 
@@ -1278,6 +1288,7 @@ static void StartBatches(std::vector<Batch> batches, const std::wstring& label) 
             jobs::Result r = jobs::Run(b.files, b.job, [wnd, base, total](size_t d, size_t) { PostMessage(wnd, WM_CONV_PROGRESS, base + d, total); });
             all->outputs.insert(all->outputs.end(), r.outputs.begin(), r.outputs.end());
             all->failed += r.failed;
+            all->errors.insert(all->errors.end(), r.errors.begin(), r.errors.end());
             base += b.files.size();
         }
         if (!PostMessage(wnd, WM_CONV_DONE, 0, (LPARAM)all)) delete all;
@@ -1428,7 +1439,10 @@ static void BuildSides() {
         Side s{T(L"Converter", L"Convert", L"Convertir"), {}};
         if (k & (kSelImage | kSelPalette | kSelFont)) {
             static const ops::Format order[] = {ops::kPng, ops::kJpg, ops::kPdf, ops::kWebp, ops::kTiff, ops::kSvg, ops::kEps};
+            bool allVector = !files.empty();
+            for (const auto& file : files) allVector &= vec::IsInput(file);
             for (ops::Format f : order) {
+                if ((f == ops::kSvg || f == ops::kEps) && !allVector) continue;
                 jobs::Job j = BaseJob(); j.format = f;
                 std::wstring name = ops::Name(f);
                 const wchar_t* icon = f == ops::kPdf ? L"\uE8A5" : L"\uE91B";
@@ -2285,7 +2299,7 @@ static bool AutostartEnabled();
 
 enum { kTogSpace = 1, kTogAlt, kDelayMinus, kDelayPlus, kDpi72, kDpi300, kPdfSmall, kPdfRaw, kQualMinus, kQualPlus, kTogAuto, kBtnFolder, kBtnQuit, kBtnClose,
        kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate, kTheme0, kTheme1, kTheme2, kTheme3, kWebpMinus, kWebpPlus, kTogTray, kTogTempDel, kNeon0, kNeon1, kNeon2, kNeon3, kNeon4, kNeon5, kNeonRgb,
-       kClockOn, kClockFont, kPomoT0, kPomoT1, kPomoT2, kPomoC0, kPomoC1, kPomoC2, kPomoC3, kTheftHist, kUiFont, kOcrOn, kOcrKeep, kOcrJoin, kOcrLang, kClk100, kClk90, kClk70, kClockDock, kSte, kTheme4, kTheftOn, kFocoOn, kAgendaOn };
+       kClockOn, kClockFont, kPomoT0, kPomoT1, kPomoT2, kPomoC0, kPomoC1, kPomoC2, kPomoC3, kTheftHist, kUiFont, kOcrOn, kOcrKeep, kOcrJoin, kOcrLang, kClk100, kClk90, kClk70, kClockDock, kSte, kTheme4, kTheftOn, kFocoOn, kAgendaOn, kVecText, kVecCurves };
 static const UINT kNeonPresets[6] = {0xFF6633, 0xFF2D95, 0x00E5FF, 0xB6FF3B, 0xA855F7, 0xFFD400};
 
 
@@ -2346,6 +2360,8 @@ static void SettingsAction(int id) {
     case kDpi300: g_cfg.dpi300 = true; break;
     case kPdfSmall: g_cfg.pdfRaw = false; break;
     case kPdfRaw: g_cfg.pdfRaw = true; break;
+    case kVecText: g_cfg.vectorTextPaths = false; break;
+    case kVecCurves: g_cfg.vectorTextPaths = true; break;
     case kQualMinus: g_cfg.quality = max(50ul, (unsigned long)g_cfg.quality - 2); break;
     case kQualPlus: g_cfg.quality = min(100ul, (unsigned long)g_cfg.quality + 2); break;
     case kTogAuto: SetAutostart(!AutostartEnabled()); break;
@@ -2527,6 +2543,7 @@ static void PaintSettings(HWND h) {
         {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Tempo segurando", L"Hold time", L"Tiempo manteniendo"), nullptr); rstep(r, kDelayMinus, kDelayPlus, std::to_wstring(g_cfg.altDelay) + L" ms"); }},
         {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Resolução", L"Resolution", L"Resolución"), nullptr); rseg(r, 180 * s, {L"72 dpi", L"300 dpi"}, g_cfg.dpi300 ? 1 : 0, kDpi72); }},
         {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, L"PDF", nullptr); rseg(r, 240 * s, {T(L"Compactado", L"Compressed", L"Comprimido"), T(L"Sem compressão", L"Uncompressed", L"Sin compresión")}, g_cfg.pdfRaw ? 1 : 0, kPdfSmall); }},
+        {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Texto em SVG / EPS", L"Text in SVG / EPS", L"Texto en SVG / EPS"), T(L"CDR/SVG: instale as fontes originais", L"CDR/SVG: install the original fonts", L"CDR/SVG: instala las fuentes originales")); rseg(r, 240 * s, {T(L"Editável", L"Editable", L"Editable"), T(L"Em curvas", L"As paths", L"En curvas")}, g_cfg.vectorTextPaths ? 1 : 0, kVecText); }},
         {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Qualidade JPG e PDF", L"JPG and PDF quality", L"Calidad JPG y PDF"), nullptr); rstep(r, kQualMinus, kQualPlus, std::to_wstring(g_cfg.quality) + L"%"); }},
         {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Qualidade WEBP", L"WEBP quality", L"Calidad WEBP"), T(L"Menor = arquivo menor (75 é o ponto ideal)", L"Lower = smaller file (75 is the sweet spot)", L"Menor = archivo más pequeño (75 es lo ideal)")); rstep(r, kWebpMinus, kWebpPlus, std::to_wstring(g_cfg.webpQuality) + L"%"); }},
     };
