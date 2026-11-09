@@ -6,6 +6,7 @@
 #include "Ops.h"
 #include "PdfEdit.h"
 #include "Extras.h"
+#include "VectorConvert.h"
 
 namespace jobs {
 using std::min; using std::max;
@@ -32,11 +33,12 @@ struct Job {
     float webpQuality = 0.75f; // WEBP: compressão forte (como os conversores online)
     UINT dpi = 72;
     bool pdfRaw = false;
+    bool textToPaths = false; // SVG/EPS: preserve text unless explicitly requested.
     std::wstring pages;    // intervalo ("1-3, 5"); vazio = todas
     std::wstring suffix;   // acrescentado ao nome ("(girado)")
 };
 
-struct Result { std::vector<std::wstring> outputs; int failed = 0; };
+struct Result { std::vector<std::wstring> outputs; int failed = 0; std::vector<std::wstring> errors; };
 
 inline bool IsPdfFile(const std::wstring& f) {
     std::wstring e = ExtOf(f);
@@ -100,6 +102,24 @@ inline bool AddPdfPage(conv::PdfWriter& pdf, HBITMAP b, const fmt::Info& in, con
 inline Result Run(const std::vector<std::wstring>& files, const Job& j, const std::function<void(size_t, size_t)>& progress) {
     Result r;
     auto done = [&](size_t i) { progress(i + 1, files.size()); };
+    if (files.empty()) return r;
+
+    // Vector exports MUST precede Frames(): a rendered thumbnail has already lost the vectors.
+    if (j.action == kToFormat && (j.format == ops::kSvg || j.format == ops::kEps)) {
+        for (size_t i = 0; i < files.size(); ++i) {
+            if (j.edit.Any() || !j.pages.empty()) {
+                ++r.failed;
+                r.errors.push_back(BaseOf(files[i]) + L": edições de pixels e intervalos de páginas não são aplicáveis à conversão vetorial.");
+            } else {
+                std::wstring out = UniquePath(DirOf(files[i]), Named(BaseOf(files[i]), j.suffix), ops::Ext(j.format));
+                vec::Result v = vec::Convert(files[i], out, j.format == ops::kEps, j.textToPaths);
+                if (v.ok) r.outputs.push_back(out);
+                else { ++r.failed; r.errors.push_back(BaseOf(files[i]) + L": " + v.error); }
+            }
+            done(i);
+        }
+        return r;
+    }
 
     // ---- PDF de saída ----
     if (j.action == kToFormat && j.format == ops::kPdf) {

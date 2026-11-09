@@ -3,8 +3,8 @@
 <h3 align="center">Veja todos os seus arquivos de design no Windows,<br>mesmo sem os programas instalados.</h3>
 
 <p align="center">
-  <a href="https://github.com/thiagohcrispim-web/designthumbs/raw/main/dist/DesignThumbs-Setup.exe"><b>⬇ Baixar o Vizu para Windows</b></a> &nbsp;·&nbsp;
-  <a href="https://github.com/thiagohcrispim-web/designthumbs/raw/main/dist/DesignThumbs.zip">versão .zip</a> &nbsp;·&nbsp; grátis e de código aberto (MIT)
+  <a href="https://github.com/thiagohcrispim-web/designthumbs/releases/latest/download/DesignThumbs-Setup.exe"><b>⬇ Baixar o Vizu para Windows</b></a> &nbsp;·&nbsp;
+  <a href="https://github.com/thiagohcrispim-web/designthumbs/releases/latest/download/DesignThumbs.zip">versão .zip</a> &nbsp;·&nbsp; grátis e de código aberto (MIT)
 </p>
 
 ---
@@ -13,6 +13,14 @@ O Vizu ensina o Explorer do Windows 10 e 11 a mostrar **miniaturas e preview** d
 InDesign, CorelDRAW, Affinity, Sketch, fotos RAW e muito mais. Sem abrir nenhum programa, sem ter os programas
 instalados. E, de quebra, junta no mesmo lugar as ferramentas que você usa o dia todo: converter, recortar, ler texto
 de imagens, traduzir, cronometrar o foco e organizar o seu dia.
+
+**Vizu 9.8:** escolha a edição no instalador (cerca de 2 MB):
+
+| Edição | O que tem |
+|---|---|
+| **Vizu Lite** | Prévia com Espaço e miniaturas no Explorer |
+| **Vizu** | Tudo do Lite + menu circular (converter, ferramentas, PDF, extras), OCR, relógio e agenda |
+| **Vizu Ultra** | Tudo do Vizu + CDR/SVG para **SVG e EPS vetorial** (baixa o motor Inkscape, ~100 MB, uma única vez) |
 
 ## Veja tudo, sem abrir nada
 
@@ -42,6 +50,8 @@ Selecione arquivos e segure **Alt**: um menu circular aparece em volta do mouse,
 - **Extras**: exportar camadas do PSD, folha de cores, HEX/CSS, converter paletas ASE ⇄ ACO, amostra de fonte.
 
 Os arquivos novos ficam ao lado dos originais. Nada é sobrescrito.
+
+**Conversão vetorial SVG/EPS:** disponível para arquivos CDR e SVG, quando o Conversor de Arquivos Vetoriais é selecionado no instalador. O motor portátil está incluído no pacote e é configurado automaticamente. Os objetos são lidos do documento original; bitmaps não são incorporados como substitutos dos vetores. Efeitos incompatíveis bloqueiam EPS com diagnóstico. Veja [configuração do motor e limitações](docs/vector-conversion.md).
 
 ## Ler texto de qualquer lugar
 
@@ -84,7 +94,7 @@ desligado nas Configurações.
 
 ## Instalar
 
-1. Baixe o **[instalador](https://github.com/thiagohcrispim-web/designthumbs/raw/main/dist/DesignThumbs-Setup.exe)** e abra. Não precisa de administrador.
+1. Baixe o **[instalador](https://github.com/thiagohcrispim-web/designthumbs/releases/latest/download/DesignThumbs-Setup.exe)** e abra. Não precisa de administrador.
 2. Pronto: as miniaturas aparecem conforme você navega pelas pastas.
 
 Para atualizar, o Vizu avisa sozinho quando sai versão nova. Para desinstalar, rode o instalador de novo ou use
@@ -149,6 +159,9 @@ https://docs.github.com/site-policy/privacy-policies/github-general-privacy-stat
 <details>
 <summary><b>Histórico de versões</b></summary>
 
+- **v9.8** — Instalador com três edições: **Lite**, **Vizu** e **Ultra**. O instalador volta a ter ~2 MB: o Ultra baixa o
+  motor vetorial com verificação SHA-256 e não o reinstala nas atualizações. SVG aceita bitmaps embutidos no CDR e o EPS
+  aceita gradientes; erros de conversão viram um aviso curto com o detalhe num arquivo. Atualizações conferem o SHA-256.
 - **v9.6.2** — SVG convertido agora abre no Illustrator (antes aparecia em branco).
 - **v9.6.1** — Converter agora também gera **SVG** e **EPS** (a imagem vai embutida no arquivo; não é vetorização).
 - **v9.6** — Identidade **Vizu**: logotipo nas Configurações, tema novo **Vizu Classic** (Design System Vizu:

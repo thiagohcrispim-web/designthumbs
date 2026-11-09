@@ -614,5 +614,6 @@ static void ClockLoad() {
     g_clock.agendaOn = ReadDword(L"ClockAgenda", 1) != 0;
     { DWORD sc = ReadDword(L"ClockScale", 100); g_clock.scalePct = sc == 90 || sc == 70 ? sc : 100; }
     g_clock.docked = ReadDword(L"ClockDocked", 0) != 0;
+    if (g_lite) { g_clock.ocr = false; return; } // Vizu Lite: sem relógio nem OCR
     if (ReadDword(L"ClockOn", 0)) ClockEnable(true); // desligado até o usuário ativar
 }

@@ -3,11 +3,12 @@
 #include <windows.h>
 #include <winhttp.h>
 #include <urlmon.h>
+#include "VectorBundle.h"
 #include <string>
 
 namespace upd {
 
-static const wchar_t* kVersion = L"9.6.2";
+static const wchar_t* kVersion = L"9.8.0";
 static const wchar_t* kRepoApi = L"/repos/thiagohcrispim-web/designthumbs/releases/latest";
 // Alternativa às Releases: arquivo no próprio repositório com a versão e o link do instalador.
 static const wchar_t* kLatestJson = L"/thiagohcrispim-web/designthumbs/main/latest.json";
@@ -59,7 +60,7 @@ inline std::string JsonString(const std::string& j, const char* key, size_t from
     return j.substr(p + 1, e - p - 1);
 }
 
-struct Release { std::wstring tag, url; };
+struct Release { std::wstring tag, url; std::string sha256; };
 
 // Última versão publicada e o link do instalador: latest.json do repositório (ou a última Release).
 inline bool Latest(Release* out) {
@@ -68,6 +69,7 @@ inline bool Latest(Release* out) {
     if (!ver.empty() && !link.empty()) {
         out->tag.assign(ver.begin(), ver.end());
         out->url.assign(link.begin(), link.end());
+        out->sha256 = JsonString(lj, "sha256");
         return true;
     }
     std::string j = HttpsGet(L"api.github.com", kRepoApi);
@@ -87,12 +89,15 @@ inline bool Latest(Release* out) {
 }
 
 // Baixa o instalador para a pasta temporária.
-inline bool Download(const std::wstring& url, std::wstring* path) {
+inline bool Download(const std::wstring& url, std::wstring* path, const std::string& sha256 = "") {
     wchar_t tmp[MAX_PATH];
     if (!GetTempPathW(MAX_PATH, tmp)) return false;
     *path = std::wstring(tmp) + L"DesignThumbs-Setup.exe";
     DeleteFileW(path->c_str());
-    return SUCCEEDED(URLDownloadToFileW(nullptr, url.c_str(), path->c_str(), 0, nullptr));
+    if (FAILED(URLDownloadToFileW(nullptr, url.c_str(), path->c_str(), 0, nullptr))) return false;
+    std::string want = sha256; for (auto& c : want) c = (char)tolower((unsigned char)c);
+    if (!want.empty() && vbundle::FileSha256(*path) != want) { DeleteFileW(path->c_str()); return false; } // download corrompido ou adulterado
+    return true;
 }
 
 } // namespace upd

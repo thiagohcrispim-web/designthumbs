@@ -254,6 +254,25 @@ inline ID2D1PathGeometry* SvgPath(ID2D1Factory* f, const char* d, float sc, floa
 
 // ---------- pintor ----------
 
+// Shared official Vizu wordmark used by settings and installer.
+inline void Brand(ID2D1RenderTarget* rt, const Theme& th, float x, float y, float height) {
+    static const char* kWord[] = {
+            "M-121.57-2069.57H102.46l256.87,572.16,256.88-572.16h224.03l-349.54,744.23H227.96l-349.54-744.23Z",
+            "M887.14-1989.34c0-57.01,44.57-88.67,123.16-88.67s121.99,31.67,121.99,88.67-42.23,88.67-121.99,88.67-123.16-31.67-123.16-88.67ZM902.39-1871.11h215.82v545.77h-215.82v-545.77Z",
+            "M1179.19-1455.18l364.79-289.25h-360.09v-125.62h609.93v125.62l-367.13,294.53h373v124.57h-620.49v-129.84Z",
+            "M2577.32-1325.34h-215.82v-205.85c-10.56,80.23-72.72,210.07-235.76,216.41-168.9,6.33-279.16-100.29-279.16-235.41v-319.86h215.82v292.42c0,90.79,41.05,137.23,98.53,137.23,111.43,0,200.57-164.68,200.57-307.19v-122.46h215.82v544.71Z",
+            "M2667.76-1485.87c0-102.03,71.8-158.72,198.4-158.72s196.51,56.68,196.51,158.72-68.02,158.72-196.51,158.72-198.4-56.69-198.4-158.72Z"};
+    float sc = height / 830.0f, ox = x + 160 * sc, oy = y + 2120 * sc;
+    ID2D1Factory* fac = nullptr; rt->GetFactory(&fac);
+    for (int i = 0; i < 5; ++i) {
+        ID2D1PathGeometry* g = SvgPath(fac, kWord[i], sc, ox, oy, true);
+        ID2D1SolidColorBrush* b = nullptr;
+        if (g && SUCCEEDED(rt->CreateSolidColorBrush(i == 4 ? Rgba(0xFF6633) : th.text, &b))) { rt->FillGeometry(g, b); b->Release(); }
+        if (g) g->Release();
+    }
+    fac->Release();
+}
+
 class Painter {
 public:
     ID2D1RenderTarget* rt;

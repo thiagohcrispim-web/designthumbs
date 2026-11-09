@@ -24,14 +24,17 @@
 #include <algorithm>
 #include "Convert.h" // antes do dwrite.h (ordem dos headers do MinGW)
 #include "Jobs.h"
+#include "VectorBundle.h"
 #include <dwrite.h>
 #include "Ui.h"
 #include "Update.h"
+#include "InstallerUi.h"
 #include <condition_variable>
 #include <deque>
 #include <mutex>
 #include <set>
 #include <thread>
+#include <atomic>
 
 using std::min; using std::max;
 using conv::SafeRelease; using conv::Lower;
@@ -42,8 +45,9 @@ enum {
 
 // ---------- configurações (HKCU\Software\DesignThumbs) ----------
 
-struct Config { DWORD themeMode = 0, webpQuality = 75, neon = 0xFF6633; bool tray = true; bool space = true, alt = true, picker = true, autoUpdate = true, dpi300 = false, pdfRaw = false, tempPermanent = false; DWORD altDelay = 500, quality = 75; };
+struct Config { DWORD themeMode = 0, webpQuality = 75, neon = 0xFF6633; bool tray = true; bool space = true, alt = true, picker = true, autoUpdate = true, dpi300 = false, pdfRaw = false, vectorTextPaths = false, tempPermanent = false; DWORD altDelay = 500, quality = 75; };
 static Config g_cfg;
+static bool g_lite = false; // Vizu Lite: só prévia com Espaço e miniaturas
 static const wchar_t* kCfgKey = L"Software\\DesignThumbs";
 
 static DWORD ReadDword(const wchar_t* name, DWORD def) {
@@ -54,7 +58,8 @@ static DWORD ReadDword(const wchar_t* name, DWORD def) {
 static void WriteDword(const wchar_t* name, DWORD v) { RegSetKeyValueW(HKEY_CURRENT_USER, kCfgKey, name, REG_DWORD, &v, sizeof(v)); }
 static void LoadConfig() {
     g_cfg.space = ReadDword(L"SpacePreview", 1) != 0;
-    g_cfg.alt = ReadDword(L"AltButtons", 1) != 0;
+    g_lite = vec::Edition() == vec::kLite;
+    g_cfg.alt = !g_lite && ReadDword(L"AltButtons", 1) != 0;
     g_cfg.altDelay = max(150ul, min(3000ul, (unsigned long)ReadDword(L"AltDelay", 500)));
     g_cfg.quality = max(50ul, min(100ul, (unsigned long)ReadDword(L"JpgQuality", 75)));
     g_cfg.dpi300 = ReadDword(L"ConvertDpi", 72) == 300;
@@ -67,13 +72,14 @@ static void LoadConfig() {
     g_cfg.tray = ReadDword(L"TrayIcon", 1) != 0;
     g_cfg.autoUpdate = ReadDword(L"AutoUpdate", 1) != 0;
     g_cfg.pdfRaw = ReadDword(L"PdfUncompressed", 0) != 0;
+    g_cfg.vectorTextPaths = ReadDword(L"VectorTextPaths", 0) != 0;
     g_cfg.tempPermanent = ReadDword(L"TempPermanent", 0) != 0;
     g_cfg.neon = ReadDword(L"NeonColor", 0xFF6633) & 0xFFFFFF; ui::NeonColor() = g_cfg.neon;
 }
 static void SaveConfig() {
     WriteDword(L"SpacePreview", g_cfg.space); WriteDword(L"AltButtons", g_cfg.alt);
     WriteDword(L"AltDelay", g_cfg.altDelay); WriteDword(L"JpgQuality", g_cfg.quality);
-    WriteDword(L"ConvertDpi", g_cfg.dpi300 ? 300 : 72); WriteDword(L"ColorPicker", g_cfg.picker); WriteDword(L"Theme2", g_cfg.themeMode); WriteDword(L"WebpQuality", g_cfg.webpQuality); WriteDword(L"TrayIcon", g_cfg.tray); WriteDword(L"AutoUpdate", g_cfg.autoUpdate); WriteDword(L"PdfUncompressed", g_cfg.pdfRaw); WriteDword(L"TempPermanent", g_cfg.tempPermanent); WriteDword(L"NeonColor", g_cfg.neon);
+    WriteDword(L"ConvertDpi", g_cfg.dpi300 ? 300 : 72); WriteDword(L"ColorPicker", g_cfg.picker); WriteDword(L"Theme2", g_cfg.themeMode); WriteDword(L"WebpQuality", g_cfg.webpQuality); WriteDword(L"TrayIcon", g_cfg.tray); WriteDword(L"AutoUpdate", g_cfg.autoUpdate); WriteDword(L"PdfUncompressed", g_cfg.pdfRaw); WriteDword(L"VectorTextPaths", g_cfg.vectorTextPaths); WriteDword(L"TempPermanent", g_cfg.tempPermanent); WriteDword(L"NeonColor", g_cfg.neon);
 }
 
 // ---------- estado ----------
@@ -677,6 +683,7 @@ static std::vector<std::wstring> g_convFiles;
 static bool g_converting;
 static std::wstring g_toastTitle, g_toastText;
 static int g_toastState;           // 0 convertendo, 1 pronto, 2 erro
+static std::wstring g_toastLog;    // detalhes do último erro de conversão
 static int g_toastAction;          // clique: 0 mostra os arquivos, 1 instala a atualização
 static upd::Release g_release;
 static UINT g_toastDone, g_toastTotal;
@@ -1106,6 +1113,21 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             g_toastAction = 0;
             ShowToast(T(L"Pronto · clique para ver na pasta", L"Done · click to show in folder", L"Listo · clic para ver en la carpeta"), text, 7000, 1);
         }
+        if (!r->errors.empty()) { // detalhes técnicos vão para um arquivo; o aviso fica curto
+            std::wstring details;
+            for (const auto& e : r->errors) details += e + L"\r\n\r\n";
+            wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp);
+            g_toastLog = std::wstring(tmp) + L"Vizu-conversao.txt";
+            std::string u = vec::Utf8(L"\xFEFF" + details);
+            HANDLE f = CreateFileW(g_toastLog.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+            if (f != INVALID_HANDLE_VALUE) { DWORD n; WriteFile(f, u.data(), (DWORD)u.size(), &n, nullptr); CloseHandle(f); }
+            if (r->outputs.empty()) {
+                std::wstring first = r->errors[0].substr(0, r->errors[0].find(L'\n'));
+                if (first.size() > 140) first = first.substr(0, 140) + L"…";
+                g_toastAction = 3;
+                ShowToast(T(L"Não foi possível converter · clique para detalhes", L"Couldn't convert · click for details", L"No se pudo convertir · clic para detalles"), first, 9000, 2);
+            }
+        }
         delete r;
         return 0;
     }
@@ -1255,6 +1277,7 @@ static jobs::Job BaseJob() {
     j.webpQuality = g_cfg.webpQuality / 100.0f;
     j.dpi = g_cfg.dpi300 ? 300 : 72;
     j.pdfRaw = g_cfg.pdfRaw;
+    j.textToPaths = g_cfg.vectorTextPaths;
     return j;
 }
 
@@ -1278,6 +1301,7 @@ static void StartBatches(std::vector<Batch> batches, const std::wstring& label) 
             jobs::Result r = jobs::Run(b.files, b.job, [wnd, base, total](size_t d, size_t) { PostMessage(wnd, WM_CONV_PROGRESS, base + d, total); });
             all->outputs.insert(all->outputs.end(), r.outputs.begin(), r.outputs.end());
             all->failed += r.failed;
+            all->errors.insert(all->errors.end(), r.errors.begin(), r.errors.end());
             base += b.files.size();
         }
         if (!PostMessage(wnd, WM_CONV_DONE, 0, (LPARAM)all)) delete all;
@@ -1428,7 +1452,10 @@ static void BuildSides() {
         Side s{T(L"Converter", L"Convert", L"Convertir"), {}};
         if (k & (kSelImage | kSelPalette | kSelFont)) {
             static const ops::Format order[] = {ops::kPng, ops::kJpg, ops::kPdf, ops::kWebp, ops::kTiff, ops::kSvg, ops::kEps};
+            bool allVector = !files.empty() && vec::Available();
+            for (const auto& file : files) allVector &= vec::IsInput(file);
             for (ops::Format f : order) {
+                if ((f == ops::kSvg || f == ops::kEps) && !allVector) continue;
                 jobs::Job j = BaseJob(); j.format = f;
                 std::wstring name = ops::Name(f);
                 const wchar_t* icon = f == ops::kPdf ? L"\uE8A5" : L"\uE91B";
@@ -2227,14 +2254,15 @@ static LRESULT CALLBACK ToastProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             g_toastAction = 2;
             g_toastDone = 0; g_toastTotal = 0;
             ShowToast(T(L"Baixando atualização…", L"Downloading update…", L"Descargando actualización…"), g_release.tag, 0, 0);
-            std::wstring url = g_release.url;
+            std::wstring url = g_release.url; std::string sha = g_release.sha256;
             HWND wnd = g_wnd;
-            std::thread([url, wnd] {
+            std::thread([url, sha, wnd] {
                 std::wstring path;
-                auto* p = new std::wstring(upd::Download(url, &path) ? path : L"");
+                auto* p = new std::wstring(upd::Download(url, &path, sha) ? path : L"");
                 if (!PostMessage(wnd, WM_UPDATE_READY, 0, (LPARAM)p)) delete p;
             }).detach();
         } else if (g_toastAction == 0) RevealOutputs();
+        else if (g_toastAction == 3) ShellExecuteW(nullptr, L"open", g_toastLog.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         return 0;
     case WM_RBUTTONUP: if (!g_converting) ShowWindow(h, SW_HIDE); return 0;
     case WM_SIZE: g_toastSurf.Resize(LOWORD(lp), HIWORD(lp)); return 0;
@@ -2285,7 +2313,7 @@ static bool AutostartEnabled();
 
 enum { kTogSpace = 1, kTogAlt, kDelayMinus, kDelayPlus, kDpi72, kDpi300, kPdfSmall, kPdfRaw, kQualMinus, kQualPlus, kTogAuto, kBtnFolder, kBtnQuit, kBtnClose,
        kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate, kTheme0, kTheme1, kTheme2, kTheme3, kWebpMinus, kWebpPlus, kTogTray, kTogTempDel, kNeon0, kNeon1, kNeon2, kNeon3, kNeon4, kNeon5, kNeonRgb,
-       kClockOn, kClockFont, kPomoT0, kPomoT1, kPomoT2, kPomoC0, kPomoC1, kPomoC2, kPomoC3, kTheftHist, kUiFont, kOcrOn, kOcrKeep, kOcrJoin, kOcrLang, kClk100, kClk90, kClk70, kClockDock, kSte, kTheme4, kTheftOn, kFocoOn, kAgendaOn };
+       kClockOn, kClockFont, kPomoT0, kPomoT1, kPomoT2, kPomoC0, kPomoC1, kPomoC2, kPomoC3, kTheftHist, kUiFont, kOcrOn, kOcrKeep, kOcrJoin, kOcrLang, kClk100, kClk90, kClk70, kClockDock, kSte, kTheme4, kTheftOn, kFocoOn, kAgendaOn, kVecText, kVecCurves };
 static const UINT kNeonPresets[6] = {0xFF6633, 0xFF2D95, 0x00E5FF, 0xB6FF3B, 0xA855F7, 0xFFD400};
 
 
@@ -2346,6 +2374,8 @@ static void SettingsAction(int id) {
     case kDpi300: g_cfg.dpi300 = true; break;
     case kPdfSmall: g_cfg.pdfRaw = false; break;
     case kPdfRaw: g_cfg.pdfRaw = true; break;
+    case kVecText: g_cfg.vectorTextPaths = false; break;
+    case kVecCurves: g_cfg.vectorTextPaths = true; break;
     case kQualMinus: g_cfg.quality = max(50ul, (unsigned long)g_cfg.quality - 2); break;
     case kQualPlus: g_cfg.quality = min(100ul, (unsigned long)g_cfg.quality + 2); break;
     case kTogAuto: SetAutostart(!AutostartEnabled()); break;
@@ -2430,23 +2460,7 @@ static void PaintSettings(HWND h) {
     auto hit = [&](int id, D2D1_RECT_F r) { g_setHits.push_back({id, r}); return g_setHot == id; };
 
     // cabeçalho fixo
-    { // logotipo "Vizu." (desenho oficial do Design System Vizu), com o ponto em laranja
-        static const char* kWord[] = {
-            "M-121.57-2069.57H102.46l256.87,572.16,256.88-572.16h224.03l-349.54,744.23H227.96l-349.54-744.23Z",
-            "M887.14-1989.34c0-57.01,44.57-88.67,123.16-88.67s121.99,31.67,121.99,88.67-42.23,88.67-121.99,88.67-123.16-31.67-123.16-88.67ZM902.39-1871.11h215.82v545.77h-215.82v-545.77Z",
-            "M1179.19-1455.18l364.79-289.25h-360.09v-125.62h609.93v125.62l-367.13,294.53h373v124.57h-620.49v-129.84Z",
-            "M2577.32-1325.34h-215.82v-205.85c-10.56,80.23-72.72,210.07-235.76,216.41-168.9,6.33-279.16-100.29-279.16-235.41v-319.86h215.82v292.42c0,90.79,41.05,137.23,98.53,137.23,111.43,0,200.57-164.68,200.57-307.19v-122.46h215.82v544.71Z",
-            "M2667.76-1485.87c0-102.03,71.8-158.72,198.4-158.72s196.51,56.68,196.51,158.72-68.02,158.72-196.51,158.72-198.4-56.69-198.4-158.72Z"};
-        float hgt = 24 * s, sc = hgt / 830.0f, ox = 28 * s + 160 * sc, oy = 26 * s + 2120 * sc;
-        ID2D1Factory* fac = nullptr; rt->GetFactory(&fac);
-        for (int i = 0; i < 5; ++i) {
-            ID2D1PathGeometry* g = ui::SvgPath(fac, kWord[i], sc, ox, oy, true);
-            ID2D1SolidColorBrush* b = nullptr;
-            if (g && SUCCEEDED(rt->CreateSolidColorBrush(i == 4 ? ui::Rgba(0xFF6633) : th.text, &b))) { rt->FillGeometry(g, b); b->Release(); }
-            if (g) g->Release();
-        }
-        fac->Release();
-    }
+    ui::Brand(rt, th, 28 * s, 26 * s, 24 * s);
     p.Text(T(L"Configurações", L"Settings", L"Configuración"), D2D1::RectF(28 * s, 52 * s, sz.width - 80 * s, 74 * s), 13, th.text2);
     D2D1_RECT_F close = D2D1::RectF(sz.width - 52 * s, 22 * s, sz.width - 22 * s, 52 * s);
     p.CircleButton(close, L"", hit(kBtnClose, close));
@@ -2520,6 +2534,7 @@ static void PaintSettings(HWND h) {
     };
     drawCard(rows);
 
+    if (!g_lite) { // Lite: só VER, SISTEMA e TEMAS
     // CONVERTER
     section(T(L"CONVERTER", L"CONVERT", L"CONVERTIR"));
     rows = {
@@ -2530,6 +2545,7 @@ static void PaintSettings(HWND h) {
         {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Qualidade JPG e PDF", L"JPG and PDF quality", L"Calidad JPG y PDF"), nullptr); rstep(r, kQualMinus, kQualPlus, std::to_wstring(g_cfg.quality) + L"%"); }},
         {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Qualidade WEBP", L"WEBP quality", L"Calidad WEBP"), T(L"Menor = arquivo menor (75 é o ponto ideal)", L"Lower = smaller file (75 is the sweet spot)", L"Menor = archivo más pequeño (75 es lo ideal)")); rstep(r, kWebpMinus, kWebpPlus, std::to_wstring(g_cfg.webpQuality) + L"%"); }},
     };
+    if (vec::Available()) rows.insert(rows.begin()+4, {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Texto em SVG / EPS", L"Text in SVG / EPS", L"Texto en SVG / EPS"), T(L"CDR/SVG: instale as fontes originais", L"CDR/SVG: install the original fonts", L"CDR/SVG: instala las fuentes originales")); rseg(r, 240 * s, {T(L"Editável", L"Editable", L"Editable"), T(L"Em curvas", L"As paths", L"En curvas")}, g_cfg.vectorTextPaths ? 1 : 0, kVecText); }});
     drawCard(rows);
 
     // OUTROS: Relógio, OCR, Pastas Padrão Vizu, Limpeza
@@ -2579,6 +2595,7 @@ static void PaintSettings(HWND h) {
         rlabel(r, T(L"Pastas Padrão Vizu", L"Vizu folder set", L"Carpetas estándar Vizu"), names.c_str()); rpill(r, kBtnFolders, T(L"Editar", L"Edit", L"Editar"), 90 * s); }});
     rows.push_back({RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Limpeza", L"Cleanup", L"Limpieza"), T(L"Excluir temporários direto, sem passar pela Lixeira", L"Delete temp files directly, skipping the Recycle Bin", L"Eliminar temporales directamente, sin pasar por la Papelera")); rtoggle(kTogTempDel, r, g_cfg.tempPermanent); }});
     drawCard(rows);
+    } // !g_lite
 
     // SISTEMA
     section(T(L"SISTEMA", L"SYSTEM", L"SISTEMA"));
@@ -3214,57 +3231,27 @@ static void SetNewMenu(bool on);
 
 static int Uninstall(bool silent, bool ask = true);
 
-// Já instalado e o instalador foi aberto de novo: atualizar/reinstalar, desinstalar ou cancelar.
-static int InstallerChoice() {
-    wchar_t ver[32] = {}; DWORD sz = sizeof(ver);
-    RegGetValueW(HKEY_CURRENT_USER, kUninstKey, L"DisplayVersion", RRF_RT_REG_SZ, nullptr, ver, &sz);
-    std::wstring content = std::wstring(T(L"Versão instalada: ", L"Installed version: ", L"Versión instalada: ")) + ver + L"\n" +
-                           T(L"Versão deste instalador: ", L"This installer: ", L"Versión de este instalador: ") + upd::kVersion;
-    bool newer = upd::Compare(ver, upd::kVersion) < 0;
-    TASKDIALOG_BUTTON buttons[] = {
-        {100, newer ? T(L"Atualizar\nInstala a versão nova mantendo as configurações", L"Update\nInstalls the new version and keeps your settings", L"Actualizar\nInstala la versión nueva y mantiene la configuración")
-                    : T(L"Reinstalar\nInstala de novo, mantendo as configurações", L"Reinstall\nInstalls again and keeps your settings", L"Reinstalar\nInstala de nuevo y mantiene la configuración")},
-        {101, T(L"Desinstalar\nRemove o Vizu deste computador", L"Uninstall\nRemoves Vizu from this computer", L"Desinstalar\nElimina Vizu de este equipo")},
-    };
-    TASKDIALOGCONFIG tc = {sizeof(tc)};
-    tc.dwFlags = TDF_USE_COMMAND_LINKS | TDF_ALLOW_DIALOG_CANCELLATION | TDF_POSITION_RELATIVE_TO_WINDOW;
-    tc.dwCommonButtons = TDCBF_CANCEL_BUTTON;
-    tc.pszWindowTitle = L"Vizu";
-    tc.hInstance = g_inst;
-    tc.pszMainIcon = MAKEINTRESOURCEW(1);
-    tc.dwFlags |= 0; // ícone do programa (recurso 1)
-    tc.pszMainInstruction = T(L"O Vizu já está instalado", L"Vizu is already installed", L"Vizu ya está instalado");
-    tc.pszContent = content.c_str();
-    tc.pButtons = buttons;
-    tc.cButtons = ARRAYSIZE(buttons);
-    tc.nDefaultButton = 100;
-    int pressed = IDCANCEL;
-    if (FAILED(TaskDialogIndirect(&tc, &pressed, nullptr, nullptr))) // sem a caixa moderna: pergunta simples
-        pressed = MessageBoxW(nullptr, T(L"O Vizu já está instalado.\n\nSim = atualizar/reinstalar\nNão = desinstalar", L"Vizu is already installed.\n\nYes = update/reinstall\nNo = uninstall",
-                                         L"Vizu ya está instalado.\n\nSí = actualizar/reinstalar\nNo = desinstalar"), L"Vizu", MB_YESNOCANCEL | MB_ICONQUESTION) == IDYES ? 100
-                  : IDCANCEL;
-    return pressed;
-}
-
-static int Install(bool silent) {
-    bool installed = false;
-    { HKEY k; if (RegOpenKeyExW(HKEY_CURRENT_USER, kUninstKey, 0, KEY_READ, &k) == ERROR_SUCCESS) { installed = true; RegCloseKey(k); } }
-    if (!silent && installed) {
-        int c = InstallerChoice();
-        if (c == 101) return Uninstall(false, false); // já escolheu na caixa: sem nova pergunta
-        if (c != 100) return 0;
-        silent = false;
-        goto install; // já confirmou: não pergunta de novo
+struct InstallLock {
+    HANDLE handle = CreateMutexW(nullptr, FALSE, L"Local\\Vizu.Installer");
+    bool owned = false;
+    InstallLock() {
+        if (handle) { DWORD wait = WaitForSingleObject(handle, 0); owned = wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED; }
     }
-    if (!silent && MessageBoxW(nullptr, T(L"Instalar o Vizu?\n\nMiniaturas, painel de visualização e preview com Espaço para arquivos de design. Não precisa de administrador.\n\nPrivacidade: uma vez por dia o programa consulta o GitHub para ver se há versão nova (pode desligar nas configurações). Nenhum dado seu é enviado.",
-                                         L"Install Vizu?\n\nThumbnails, preview pane and Space preview for design files. No administrator needed.\n\nPrivacy: once a day the program checks GitHub for a new version (you can turn this off in settings). None of your data is sent.",
-                                         L"¿Instalar Vizu?\n\nMiniaturas, panel de vista previa y vista previa con Espacio para archivos de diseño. No requiere administrador.\n\nPrivacidad: una vez al día el programa consulta GitHub para ver si hay una versión nueva (se puede desactivar en la configuración). No se envía ningún dato tuyo."),
-                               L"Vizu", MB_YESNO | MB_ICONQUESTION) != IDYES)
-        return 0;
-install:
+    ~InstallLock() { if (owned) ReleaseMutex(handle); if (handle) CloseHandle(handle); }
+};
+
+static bool InstallFiles(int edition, const installui::Progress& progress, std::wstring& error) {
+    bool vectors = edition == vec::kUltra;
     std::wstring dir = InstallDir();
-    SHCreateDirectoryExW(nullptr, dir.c_str(), nullptr);
+    if (SHCreateDirectoryExW(nullptr, dir.c_str(), nullptr) != ERROR_SUCCESS && GetFileAttributesW(dir.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        error = T(L"Não foi possível criar a pasta do Vizu.",L"Could not create the Vizu folder.",L"No se pudo crear la carpeta de Vizu."); return false;
+    }
     QuitRunning();
+    progress(10, vectors ? T(L"Baixando o motor vetorial (cerca de 100 MB)…",L"Downloading the vector engine (about 100 MB)…",L"Descargando el motor vectorial (unos 100 MB)…") : T(L"Preparando os arquivos do Vizu…",L"Preparing Vizu files…",L"Preparando los archivos de Vizu…"));
+    if (!vbundle::Configure(dir, vectors, error)) return false;
+    WriteDword(L"Edition", (DWORD)edition); // antes do /autostart (menu Novo depende da edição)
+    WriteDword(L"VectorConverterInstalled", vectors ? 1 : 0);
+    progress(65, T(L"Instalando arquivos e miniaturas…",L"Installing files and thumbnails…",L"Instalando archivos y miniaturas…"));
     std::wstring exe = dir + L"\\DesignPeek.exe", dll = dir + L"\\DesignThumbs.dll";
     HRSRC r = FindResourceW(nullptr, MAKEINTRESOURCEW(2), RT_RCDATA);
     HGLOBAL g = r ? LoadResource(nullptr, r) : nullptr;
@@ -3272,9 +3259,10 @@ install:
     DeleteFileW((dir + L"\\Uninstall.exe").c_str()); // sobra do instalador antigo
     ok = ok && CallDll(dll, "DllRegisterServer");
     if (!ok) {
-        if (!silent) MessageBoxW(nullptr, T(L"Não foi possível instalar.", L"Installation failed.", L"No se pudo instalar."), L"Vizu", MB_ICONERROR);
-        return 1;
+        error = T(L"Não foi possível instalar os arquivos do Vizu.", L"Could not install Vizu files.", L"No se pudieron instalar los archivos de Vizu.");
+        return false;
     }
+    progress(85, T(L"Configurando atalhos e miniaturas…",L"Setting up shortcuts and thumbnails…",L"Configurando accesos y miniaturas…"));
     // atalhos (Inicializar, menu Iniciar) e menu Novo, apontando para o EXE instalado
     STARTUPINFOW si = {sizeof(si)}; PROCESS_INFORMATION pi;
     std::wstring cmd = L"\"" + exe + L"\" /autostart";
@@ -3290,23 +3278,53 @@ install:
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"InstallLocation", REG_SZ, dir.c_str(), sz(dir));
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"UninstallString", REG_SZ, un.c_str(), sz(un));
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"QuietUninstallString", REG_SZ, quiet.c_str(), sz(quiet));
-    DWORD one = 1, size = 1100;
+    DWORD one = 1, size = vectors ? 450000 : 4000; // KB; o Ultra inclui o motor vetorial extraído
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"NoModify", REG_DWORD, &one, 4);
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"NoRepair", REG_DWORD, &one, 4);
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"EstimatedSize", REG_DWORD, &size, 4);
-    // inicia o DesignPeek instalado (com as configurações abertas na primeira instalação)
-    std::wstring run = L"\"" + exe + L"\"" + (silent ? L"" : L" /settings");
-    STARTUPINFOW si2 = {sizeof(si2)};
-    if (CreateProcessW(nullptr, &run[0], nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si2, &pi)) { CloseHandle(pi.hProcess); CloseHandle(pi.hThread); }
-    if (!silent)
-        MessageBoxW(nullptr, T(L"Vizu instalado!\n\nAs miniaturas novas aparecem conforme você navega pelas pastas. Para desinstalar: Configurações › Aplicativos.",
-                               L"Vizu installed!\n\nNew thumbnails appear as you browse your folders. To uninstall: Settings › Apps.",
-                               L"¡Vizu instalado!\n\nLas miniaturas nuevas aparecen al navegar por las carpetas. Para desinstalar: Configuración › Aplicaciones."),
-                    L"Vizu", MB_ICONINFORMATION);
-    return 0;
+
+    progress(100, T(L"Instalação concluída.",L"Installation complete.",L"Instalación completada."));
+    return true;
+}
+
+static void StartInstalledApp(bool settings) {
+    std::wstring command = L"\"" + InstallDir() + L"\\DesignPeek.exe\"" + (settings ? L" /settings" : L"");
+    STARTUPINFOW si = {sizeof(si)}; PROCESS_INFORMATION pi = {};
+    if(CreateProcessW(nullptr, &command[0], nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {CloseHandle(pi.hProcess);CloseHandle(pi.hThread);}
+}
+
+static int Install(bool silent) {
+    InstallLock lock;
+    if(!lock.owned) {
+        if(!silent) MessageBoxW(nullptr,T(L"Já há uma instalação em andamento.",L"An installation is already running.",L"Ya hay una instalación en curso."),L"Vizu",MB_ICONINFORMATION);
+        return 1;
+    }
+    LoadConfig();
+    if(silent) {
+        std::wstring error;
+        bool ok=InstallFiles((int)vec::Edition(), [](int,const std::wstring&){}, error);
+        if(ok) StartInstalledApp(false);
+        return ok?0:1;
+    }
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    installui::Window ui;
+    HKEY existing;
+    if(RegOpenKeyExW(HKEY_CURRENT_USER,kUninstKey,0,KEY_READ,&existing)==ERROR_SUCCESS){ui.installed=true;RegCloseKey(existing);}
+    ui.edition=(int)vec::Edition();
+    ui.theme=ui::MakeTheme(ReadDword(L"Theme2",ui::kThemeClassic),false);
+    ui.work=InstallFiles;
+    int result=ui.Show(g_inst);
+    if(result==3) return Uninstall(false,false);
+    if(result==2) StartInstalledApp(true);
+    return result==1?1:0;
 }
 
 static int Uninstall(bool silent, bool ask) {
+    InstallLock lock;
+    if (!lock.owned) {
+        if (!silent) MessageBoxW(nullptr, T(L"Aguarde a instalação do Vizu terminar antes de remover o aplicativo.", L"Wait for the Vizu installation to finish before uninstalling.", L"Espera a que termine la instalación de Vizu antes de desinstalar."), L"Vizu", MB_ICONINFORMATION);
+        return 1;
+    }
     if (!silent && ask && MessageBoxW(nullptr, T(L"Desinstalar o Vizu?", L"Uninstall Vizu?", L"¿Desinstalar Vizu?"), L"Vizu",
                                MB_YESNO | MB_ICONQUESTION) != IDYES)
         return 0;
@@ -3314,6 +3332,7 @@ static int Uninstall(bool silent, bool ask) {
     QuitRunning();
     SetAutostart(false); SetStartMenu(false); SetNewMenu(false);
     CallDll(dir + L"\\DesignThumbs.dll", "DllUnregisterServer");
+    vbundle::Cleanup(dir, true);
     RegDeleteTreeW(HKEY_CURRENT_USER, kUninstKey);
     // Arquivos em uso (a DLL no Explorer e este EXE) vão para a pasta temporária; a pasta do programa some.
     wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp);
@@ -3338,9 +3357,17 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
         bool on = args.find(L"/noautostart") == std::wstring::npos;
         SetAutostart(on);
         SetStartMenu(on);
-        SetNewMenu(on);
+        SetNewMenu(on && vec::Edition() != vec::kLite); // Lite: sem Pastas Padrão no menu Novo
         CoUninitialize();
         return 0;
+    }
+    if(args.find(L"/installer-preview") != std::wstring::npos) {
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        installui::Window ui; ui.preview=true; ui.theme=ui::ClassicTheme();
+        if(args.find(L"/installer-preview-progress")!=std::wstring::npos){ui.page=1;ui.percent=65;ui.phase=T(L"Instalando arquivos e miniaturas…",L"Installing files and thumbnails…",L"Instalando archivos y miniaturas…");}
+        if(args.find(L"/installer-preview-done")!=std::wstring::npos){ui.page=2;ui.success=true;ui.focus=2;}
+        ui.Show(g_inst); CoUninitialize(); return 0;
     }
     bool silent = args.find(L"/S") != std::wstring::npos;
     if (args.find(L"/uninstall") != std::wstring::npos) { CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED); return Uninstall(silent); }
