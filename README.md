@@ -14,7 +14,7 @@ InDesign, CorelDRAW, Affinity, Sketch, fotos RAW e muito mais. Sem abrir nenhum 
 instalados. E, de quebra, junta no mesmo lugar as ferramentas que você usa o dia todo: converter, recortar, ler texto
 de imagens, traduzir, cronometrar o foco e organizar o seu dia.
 
-**Prévia 9.6.3-beta.1:** [baixar e testar a conversão vetorial CDR/SVG → SVG/EPS](https://github.com/thiagohcrispim-web/designthumbs/releases/tag/v9.6.3-beta.1). Requer Inkscape 1.2+; a fidelidade de CDR ainda está em validação. A atualização automática continua na versão estável.
+**Prévia 9.6.3-beta.2:** [baixar e testar a conversão vetorial CDR/SVG → SVG/EPS](https://github.com/thiagohcrispim-web/designthumbs/releases/tag/v9.6.3-beta.2). O motor vetorial já acompanha o instalador; a fidelidade de CDR ainda está em validação. A atualização automática continua na versão estável.
 
 ## Veja tudo, sem abrir nada
 
@@ -45,7 +45,7 @@ Selecione arquivos e segure **Alt**: um menu circular aparece em volta do mouse,
 
 Os arquivos novos ficam ao lado dos originais. Nada é sobrescrito.
 
-**Conversão vetorial SVG/EPS:** disponível para arquivos CDR e SVG, usando Inkscape 1.2+ instalado ou portátil configurado. Os objetos são lidos do documento original; bitmaps não são incorporados como substitutos dos vetores. Efeitos incompatíveis bloqueiam EPS com diagnóstico. Veja [configuração do motor e limitações](docs/vector-conversion.md).
+**Conversão vetorial SVG/EPS:** disponível para arquivos CDR e SVG, com o motor Inkscape portátil incluído e configurado pelo instalador. Os objetos são lidos do documento original; bitmaps não são incorporados como substitutos dos vetores. Efeitos incompatíveis bloqueiam EPS com diagnóstico. Veja [configuração do motor e limitações](docs/vector-conversion.md).
 
 ## Ler texto de qualquer lugar
 

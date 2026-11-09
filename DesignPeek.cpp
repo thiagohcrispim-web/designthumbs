@@ -24,6 +24,7 @@
 #include <algorithm>
 #include "Convert.h" // antes do dwrite.h (ordem dos headers do MinGW)
 #include "Jobs.h"
+#include "VectorBundle.h"
 #include <dwrite.h>
 #include "Ui.h"
 #include "Update.h"
@@ -32,6 +33,7 @@
 #include <mutex>
 #include <set>
 #include <thread>
+#include <atomic>
 
 using std::min; using std::max;
 using conv::SafeRelease; using conv::Lower;
@@ -3263,7 +3265,64 @@ static int InstallerChoice() {
     return pressed;
 }
 
+struct EngineInstallProgress {
+    std::wstring root, staging, error;
+    bool ok = false;
+    std::atomic<bool> done{false};
+    std::thread worker;
+};
+
+struct InstallLock {
+    HANDLE handle = CreateMutexW(nullptr, FALSE, L"Local\\Vizu.Installer");
+    bool owned = false;
+    InstallLock() {
+        if (handle) { DWORD wait = WaitForSingleObject(handle, 0); owned = wait == WAIT_OBJECT_0 || wait == WAIT_ABANDONED; }
+    }
+    ~InstallLock() { if (owned) ReleaseMutex(handle); if (handle) CloseHandle(handle); }
+};
+
+static HRESULT CALLBACK EngineInstallCallback(HWND h, UINT message, WPARAM, LPARAM, LONG_PTR data) {
+    auto* state = reinterpret_cast<EngineInstallProgress*>(data);
+    if (message == TDN_CREATED) {
+        SendMessageW(h, TDM_ENABLE_BUTTON, IDOK, FALSE);
+        SendMessageW(h, TDM_SET_PROGRESS_BAR_MARQUEE, TRUE, 40);
+        state->worker = std::thread([state, h] {
+            CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+            state->ok = vbundle::Prepare(state->root, state->staging, state->error);
+            CoUninitialize();
+            state->done.store(true);
+            PostMessageW(h, TDM_ENABLE_BUTTON, IDOK, TRUE);
+            PostMessageW(h, TDM_CLICK_BUTTON, IDOK, 0);
+        });
+    }
+    if (message == TDN_BUTTON_CLICKED && !state->done.load()) return S_FALSE;
+    return S_OK;
+}
+
+static bool PrepareBundledEngine(const std::wstring& root, bool silent, std::wstring& staging, std::wstring& error) {
+    if (silent) return vbundle::Prepare(root, staging, error);
+    EngineInstallProgress state; state.root = root;
+    TASKDIALOGCONFIG dialog = {sizeof(dialog)};
+    dialog.dwFlags = TDF_SHOW_MARQUEE_PROGRESS_BAR | TDF_SIZE_TO_CONTENT;
+    dialog.dwCommonButtons = TDCBF_OK_BUTTON;
+    dialog.pszWindowTitle = L"Vizu";
+    dialog.pszMainInstruction = T(L"Preparando o motor vetorial…", L"Preparing the vector engine…", L"Preparando el motor vectorial…");
+    dialog.pszContent = T(L"O motor já está incluído no Vizu. Aguarde a extração e a verificação; não é necessário baixar ou instalar outro programa.",
+                         L"The engine is included with Vizu. Please wait for extraction and verification; no additional download or installation is needed.",
+                         L"El motor está incluido en Vizu. Espera la extracción y verificación; no necesitas descargar ni instalar otro programa.");
+    dialog.pfCallback = EngineInstallCallback; dialog.lpCallbackData = reinterpret_cast<LONG_PTR>(&state);
+    HRESULT hr = TaskDialogIndirect(&dialog, nullptr, nullptr, nullptr);
+    if (state.worker.joinable()) state.worker.join();
+    if (FAILED(hr) && !state.done.load()) return vbundle::Prepare(root, staging, error);
+    staging = state.staging; error = state.error; return state.ok;
+}
+
 static int Install(bool silent) {
+    InstallLock lock;
+    if (!lock.owned) {
+        if (!silent) MessageBoxW(nullptr, T(L"Já há uma instalação do Vizu em andamento. Aguarde a conclusão.", L"A Vizu installation is already running. Please wait for it to finish.", L"Ya hay una instalación de Vizu en curso. Espera a que termine."), L"Vizu", MB_ICONINFORMATION);
+        return 1;
+    }
     bool installed = false;
     { HKEY k; if (RegOpenKeyExW(HKEY_CURRENT_USER, kUninstKey, 0, KEY_READ, &k) == ERROR_SUCCESS) { installed = true; RegCloseKey(k); } }
     if (!silent && installed) {
@@ -3281,7 +3340,18 @@ static int Install(bool silent) {
 install:
     std::wstring dir = InstallDir();
     SHCreateDirectoryExW(nullptr, dir.c_str(), nullptr);
+    std::wstring engineStage, engineError;
+    if (!PrepareBundledEngine(dir, silent, engineStage, engineError)) {
+        if (!silent) MessageBoxW(nullptr, engineError.c_str(), L"Vizu", MB_ICONERROR);
+        return 1;
+    }
     QuitRunning();
+    if (!vbundle::Commit(dir, engineStage, engineError)) {
+        vbundle::Remove(dir, engineStage);
+        if (!silent) MessageBoxW(nullptr, engineError.c_str(), L"Vizu", MB_ICONERROR);
+        return 1;
+    }
+    vbundle::Cleanup(dir, false);
     std::wstring exe = dir + L"\\DesignPeek.exe", dll = dir + L"\\DesignThumbs.dll";
     HRSRC r = FindResourceW(nullptr, MAKEINTRESOURCEW(2), RT_RCDATA);
     HGLOBAL g = r ? LoadResource(nullptr, r) : nullptr;
@@ -3307,7 +3377,7 @@ install:
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"InstallLocation", REG_SZ, dir.c_str(), sz(dir));
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"UninstallString", REG_SZ, un.c_str(), sz(un));
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"QuietUninstallString", REG_SZ, quiet.c_str(), sz(quiet));
-    DWORD one = 1, size = 1100;
+    DWORD one = 1, size = 900000; // Includes the complete portable engine and embedded archive.
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"NoModify", REG_DWORD, &one, 4);
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"NoRepair", REG_DWORD, &one, 4);
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"EstimatedSize", REG_DWORD, &size, 4);
@@ -3324,6 +3394,11 @@ install:
 }
 
 static int Uninstall(bool silent, bool ask) {
+    InstallLock lock;
+    if (!lock.owned) {
+        if (!silent) MessageBoxW(nullptr, T(L"Aguarde a instalação do Vizu terminar antes de remover o aplicativo.", L"Wait for the Vizu installation to finish before uninstalling.", L"Espera a que termine la instalación de Vizu antes de desinstalar."), L"Vizu", MB_ICONINFORMATION);
+        return 1;
+    }
     if (!silent && ask && MessageBoxW(nullptr, T(L"Desinstalar o Vizu?", L"Uninstall Vizu?", L"¿Desinstalar Vizu?"), L"Vizu",
                                MB_YESNO | MB_ICONQUESTION) != IDYES)
         return 0;
@@ -3331,6 +3406,7 @@ static int Uninstall(bool silent, bool ask) {
     QuitRunning();
     SetAutostart(false); SetStartMenu(false); SetNewMenu(false);
     CallDll(dir + L"\\DesignThumbs.dll", "DllUnregisterServer");
+    vbundle::Cleanup(dir, true);
     RegDeleteTreeW(HKEY_CURRENT_USER, kUninstKey);
     // Arquivos em uso (a DLL no Explorer e este EXE) vão para a pasta temporária; a pasta do programa some.
     wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp);

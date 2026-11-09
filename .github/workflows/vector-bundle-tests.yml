@@ -1,0 +1,29 @@
+name: Bundled vector engine tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  install:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: actions/cache@v4
+        with:
+          path: build/engine/inkscape.7z
+          key: inkscape-1.4.2-757e0358512630e6
+      - name: Prepare and verify pinned portable engine
+        run: python tools/prepare_vector_engine.py
+      - name: Compile bundle installation tests
+        shell: cmd
+        run: |
+          rc /nologo /fo build\bundle-tests.res tests\vector_bundle_tests.rc
+          if errorlevel 1 exit /b 1
+          cl /nologo /std:c++17 /utf-8 /EHsc /W4 /DUNICODE /D_UNICODE tests\vector_bundle_tests.cpp build\bundle-tests.res /Fe:build\bundle-tests.exe /link shlwapi.lib ole32.lib xmllite.lib
+      - name: Test offline installation, SVG/EPS conversion, reinstall and uninstall
+        shell: cmd
+        run: build\bundle-tests.exe

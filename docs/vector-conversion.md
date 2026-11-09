@@ -20,21 +20,27 @@ Isso explica o EPS como imagem. O SVG em branco relatado pelo usuário não foi 
 - Processos ocultos, argumentos escapados sem shell, stdout/stderr capturados, Job Object e timeout por etapa. Uma cópia temporária do original é usada durante todo o processamento.
 - O destino existente nunca é substituído. Um relatório `<saída>.vizu.txt` acompanha a saída quando puder ser gravado; erros vão para um diagnóstico no Vizu.
 
-## Motor necessário
+## Motor incluído no instalador
 
-Use Inkscape 1.2+; os testes locais usaram 1.4.2. A busca procura, nesta ordem:
+A partir da **9.6.3-beta.2**, o instalador inclui o pacote portátil completo do Inkscape 1.4.2 (Windows x64). O usuário não instala, baixa nem configura outro programa.
 
-1. Variável de ambiente `VIZU_INKSCAPE`, com o caminho completo de `inkscape.com` ou `inkscape.exe`.
-2. `vector-engine/inkscape/bin/inkscape.com` ou `.exe` ao lado do executável em execução.
-3. Instalação padrão em `ProgramW6432` ou `ProgramFiles`.
+O build obtém o arquivo oficial por HTTPS e verifica o SHA-256 fixado em `tools/prepare_vector_engine.py`. O pacote é embutido como recurso do instalador. Durante a instalação:
 
-Não basta copiar apenas `inkscape.exe`: ele depende de DLLs e arquivos de dados do pacote. Use a instalação oficial ou o pacote portátil completo. Este patch não inclui nem baixa o motor e não altera o instalador para distribuí-lo. Após instalar o Vizu, um motor portátil deve ficar ao lado do executável **instalado**, ou ser indicado por `VIZU_INKSCAPE`. Reinicie o Vizu depois de alterar a variável.
+1. O pacote é extraído em uma pasta de preparação, usando o `tar.exe` nativo do Windows 10 1803+/Windows 11, sem shell ou rede.
+2. O instalador verifica executável, biblioteca CDR, licenças e inicialização do motor.
+3. A pasta completa é colocada em `vector-engine/inkscape` ao lado do Vizu instalado. Na reinstalação, o motor anterior é preservado até a nova pasta estar pronta; a troca é revertida se falhar.
+4. O Vizu prioriza esse motor automaticamente, antes de variáveis de ambiente ou instalações externas. Nenhum ícone ou associação do Inkscape é registrado.
+5. A desinstalação remove a pasta privada do motor. A remoção não percorre junctions/symlinks e só aceita caminhos de motor filhos da pasta do aplicativo.
 
-O motor é externo, com licenças próprias; mantenha os avisos/licenças e obrigações de distribuição se decidir empacotá-lo. A licença MIT do Vizu não se aplica ao Inkscape/libcdr.
+A extração tem uma tela de progresso e pode levar alguns instantes. O instalador é maior porque contém o motor completo; a instalação não depende de conexão à internet. O SHA-256 fixado, o pacote original e a procedência estão em `third_party/inkscape/NOTICE.md`. As licenças originais ficam preservadas dentro do pacote instalado, em `vector-engine/inkscape/share/inkscape/doc`.
+
+O instalador instalado continua contendo os recursos embutidos; portanto o espaço ocupado inclui o arquivo comprimido e a pasta extraída. O ZIP de distribuição contém o instalador completo. Apenas executar um EXE fora da instalação com `/portable` não extrai os recursos automaticamente; use a instalação normal para preparar o motor.
+
+Para desenvolvimento, continuam disponíveis os fallbacks `VIZU_INKSCAPE` e a instalação padrão do Inkscape. A versão distribuída ao usuário usa primeiro o motor privado.
 
 ## Build e testes
 
-O build MinGW existente agora liga `-lxmllite`. O workflow `vector-tests.yml` compila e executa os testes de auditoria no Windows; o workflow de build original continua compilando o aplicativo completo no Linux/MinGW.
+O build MinGW existente prepara/verifica o pacote do motor e liga `-lxmllite`. O workflow `vector-bundle-tests.yml` testa extração offline, descoberta, conversões SVG/EPS, reinstalação e remoção em uma pasta isolada, sem registrar o Vizu no sistema. O workflow `vector-tests.yml` compila e executa os testes de auditoria no Windows; o workflow de build original continua compilando o aplicativo completo no Linux/MinGW.
 
 Em um Developer Command Prompt do Visual Studio:
 

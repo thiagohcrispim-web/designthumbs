@@ -21,6 +21,11 @@ jobs:
       - name: Instalar MinGW
         run: sudo apt-get update && sudo apt-get install -y g++-mingw-w64-x86-64-posix
 
+      - uses: actions/cache@v4
+        with:
+          path: build/engine/inkscape.7z
+          key: inkscape-1.4.2-757e0358512630e6
+
       - name: Compilar
         run: ./build.sh
 

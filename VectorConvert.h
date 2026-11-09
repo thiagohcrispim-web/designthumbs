@@ -80,16 +80,21 @@ struct Temp {
     }
     Temp(const Temp&) = delete; Temp& operator=(const Temp&) = delete;
 };
-inline std::wstring Engine() {
-    wchar_t path[32768] = {};
-    DWORD n = GetEnvironmentVariableW(L"VIZU_INKSCAPE", path, ARRAYSIZE(path));
-    if (n) return n < ARRAYSIZE(path) && Exists(path) ? path : L""; // Explicit override must be valid.
-    GetModuleFileNameW(nullptr, path, ARRAYSIZE(path));
-    PathRemoveFileSpecW(path);
+inline std::wstring BundledEngine(const std::wstring& directory) {
     for (auto relative : {L"\\vector-engine\\inkscape\\bin\\inkscape.com", L"\\vector-engine\\inkscape\\bin\\inkscape.exe"}) {
-        std::wstring candidate = std::wstring(path) + relative;
+        std::wstring candidate = directory + relative;
         if (Exists(candidate)) return candidate;
     }
+    return L"";
+}
+inline std::wstring Engine() {
+    wchar_t path[32768] = {};
+    GetModuleFileNameW(nullptr, path, ARRAYSIZE(path));
+    PathRemoveFileSpecW(path);
+    std::wstring bundled = BundledEngine(path);
+    if (!bundled.empty()) return bundled;
+    DWORD n = GetEnvironmentVariableW(L"VIZU_INKSCAPE", path, ARRAYSIZE(path));
+    if (n) return n < ARRAYSIZE(path) && Exists(path) ? path : L"";
     for (auto env : {L"ProgramW6432", L"ProgramFiles"}) {
         n = GetEnvironmentVariableW(env, path, ARRAYSIZE(path));
         if (!n || n >= ARRAYSIZE(path)) continue;
@@ -135,7 +140,7 @@ inline bool Run(const std::wstring& engine, const std::vector<std::wstring>& arg
         if (!AssignProcessToJobObject(job, pi.hProcess) || ResumeThread(pi.hThread) == (DWORD)-1) {
             TerminateProcess(pi.hProcess, 1); error = L"Falha ao isolar o processo de conversão.";
         } else if (WaitForSingleObject(pi.hProcess, timeout) != WAIT_OBJECT_0) {
-            TerminateJobObject(job, 1); error = L"Tempo limite na conversão vetorial (120 s por etapa).";
+            TerminateJobObject(job, 1); error = L"Tempo limite no processo (" + std::to_wstring(timeout / 1000) + L" s).";
         } else GetExitCodeProcess(pi.hProcess, &code);
         WaitForSingleObject(pi.hProcess, 5000);
         CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
@@ -287,7 +292,7 @@ inline Result Convert(const std::wstring& source, const std::wstring& destinatio
     if (tmp.dir.empty()) { r.error = L"Não foi possível criar a pasta temporária."; return r; }
     std::wstring engine = Engine();
     if (engine.empty()) {
-        r.error = L"Motor vetorial ausente. Instale Inkscape 1.2+ ou configure VIZU_INKSCAPE com o caminho completo de inkscape.exe/com."; return r;
+        r.error = L"O motor vetorial incluído não foi encontrado. Execute o instalador completo do Vizu para reparar a instalação."; return r;
     }
     std::string input;
     if (!Read(source, input)) { r.error = L"Arquivo ausente, vazio ou maior que 100 MiB."; return r; }
