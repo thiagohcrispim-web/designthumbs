@@ -29,6 +29,7 @@
 #include "Ui.h"
 #include "Update.h"
 #include "InstallerUi.h"
+#include "ColorInfo.h"
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -966,18 +967,24 @@ static void Paint() {
             p.Icon(d < 0 ? L"\uE76B" : L"\uE76C", r, 14, enabled ? th.text : th.text2);
         }
 
-    // conta-gotas: cápsula com a cor e o HEX ao lado do cursor
+    // conta-gotas: cartão com a cor, o HEX e, embaixo, CMYK e PANTONE aproximados (clique copia só o HEX)
     if (g_cfg.picker && g_pickOn && !g_dragging) {
         std::wstring hex = HexOf(g_pickColor);
-        float pw = p.Measure(hex, 12, DWRITE_FONT_WEIGHT_SEMI_BOLD) + 44 * s, ph = 28 * s;
+        const cinfo::Info& ci = cinfo::For(g_pickColor);
+        std::wstring pms = ci.pantone.empty() ? std::wstring(T(L"≈ PANTONE: sem equivalente próximo", L"≈ PANTONE: no close match", L"≈ PANTONE: sin equivalente cercano"))
+                                              : L"≈ PANTONE " + ci.pantone;
+        float tw = max(p.Measure(hex, 12, DWRITE_FONT_WEIGHT_SEMI_BOLD), max(p.Measure(ci.cmyk, 11), p.Measure(pms, 11)));
+        float pw = tw + 48 * s, ph = 62 * s;
         float px = min(g_pickPt.x + 18 * s, size.width - pw - 8 * s), py = min(g_pickPt.y + 18 * s, size.height - ph - 8 * s);
         D2D1_RECT_F pr = D2D1::RectF(px, py, px + pw, py + ph);
-        p.Fill(pr, ph / 2, th.dark ? ui::Rgba(0x1C1C1E, 0.9f) : ui::Rgba(0xFFFFFF, 0.95f));
-        p.Stroke(pr, ph / 2, th.stroke);
-        D2D1_RECT_F dot = D2D1::RectF(px + 7 * s, py + 6 * s, px + 23 * s, py + 22 * s);
-        p.Fill(dot, 8 * s, D2D1::ColorF(GetRValue(g_pickColor) / 255.0f, GetGValue(g_pickColor) / 255.0f, GetBValue(g_pickColor) / 255.0f));
-        p.Stroke(dot, 8 * s, th.stroke);
-        p.Text(hex, D2D1::RectF(px + 30 * s, py, pr.right - 8 * s, pr.bottom), 12, th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+        p.Fill(pr, 12 * s, th.dark ? ui::Rgba(0x1C1C1E, 0.92f) : ui::Rgba(0xFFFFFF, 0.96f));
+        p.Stroke(pr, 12 * s, th.stroke);
+        D2D1_RECT_F dot = D2D1::RectF(px + 9 * s, py + 9 * s, px + 27 * s, py + 27 * s);
+        p.Fill(dot, 9 * s, D2D1::ColorF(GetRValue(g_pickColor) / 255.0f, GetGValue(g_pickColor) / 255.0f, GetBValue(g_pickColor) / 255.0f));
+        p.Stroke(dot, 9 * s, th.stroke);
+        p.Text(hex, D2D1::RectF(px + 36 * s, py + 6 * s, pr.right - 8 * s, py + 30 * s), 12, th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+        p.Text(ci.cmyk, D2D1::RectF(px + 36 * s, py + 27 * s, pr.right - 8 * s, py + 43 * s), 11, th.text2);
+        p.Text(pms, D2D1::RectF(px + 36 * s, py + 42 * s, pr.right - 8 * s, py + 58 * s), 11, th.text2);
     }
 
     // barra de cima: engrenagem, nome, zoom/página
@@ -2530,7 +2537,7 @@ static void PaintSettings(HWND h) {
     section(T(L"VER", L"VIEW", L"VER"));
     rows = {
         {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Ver com a barra de espaço", L"View with the Space bar", L"Ver con la barra espaciadora"), T(L"Selecione um arquivo e aperte Espaço", L"Select a file and press Space", L"Selecciona un archivo y pulsa Espacio")); rtoggle(kTogSpace, r, g_cfg.space); }},
-        {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Conta-gotas", L"Color picker", L"Cuentagotas"), T(L"Mostra o HEX sob o mouse; clique copia", L"Shows the HEX under the mouse; click copies", L"Muestra el HEX bajo el ratón; clic copia")); rtoggle(kTogPicker, r, g_cfg.picker); }},
+        {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Conta-gotas", L"Color picker", L"Cuentagotas"), T(L"HEX, CMYK e PANTONE aproximado; clique copia o HEX", L"HEX, CMYK and approximate PANTONE; click copies the HEX", L"HEX, CMYK y PANTONE aproximado; clic copia el HEX")); rtoggle(kTogPicker, r, g_cfg.picker); }},
     };
     drawCard(rows);
 
