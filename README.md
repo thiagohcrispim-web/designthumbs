@@ -159,6 +159,8 @@ https://docs.github.com/site-policy/privacy-policies/github-general-privacy-stat
 <details>
 <summary><b>Histórico de versões</b></summary>
 
+- **v9.8.1** — Conta-gotas mostra, embaixo do HEX, o **CMYK** (perfil de impressão do Windows) e o **PANTONE** Coated mais
+  próximo (≈, consultivo; confirme no guia físico). O clique continua copiando só o HEX.
 - **v9.8** — Instalador com três edições: **Lite**, **Vizu** e **Ultra**. O instalador volta a ter ~2 MB: o Ultra baixa o
   motor vetorial com verificação SHA-256 e não o reinstala nas atualizações. SVG aceita bitmaps embutidos no CDR e o EPS
   aceita gradientes; erros de conversão viram um aviso curto com o detalhe num arquivo. Atualizações conferem o SHA-256.
