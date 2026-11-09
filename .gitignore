@@ -8,3 +8,5 @@ DesignThumbs-*.zip
 DesignThumbs-Setup.exe
 *.res.o
 build/
+DesignPeek.exe
+DesignThumbs.dll
