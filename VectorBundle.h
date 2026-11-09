@@ -120,4 +120,15 @@ inline bool Cleanup(const std::wstring& root, bool uninstall) {
     }
     return ok;
 }
+inline bool Configure(const std::wstring& root, bool enabled, std::wstring& error) {
+    if (!enabled) {
+        if (!Cleanup(root, true)) { error = L"Não foi possível remover o conversor anterior. Feche os processos de conversão e tente novamente."; return false; }
+        return true;
+    }
+    std::wstring staging;
+    if (!Prepare(root, staging, error)) return false;
+    if (!Commit(root, staging, error)) { Remove(root, staging); return false; }
+    Cleanup(root, false);
+    return true;
+}
 } // namespace vbundle

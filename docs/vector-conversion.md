@@ -22,7 +22,7 @@ Isso explica o EPS como imagem. O SVG em branco relatado pelo usuário não foi 
 
 ## Motor incluído no instalador
 
-A partir da **9.6.3-beta.2**, o instalador inclui o pacote portátil completo do Inkscape 1.4.2 (Windows x64). O usuário não instala, baixa nem configura outro programa.
+Na **9.7 estável**, a opção **Instalar Conversor de Arquivos Vetoriais** controla a instalação do conversor. Ela vem marcada na primeira instalação e preserva a escolha nas reinstalações e atualizações silenciosas. Se for desmarcada, o motor anterior é removido e SVG/EPS ficam ocultos no menu, mesmo com Inkscape externo instalado. O instalador inclui o pacote portátil completo do Inkscape 1.4.2 (Windows x64). O usuário não instala, baixa nem configura outro programa.
 
 O build obtém o arquivo oficial por HTTPS e verifica o SHA-256 fixado em `tools/prepare_vector_engine.py`. O pacote é embutido como recurso do instalador. Durante a instalação:
 
@@ -32,7 +32,7 @@ O build obtém o arquivo oficial por HTTPS e verifica o SHA-256 fixado em `tools
 4. O Vizu prioriza esse motor automaticamente, antes de variáveis de ambiente ou instalações externas. Nenhum ícone ou associação do Inkscape é registrado.
 5. A desinstalação remove a pasta privada do motor. A remoção não percorre junctions/symlinks e só aceita caminhos de motor filhos da pasta do aplicativo.
 
-A extração tem uma tela de progresso e pode levar alguns instantes. O instalador é maior porque contém o motor completo; a instalação não depende de conexão à internet. O SHA-256 fixado, o pacote original e a procedência estão em `third_party/inkscape/NOTICE.md`. As licenças originais ficam preservadas dentro do pacote instalado, em `vector-engine/inkscape/share/inkscape/doc`.
+A instalação inteira usa uma única janela com a identidade visual do Vizu (mesmo logotipo vetorial, tema, fonte e componentes), seleção de componente, progresso geral e conclusão. A extração do motor é silenciosa dentro desse progresso e pode levar alguns instantes. O instalador é maior porque contém o motor completo; a instalação não depende de conexão à internet. O SHA-256 fixado, o pacote original e a procedência estão em `third_party/inkscape/NOTICE.md`. As licenças originais ficam preservadas dentro do pacote instalado, em `vector-engine/inkscape/share/inkscape/doc`.
 
 O instalador instalado continua contendo os recursos embutidos; portanto o espaço ocupado inclui o arquivo comprimido e a pasta extraída. O ZIP de distribuição contém o instalador completo. Apenas executar um EXE fora da instalação com `/portable` não extrai os recursos automaticamente; use a instalação normal para preparar o motor.
 

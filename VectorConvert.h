@@ -105,6 +105,12 @@ inline std::wstring Engine() {
     }
     return L"";
 }
+inline bool Selected() {
+    DWORD enabled = 1, size = sizeof(enabled);
+    RegGetValueW(HKEY_CURRENT_USER, L"Software\\DesignThumbs", L"VectorConverterInstalled", RRF_RT_REG_DWORD, nullptr, &enabled, &size);
+    return enabled != 0;
+}
+inline bool Available() { return Selected() && !Engine().empty(); }
 inline bool Run(const std::wstring& engine, const std::vector<std::wstring>& args,
                 const std::wstring& logPath, std::wstring& log, std::wstring& error, DWORD timeout = 120000) {
     std::wstring cmd = Quote(engine);
@@ -288,6 +294,7 @@ inline bool AuditEps(const std::wstring& path, std::wstring& error) {
 struct Result { bool ok = false; std::wstring error, report; };
 inline Result Convert(const std::wstring& source, const std::wstring& destination, bool eps, bool curves) {
     Result r; Temp tmp;
+    if (!Selected()) { r.error = L"O conversor vetorial não foi selecionado na instalação do Vizu."; return r; }
     if (!IsInput(source)) { r.error = L"Conversão vetorial aceita CDR ou SVG. Uma thumbnail não contém os vetores originais."; return r; }
     if (tmp.dir.empty()) { r.error = L"Não foi possível criar a pasta temporária."; return r; }
     std::wstring engine = Engine();
