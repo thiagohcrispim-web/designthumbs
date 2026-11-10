@@ -159,6 +159,7 @@ https://docs.github.com/site-policy/privacy-policies/github-general-privacy-stat
 <details>
 <summary><b>Histórico de versões</b></summary>
 
+- **v9.8.6** — Configurações reorganizadas: Tempo (Relógio e Agenda), Outros (OCR, Pastas e Limpeza) e Sistema recolhível, com "Procurar nova versão" na linha de atualização. Cores do Pomodoro atualizadas e OCR com "Juntar" por padrão.
 - **v9.8.5** — Nova versão de distribuição, sem mudanças de funcionamento em relação à 9.8.4.
 - **v9.8.4** — Download do motor vetorial (Ultra) com progresso real: MB, velocidade e tempo restante. Retoma de onde parou se a conexão cair e permite cancelar.
 - **v9.8.3** — Renomeado para Vizu: executável `Vizu.exe`, instalador `Vizu-Setup.exe` e repositório `vizu`.
