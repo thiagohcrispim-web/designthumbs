@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>OCR e tradução no DesktopClock</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Barlow+Semi+Condensed:wght@500;600&amp;family=Barlow:wght@500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.ic{fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+</style>
+</helmet>
+<div style="width: 1500px; height: 900px; position: relative; overflow: hidden; background: {{t.wall}}; font-family: Inter, system-ui, sans-serif; color: {{t.text}}">
+
+  <!-- passo 1: relógio com o botão novo -->
+  <div style="position: absolute; left: 40px; top: 36px; display: flex; flex-direction: column; gap: 10px">
+    <p style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .12em; color: {{t.text2}}">1 · CLIQUE NO BOTÃO NOVO (OU CTRL+ALT+T)</p>
+    <div style="display: flex; align-items: center; gap: 6px; height: 64px; padding: 0 10px 0 14px; border-radius: 22px; background: {{t.card}}; border: 1px solid {{t.rim}}; box-shadow: {{t.shadow}}; backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%)">
+      <svg class="ic" width="18" height="18" viewBox="0 0 24 24" stroke="{{t.text2}}"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      <span style="font-size: 38px; font-weight: 600; color: {{t.digits}}; font-family: Bahnschrift, 'Barlow Semi Condensed', Barlow, system-ui, sans-serif; padding: 0 10px; font-variant-numeric: tabular-nums">14<span style="opacity: .55">:</span>32</span>
+      <span style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: {{t.chip}}"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" stroke="{{t.icon}}"><path d="M12 3a7 7 0 0 0-7 7v3a2 2 0 0 0 2 2h1v3a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-3h1a2 2 0 0 0 2-2v-3a7 7 0 0 0-7-7z"></path><circle cx="9.5" cy="11" r="1.4"></circle><circle cx="14.5" cy="11" r="1.4"></circle></svg></span>
+      <span style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: {{t.chip}}"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" stroke="{{t.icon}}"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2 2"></path><path d="M9 2h6"></path></svg></span>
+      <span style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: {{t.chip}}"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" stroke="{{t.icon}}"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg></span>
+      <span title="Ler texto da tela (Ctrl+Alt+T)" style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: {{t.accentSoft}}; box-shadow: 0 0 0 1.5px {{t.accent}}">
+        <svg class="ic" width="18" height="18" viewBox="0 0 24 24" stroke="{{t.accent}}"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><polyline points="8 9 8 8 16 8 16 9"></polyline><line x1="12" y1="8" x2="12" y2="16"></line><line x1="10" y1="16" x2="14" y2="16"></line></svg>
+      </span>
+    </div>
+    <p style="margin: 0; font-size: 12px; color: {{t.text2}}">Botão novo à direita do ChatGPT: ícone de "ler texto" no estilo Feather.</p>
+  </div>
+
+  <!-- passo 2: tela congelada com seleção -->
+  <div style="position: absolute; left: 40px; top: 210px; display: flex; flex-direction: column; gap: 10px">
+    <p style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .12em; color: {{t.text2}}">2 · A TELA CONGELA · ARRASTE SOBRE O TEXTO · ESC CANCELA</p>
+    <div style="position: relative; width: 760px; height: 470px; border-radius: 18px; overflow: hidden; background: #2b2f36; box-shadow: 0 30px 70px rgba(0,0,0,.45)">
+      <!-- "imagem" de exemplo: um cartaz -->
+      <div style="position: absolute; inset: 0; background: linear-gradient(135deg, #e9e2d3, #d8cdb6)"></div>
+      <div style="position: absolute; left: 70px; top: 60px; width: 560px; color: #1f1b16">
+        <p style="margin: 0; font-family: 'Playfair Display', Georgia, serif; font-size: 44px; line-height: 1.05">Summer Design Week</p>
+        <p style="margin: 14px 0 0; font-size: 19px; line-height: 1.45; max-width: 520px">Join us for five days of talks, workshops and open studios. Free entry for students with a valid ID.</p>
+        <p style="margin: 18px 0 0; font-size: 15px; font-weight: 600; letter-spacing: .08em">JUNE 12–16 · CITY HALL · 9AM–6PM</p>
+      </div>
+      <!-- escurecimento fora da seleção -->
+      <div style="position: absolute; inset: 0; background: rgba(0,0,0,.48); clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 0, 58px 152px, 58px 278px, 646px 278px, 646px 152px, 58px 152px)"></div>
+      <div style="position: absolute; left: 58px; top: 152px; width: 588px; height: 126px; border: 1.5px solid {{t.accent}}; border-radius: 6px; box-shadow: 0 0 0 1px rgba(255,255,255,.35), 0 0 22px {{t.accentGlow}}"></div>
+      <span style="position: absolute; left: 58px; top: 124px; padding: 3px 8px; border-radius: 6px; background: {{t.accent}}; color: {{t.onAccent}}; font-size: 11px; font-weight: 700; letter-spacing: .04em">588 × 126</span>
+      <!-- cursor em cruz -->
+      <svg style="position: absolute; left: 632px; top: 264px" width="28" height="28" viewBox="0 0 28 28"><line x1="14" y1="0" x2="14" y2="28" stroke="#fff" stroke-width="1.5"></line><line x1="0" y1="14" x2="28" y2="14" stroke="#fff" stroke-width="1.5"></line></svg>
+      <span style="position: absolute; left: 20px; bottom: 16px; padding: 6px 12px; border-radius: 999px; background: rgba(14,14,16,.82); color: #e8e8ea; font-size: 12px">Arraste para selecionar · Esc cancela</span>
+    </div>
+  </div>
+
+  <!-- passo 3: cartão de resultado -->
+  <div style="position: absolute; left: 850px; top: 36px; width: 610px; display: flex; flex-direction: column; gap: 10px">
+    <p style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .12em; color: {{t.text2}}">3 · TEXTO JÁ COPIADO · TRADUÇÃO OPCIONAL</p>
+    <div style="border-radius: 22px; background: {{t.card}}; border: 1px solid {{t.rim}}; box-shadow: {{t.shadow}}; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%)">
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <span style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: {{t.ok}}">
+          <svg class="ic" width="16" height="16" viewBox="0 0 24 24" stroke="{{t.ok}}"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          Copiado · inglês detectado
+        </span>
+        <svg class="ic" width="16" height="16" viewBox="0 0 24 24" stroke="{{t.text2}}"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </div>
+      <div style="border-radius: 14px; background: {{t.well}}; padding: 12px 14px; font-size: 14px; line-height: 1.55; color: {{t.text}}">Join us for five days of talks, workshops and open studios. Free entry for students with a valid ID.</div>
+      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+        <span style="font-size: 12px; color: {{t.text2}}; margin-right: 2px">Traduzir:</span>
+        <span style="height: 32px; padding: 0 14px; border-radius: 16px; display: flex; align-items: center; font-size: 13px; font-weight: 700; background: {{t.accent}}; color: {{t.onAccent}}">PT</span>
+        <span style="height: 32px; padding: 0 14px; border-radius: 16px; display: flex; align-items: center; font-size: 13px; font-weight: 600; border: 1px solid {{t.rim2}}">ES</span>
+        <span style="height: 32px; padding: 0 14px; border-radius: 16px; display: flex; align-items: center; font-size: 13px; font-weight: 600; border: 1px solid {{t.rim2}}; opacity: .45">EN</span>
+        <span style="flex: 1"></span>
+        <span title="Juntar linhas" style="width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid {{t.rim2}}"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" stroke="{{t.icon}}"><line x1="21" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="3" y2="18"></line></svg></span>
+        <span title="Abrir no Google Tradutor" style="width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid {{t.rim2}}"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" stroke="{{t.icon}}"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>
+      </div>
+    </div>
+
+    <p style="margin: 14px 0 0; font-size: 12px; color: {{t.text2}}">Depois de clicar em PT:</p>
+    <div style="border-radius: 22px; background: {{t.card}}; border: 1px solid {{t.rim}}; box-shadow: {{t.shadow}}; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%)">
+      <span style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: {{t.ok}}">
+        <svg class="ic" width="16" height="16" viewBox="0 0 24 24" stroke="{{t.ok}}"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        Tradução copiada · inglês → português
+      </span>
+      <div style="border-radius: 14px; background: {{t.well}}; padding: 12px 14px; font-size: 14px; line-height: 1.55">Junte-se a nós para cinco dias de palestras, oficinas e estúdios abertos. Entrada gratuita para estudantes com carteirinha válida.</div>
+      <span style="font-size: 12px; color: {{t.text2}}">Original: Join us for five days of talks… <span style="text-decoration: underline">copiar original</span></span>
+    </div>
+    <p style="margin: 4px 0 0; font-size: 11.5px; line-height: 1.5; color: {{t.text2}}">O cartão aparece perto da seleção e some sozinho depois de alguns segundos sem o mouse em cima. A leitura é feita no próprio PC; o texto só vai para o Google quando você clica num idioma.</p>
+  </div>
+
+  <!-- configurações -->
+  <div style="position: absolute; left: 850px; top: 604px; width: 610px; display: flex; flex-direction: column; gap: 10px">
+    <p style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .12em; color: {{t.text2}}">CONFIGURAÇÕES › DESKTOPCLOCK</p>
+    <div style="border-radius: 22px; background: {{t.card}}; border: 1px solid {{t.rim}}; padding: 2px 18px; backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%)">
+      <div style="display: flex; align-items: center; justify-content: space-between; height: 52px; border-bottom: 1px solid {{t.sep}}">
+        <span style="display: flex; flex-direction: column"><span style="font-size: 13.5px; font-weight: 500">Ler texto da tela (OCR)</span><span style="font-size: 11.5px; color: {{t.text2}}">Atalho Ctrl+Alt+T</span></span>
+        <span style="width: 46px; height: 28px; border-radius: 14px; background: {{t.accent}}; position: relative"><span style="position: absolute; right: 2px; top: 2px; width: 24px; height: 24px; border-radius: 50%; background: {{t.knobOn}}"></span></span>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; height: 52px; border-bottom: 1px solid {{t.sep}}">
+        <span style="font-size: 13.5px; font-weight: 500">Quebras de linha</span>
+        <span style="display: flex; height: 30px; padding: 2px; border-radius: 15px; background: {{t.chip}}; font-size: 12.5px"><span style="padding: 0 14px; display: flex; align-items: center; border-radius: 13px; background: {{t.segOn}}; font-weight: 600">Manter</span><span style="padding: 0 14px; display: flex; align-items: center; color: {{t.text2}}">Juntar</span></span>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; height: 52px">
+        <span style="display: flex; flex-direction: column"><span style="font-size: 13.5px; font-weight: 500">Idiomas de leitura</span><span style="font-size: 11.5px; color: {{t.text2}}">Instalados no Windows: português, inglês</span></span>
+        <span style="height: 30px; padding: 0 14px; border-radius: 15px; border: 1px solid {{t.rim2}}; display: flex; align-items: center; font-size: 12.5px; font-weight: 600">Adicionar idioma…</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"tema":{"editor":"enum","options":["Minimalista Claro","Minimalista Escuro","Padrão Windows","Crispy"],"default":"Crispy"},"$preview":{"width":1500,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const themes = {
+      "Minimalista Claro": { wall: "#e9ebef", card: "rgba(250,250,252,0.92)", rim: "rgba(255,255,255,0.9)", rim2: "rgba(0,0,0,0.12)", shadow: "0 20px 50px rgba(20,20,40,0.12)",
+        text: "#1d1d1f", icon: "#1d1d1f", text2: "#6b6b72", digits: "#1d1d1f", chip: "rgba(0,0,0,0.05)", sep: "rgba(0,0,0,0.07)", well: "rgba(0,0,0,0.04)", segOn: "#ffffff",
+        accent: "#1d1d1f", accentSoft: "rgba(0,0,0,0.06)", accentGlow: "rgba(0,0,0,0.25)", onAccent: "#ffffff", knobOn: "#ffffff", ok: "#248a3d" },
+      "Minimalista Escuro": { wall: "#09090a", card: "rgba(22,22,24,0.94)", rim: "rgba(255,255,255,0.09)", rim2: "rgba(255,255,255,0.16)", shadow: "0 20px 50px rgba(0,0,0,0.6)",
+        text: "#ededef", icon: "#9AA1AD", text2: "#8d8d93", digits: "#ffffff", chip: "rgba(255,255,255,0.07)", sep: "rgba(255,255,255,0.07)", well: "rgba(255,255,255,0.05)", segOn: "#4A4F57",
+        accent: "#4A4F57", accentSoft: "rgba(74,79,87,0.6)", accentGlow: "rgba(255,255,255,0.25)", onAccent: "#ffffff", knobOn: "#ffffff", ok: "#30d158" },
+      "Padrão Windows": { wall: "#e4e9f1", card: "rgba(249,250,252,0.94)", rim: "rgba(255,255,255,0.9)", rim2: "rgba(0,0,0,0.12)", shadow: "0 20px 50px rgba(20,30,60,0.12)",
+        text: "#1b1b1f", icon: "#1b1b1f", text2: "#5f6470", digits: "#1b1b1f", chip: "rgba(0,103,192,0.08)", sep: "rgba(0,0,0,0.07)", well: "rgba(0,0,0,0.04)", segOn: "#ffffff",
+        accent: "#0067c0", accentSoft: "rgba(0,103,192,0.10)", accentGlow: "rgba(0,103,192,0.4)", onAccent: "#ffffff", knobOn: "#ffffff", ok: "#0f7b0f" },
+      "Crispy": { wall: "#070708", card: "rgba(14,14,16,0.85)", rim: "rgba(255,102,51,0.42)", rim2: "rgba(255,102,51,0.5)", shadow: "0 0 28px rgba(255,102,51,0.16), 0 20px 50px rgba(0,0,0,0.65)",
+        text: "#f2f2f2", icon: "#f2f2f2", text2: "#9a9aa1", digits: "#ff6633", chip: "rgba(255,255,255,0.06)", sep: "rgba(255,102,51,0.16)", well: "rgba(255,255,255,0.04)", segOn: "rgba(255,102,51,0.18)",
+        accent: "#ff6633", accentSoft: "rgba(255,102,51,0.14)", accentGlow: "rgba(255,102,51,0.55)", onAccent: "#0e0e10", knobOn: "#f2f2f2", ok: "#30d158" }
+    };
+    return { t: themes[this.props.tema] || themes['Crispy'] };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Menu circular: Crispy, Escuro e Claro</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>body{margin:0} svg text{font-family: Inter, system-ui, sans-serif}</style>
+</helmet>
+<div style="width: 1776px; height: 640px; position: relative; overflow: hidden; font-family: Inter, system-ui, sans-serif; padding: 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 28px; background-color: #FFFFFF">
+  
+  <div style="display: flex; gap: 32px; align-items: flex-start">
+<figure style="margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; width: 400px">
+  <div style="width: 400px; height: 400px; border-radius: 28px; background: #2E333B; display: flex; align-items: center; justify-content: center">
+<svg viewBox="0 0 340 340" width="360" height="360" role="img" aria-label="Menu circular Vizu Classic"><circle cx="170" cy="170" r="160" fill="#4A4F57"/><path d="M206.4 114.9L249.7 38.2A154 154 0 0 1 324.0 166.9L235.9 166.0A66 66 0 0 0 206.4 114.9Z" fill="#FF6633" stroke="#FF6633" stroke-width="6" stroke-linejoin="round"/><line x1="136.0" y1="111.1" x2="94.0" y2="38.4" stroke="#5C6472" stroke-width="1"/><line x1="204.0" y1="228.9" x2="246.0" y2="301.6" stroke="#5C6472" stroke-width="1"/><line x1="136.0" y1="228.9" x2="94.0" y2="301.6" stroke="#5C6472" stroke-width="1"/><line x1="102.0" y1="170.0" x2="18.0" y2="170.0" stroke="#5C6472" stroke-width="1"/><circle cx="170" cy="170" r="60" fill="#23272E"/><text x="170.0" y="56.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="500" letter-spacing="0.08em" fill="#FFFFFF">PNG</text><text x="268.7" y="113.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="500" letter-spacing="0.08em" fill="#000">JPG</text><text x="268.7" y="227.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="500" letter-spacing="0.08em" fill="#FFFFFF">PDF</text><text x="170.0" y="284.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="500" letter-spacing="0.08em" fill="#FFFFFF">WEBP</text><text x="71.3" y="227.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="500" letter-spacing="0.08em" fill="#FFFFFF">TIFF</text><text x="71.3" y="113.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="500" letter-spacing="0.08em" fill="#FFFFFF">ZIP</text><text x="170" y="164" text-anchor="middle" font-size="14" font-weight="500" fill="#FFFFFF">Converter</text><text x="170" y="182" text-anchor="middle" font-size="11" fill="#BCC2CC">2 arquivos</text><rect x="149" y="194" width="14" height="3" rx="1.5" fill="#FF6633"/><rect x="166" y="194" width="6" height="3" rx="1.5" fill="#5C6472"/><rect x="177" y="194" width="6" height="3" rx="1.5" fill="#5C6472"/><rect x="188" y="194" width="6" height="3" rx="1.5" fill="#5C6472"/></svg>
+  </div>
+  <figcaption style="display: flex; flex-direction: column; gap: 4px; width: 380px">
+    <span style="font-size: 14px; font-weight: 700; color: #f2f2f2">Vizu Classic</span>
+    <span style="font-size: 12px; line-height: 1.5; color: #9a9aa1">Disco flat cinza-grafite, divisórias finas e fatia ativa laranja chapada, como no menu do app.</span>
+  </figcaption>
+</figure>
+<figure style="margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; width: 400px">
+  <div style="width: 400px; height: 400px; border-radius: 28px; background: {{n.stage}}; display: flex; align-items: center; justify-content: center">
+<svg viewBox="0 0 360 360" width="360" height="360" role="img" aria-label="Menu circular">
+<defs>
+<linearGradient id="ndisc" x1="0.15" y1="0.05" x2="0.85" y2="0.95"><stop offset="0" stop-color="{{n.discA}}"></stop><stop offset="1" stop-color="{{n.discB}}"></stop></linearGradient>
+<linearGradient id="nrim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{{n.rimA}}"></stop><stop offset="1" stop-color="{{n.rimB}}"></stop></linearGradient>
+<radialGradient id="nhot" gradientUnits="userSpaceOnUse" cx="180" cy="180" r="162"><stop offset="0.432" stop-color="{{n.hotA}}"></stop><stop offset="0.62" stop-color="{{n.hotB}}"></stop><stop offset="1" stop-color="{{n.hotC}}"></stop></radialGradient>
+<radialGradient id="nwell" cx="0.5" cy="0.38" r="0.65"><stop offset="0" stop-color="{{n.wellA}}"></stop><stop offset="1" stop-color="{{n.wellB}}"></stop></radialGradient>
+<filter id="nblur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7"></feGaussianBlur></filter>
+<filter id="nshadowBlur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="{{n.sblur}}"></feGaussianBlur></filter>
+<filter id="nsoft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.2"></feGaussianBlur></filter>
+<filter id="ncrease" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2.4"></feGaussianBlur></filter>
+</defs>
+<circle cx="180" cy="186" r="174" fill="{{n.shadow}}" filter="url(#nshadowBlur)"></circle>
+<circle cx="180" cy="180" r="170" fill="url(#ndisc)" stroke="url(#nrim)" stroke-width="1.2"></circle>
+<path d="M99.50 40.57L101.50 44.03M111.96 34.08L110.27 30.46M124.93 28.71L123.57 24.95M138.33 24.49L137.29 20.62M152.04 21.45L151.35 17.51M165.97 19.61L165.62 15.63M180.00 19.00L180.00 15.00M194.03 19.61L194.38 15.63M207.96 21.45L208.65 17.51M221.67 24.49L220.63 28.35M235.07 28.71L236.43 24.95M248.04 34.08L249.73 30.46M260.50 40.57L262.50 37.11M272.35 48.12L274.64 44.84M283.49 56.67L286.06 53.60M293.84 66.16L296.67 63.33M303.33 76.51L306.40 73.94M311.88 87.65L315.16 85.36M319.43 99.50L315.97 101.50M325.92 111.96L329.54 110.27M331.29 124.93L335.05 123.57M335.51 138.33L339.38 137.29M338.55 152.04L342.49 151.35M340.39 165.97L344.37 165.62M341.00 180.00L345.00 180.00M340.39 194.03L344.37 194.38M338.55 207.96L342.49 208.65M335.51 221.67L331.65 220.63M331.29 235.07L335.05 236.43M325.92 248.04L329.54 249.73M319.43 260.50L322.89 262.50M311.88 272.35L315.16 274.64M303.33 283.49L306.40 286.06M293.84 293.84L296.67 296.67M283.49 303.33L286.06 306.40M272.35 311.88L274.64 315.16M260.50 319.43L258.50 315.97M248.04 325.92L249.73 329.54M235.07 331.29L236.43 335.05M221.67 335.51L222.71 339.38M207.96 338.55L208.65 342.49M194.03 340.39L194.38 344.37M180.00 341.00L180.00 345.00M165.97 340.39L165.62 344.37M152.04 338.55L151.35 342.49M138.33 335.51L139.37 331.65M124.93 331.29L123.57 335.05M111.96 325.92L110.27 329.54M99.50 319.43L97.50 322.89M87.65 311.88L85.36 315.16M76.51 303.33L73.94 306.40M66.16 293.84L63.33 296.67M56.67 283.49L53.60 286.06M48.12 272.35L44.84 274.64M40.57 260.50L44.03 258.50M34.08 248.04L30.46 249.73M28.71 235.07L24.95 236.43M24.49 221.67L20.62 222.71M21.45 207.96L17.51 208.65M19.61 194.03L15.63 194.38M19.00 180.00L15.00 180.00M19.61 165.97L15.63 165.62M21.45 152.04L17.51 151.35M24.49 138.33L28.35 139.37M28.71 124.93L24.95 123.57M34.08 111.96L30.46 110.27M40.57 99.50L37.11 97.50M48.12 87.65L44.84 85.36M56.67 76.51L53.60 73.94M66.16 66.16L63.33 63.33M76.51 56.67L73.94 53.60M87.65 48.12L85.36 44.84" stroke="{{n.tick}}" stroke-width="1" stroke-linecap="round" fill="none"></path>
+<path d="M265.70 41.35A163 163 0 0 1 342.93 175.11" stroke="{{n.arc}}" stroke-width="3" stroke-linecap="round" fill="none" filter="url(#nsoft)" opacity=".9"></path>
+<path d="M265.70 41.35A163 163 0 0 1 342.93 175.11" stroke="{{n.arc}}" stroke-width="1.6" stroke-linecap="round" fill="none"></path>
+<path d="M141.96 123.63L115.20 67.76L150.20 118.88ZM209.80 118.88L244.80 67.76L218.04 123.63ZM247.83 175.24L309.60 180.00L247.83 184.76ZM218.04 236.37L244.80 292.24L209.80 241.12ZM150.20 241.12L115.20 292.24L141.96 236.37ZM112.17 184.76L50.40 180.00L112.17 175.24Z" fill="{{n.crease}}" filter="url(#ncrease)"></path>
+<linearGradient id="nln0" gradientUnits="userSpaceOnUse" x1="145.0" y1="119.4" x2="102.0" y2="44.9"><stop offset="0" stop-color="{{n.line}}"></stop><stop offset="1" stop-color="{{n.line}}" stop-opacity="0"></stop></linearGradient>
+<line x1="145.0" y1="119.4" x2="102.0" y2="44.9" stroke="url(#nln0)" stroke-width="1" stroke-linecap="round"></line>
+<linearGradient id="nln3" gradientUnits="userSpaceOnUse" x1="215.0" y1="240.6" x2="258.0" y2="315.1"><stop offset="0" stop-color="{{n.line}}"></stop><stop offset="1" stop-color="{{n.line}}" stop-opacity="0"></stop></linearGradient>
+<line x1="215.0" y1="240.6" x2="258.0" y2="315.1" stroke="url(#nln3)" stroke-width="1" stroke-linecap="round"></line>
+<linearGradient id="nln4" gradientUnits="userSpaceOnUse" x1="145.0" y1="240.6" x2="102.0" y2="315.1"><stop offset="0" stop-color="{{n.line}}"></stop><stop offset="1" stop-color="{{n.line}}" stop-opacity="0"></stop></linearGradient>
+<line x1="145.0" y1="240.6" x2="102.0" y2="315.1" stroke="url(#nln4)" stroke-width="1" stroke-linecap="round"></line>
+<linearGradient id="nln5" gradientUnits="userSpaceOnUse" x1="110.0" y1="180.0" x2="24.0" y2="180.0"><stop offset="0" stop-color="{{n.line}}"></stop><stop offset="1" stop-color="{{n.line}}" stop-opacity="0"></stop></linearGradient>
+<line x1="110.0" y1="180.0" x2="24.0" y2="180.0" stroke="url(#nln5)" stroke-width="1" stroke-linecap="round"></line>
+<path d="M269.72 57.30A152 152 0 0 1 331.12 163.65Q331.90 174.62 320.91 175.01L264.95 176.99Q253.95 177.38 252.75 166.46A74 74 0 0 0 228.10 123.77Q219.24 117.26 225.08 107.94L254.78 60.46Q260.61 51.14 269.72 57.30Z" fill="{{n.halo}}" filter="url(#nblur)"></path>
+<path d="M269.72 57.30A152 152 0 0 1 331.12 163.65Q331.90 174.62 320.91 175.01L264.95 176.99Q253.95 177.38 252.75 166.46A74 74 0 0 0 228.10 123.77Q219.24 117.26 225.08 107.94L254.78 60.46Q260.61 51.14 269.72 57.30Z" fill="url(#nhot)"></path>
+<ellipse cx="280.5" cy="124.0" rx="34" ry="22" fill="{{n.labelGlow}}" filter="url(#nblur)"></ellipse>
+<path d="M269.72 57.30A152 152 0 0 1 331.12 163.65Q331.90 174.62 320.91 175.01L264.95 176.99Q253.95 177.38 252.75 166.46A74 74 0 0 0 228.10 123.77Q219.24 117.26 225.08 107.94L254.78 60.46Q260.61 51.14 269.72 57.30Z" fill="none" stroke="{{n.sheen}}" stroke-width="1" transform="translate(0 0.6)" opacity=".7"></path>
+<path d="M269.72 57.30A152 152 0 0 1 331.12 163.65Q331.90 174.62 320.91 175.01L264.95 176.99Q253.95 177.38 252.75 166.46A74 74 0 0 0 228.10 123.77Q219.24 117.26 225.08 107.94L254.78 60.46Q260.61 51.14 269.72 57.30Z" fill="none" stroke="{{n.edge}}" stroke-width="1.4"></path>
+<circle cx="180" cy="180" r="70" fill="none" stroke="{{n.wellShadow}}" stroke-width="10" filter="url(#nsoft)"></circle>
+<circle cx="180" cy="180" r="64" fill="{{n.plate}}" stroke="{{n.plateRim}}" stroke-width="1"></circle>
+<circle cx="180" cy="180" r="56" fill="url(#nwell)" stroke="{{n.wellRim}}" stroke-width="1"></circle>
+<path d="M195.81 128.37A54 54 0 0 1 232.62 192.12" stroke="{{n.wellLight}}" stroke-width="4" stroke-linecap="round" fill="none" filter="url(#nsoft)" opacity=".85"></path>
+<text x="180.0" y="64.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" letter-spacing="0.1em" fill="{{n.label}}">PNG</text>
+<text x="280.5" y="122.0" text-anchor="middle" dominant-baseline="middle" font-size="15.5" font-weight="700" letter-spacing="0.1em" fill="{{n.hotText}}">JPG</text>
+<text x="280.5" y="238.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" letter-spacing="0.1em" fill="{{n.label}}">PDF</text>
+<text x="180.0" y="296.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" letter-spacing="0.1em" fill="{{n.label}}">WEBP</text>
+<text x="79.5" y="238.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" letter-spacing="0.1em" fill="{{n.label}}">TIFF</text>
+<text x="79.5" y="122.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" letter-spacing="0.1em" fill="{{n.label}}">ZIP</text>
+<text x="180" y="166" text-anchor="middle" font-size="8.5" font-weight="600" letter-spacing="0.16em" fill="{{n.muted}}">2 ARQUIVOS</text>
+<text x="180" y="185" text-anchor="middle" font-size="16" font-weight="700" letter-spacing="0.04em" fill="{{n.title}}">Converter</text>
+<text x="180" y="201" text-anchor="middle" font-size="8.5" font-weight="600" letter-spacing="0.06em" fill="{{n.muted}}">‹ Extras · Ferram. ›</text>
+<rect x="158" y="210" width="14" height="3" rx="1.5" fill="{{n.acc}}"></rect>
+<rect x="177" y="210" width="6" height="3" rx="1.5" fill="{{n.dot}}"></rect>
+<rect x="188" y="210" width="6" height="3" rx="1.5" fill="{{n.dot}}"></rect>
+<rect x="199" y="210" width="6" height="3" rx="1.5" fill="{{n.dot}}"></rect>
+<rect x="210" y="210" width="6" height="3" rx="1.5" fill="{{n.dot}}"></rect>
+</svg>
+  </div>
+  <figcaption style="display: flex; flex-direction: column; gap: 4px; width: 380px">
+    <span style="font-size: 14px; font-weight: 700; color: #f2f2f2">Crispy</span>
+    <span style="font-size: 12px; line-height: 1.5; color: #9a9aa1">Disco preto fosco, vincos entre as fatias e a fatia ativa em vidro neon (na cor escolhida).</span>
+  </figcaption>
+</figure>
+<figure style="margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; width: 400px">
+  <div style="width: 400px; height: 400px; border-radius: 28px; background: {{d.stage}}; display: flex; align-items: center; justify-content: center">
+<svg viewBox="0 0 360 360" width="360" height="360" role="img" aria-label="Menu circular">
+<defs>
+<linearGradient id="ddisc" x1="0.15" y1="0.05" x2="0.85" y2="0.95"><stop offset="0" stop-color="{{d.discA}}"></stop><stop offset="1" stop-color="{{d.discB}}"></stop></linearGradient>
+<linearGradient id="drim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{{d.rimA}}"></stop><stop offset="1" stop-color="{{d.rimB}}"></stop></linearGradient>
+<radialGradient id="dhot" gradientUnits="userSpaceOnUse" cx="180" cy="180" r="162"><stop offset="0.432" stop-color="{{d.hotA}}"></stop><stop offset="0.62" stop-color="{{d.hotB}}"></stop><stop offset="1" stop-color="{{d.hotC}}"></stop></radialGradient>
+<radialGradient id="dwell" cx="0.5" cy="0.38" r="0.65"><stop offset="0" stop-color="{{d.wellA}}"></stop><stop offset="1" stop-color="{{d.wellB}}"></stop></radialGradient>
+<filter id="dblur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7"></feGaussianBlur></filter>
+<filter id="dshadowBlur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="{{d.sblur}}"></feGaussianBlur></filter>
+<filter id="dsoft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.2"></feGaussianBlur></filter>
+<filter id="dcrease" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2.4"></feGaussianBlur></filter>
+</defs>
+<circle cx="180" cy="186" r="174" fill="{{d.shadow}}" filter="url(#dshadowBlur)"></circle>
+<circle cx="180" cy="180" r="170" fill="url(#ddisc)" stroke="url(#drim)" stroke-width="1.2"></circle>
+<path d="M99.50 40.57L101.50 44.03M111.96 34.08L110.27 30.46M124.93 28.71L123.57 24.95M138.33 24.49L137.29 20.62M152.04 21.45L151.35 17.51M165.97 19.61L165.62 15.63M180.00 19.00L180.00 15.00M194.03 19.61L194.38 15.63M207.96 21.45L208.65 17.51M221.67 24.49L220.63 28.35M235.07 28.71L236.43 24.95M248.04 34.08L249.73 30.46M260.50 40.57L262.50 37.11M272.35 48.12L274.64 44.84M283.49 56.67L286.06 53.60M293.84 66.16L296.67 63.33M303.33 76.51L306.40 73.94M311.88 87.65L315.16 85.36M319.43 99.50L315.97 101.50M325.92 111.96L329.54 110.27M331.29 124.93L335.05 123.57M335.51 138.33L339.38 137.29M338.55 152.04L342.49 151.35M340.39 165.97L344.37 165.62M341.00 180.00L345.00 180.00M340.39 194.03L344.37 194.38M338.55 207.96L342.49 208.65M335.51 221.67L331.65 220.63M331.29 235.07L335.05 236.43M325.92 248.04L329.54 249.73M319.43 260.50L322.89 262.50M311.88 272.35L315.16 274.64M303.33 283.49L306.40 286.06M293.84 293.84L296.67 296.67M283.49 303.33L286.06 306.40M272.35 311.88L274.64 315.16M260.50 319.43L258.50 315.97M248.04 325.92L249.73 329.54M235.07 331.29L236.43 335.05M221.67 335.51L222.71 339.38M207.96 338.55L208.65 342.49M194.03 340.39L194.38 344.37M180.00 341.00L180.00 345.00M165.97 340.39L165.62 344.37M152.04 338.55L151.35 342.49M138.33 335.51L139.37 331.65M124.93 331.29L123.57 335.05M111.96 325.92L110.27 329.54M99.50 319.43L97.50 322.89M87.65 311.88L85.36 315.16M76.51 303.33L73.94 306.40M66.16 293.84L63.33 296.67M56.67 283.49L53.60 286.06M48.12 272.35L44.84 274.64M40.57 260.50L44.03 258.50M34.08 248.04L30.46 249.73M28.71 235.07L24.95 236.43M24.49 221.67L20.62 222.71M21.45 207.96L17.51 208.65M19.61 194.03L15.63 194.38M19.00 180.00L15.00 180.00M19.61 165.97L15.63 165.62M21.45 152.04L17.51 151.35M24.49 138.33L28.35 139.37M28.71 124.93L24.95 123.57M34.08 111.96L30.46 110.27M40.57 99.50L37.11 97.50M48.12 87.65L44.84 85.36M56.67 76.51L53.60 73.94M66.16 66.16L63.33 63.33M76.51 56.67L73.94 53.60M87.65 48.12L85.36 44.84" stroke="{{d.tick}}" stroke-width="1" stroke-linecap="round" fill="none"></path>
+<path d="M265.70 41.35A163 163 0 0 1 342.93 175.11" stroke="{{d.arc}}" stroke-width="3" stroke-linecap="round" fill="none" filter="url(#dsoft)" opacity=".9"></path>
+<path d="M265.70 41.35A163 163 0 0 1 342.93 175.11" stroke="{{d.arc}}" stroke-width="1.6" stroke-linecap="round" fill="none"></path>
+<path d="M141.96 123.63L115.20 67.76L150.20 118.88ZM209.80 118.88L244.80 67.76L218.04 123.63ZM247.83 175.24L309.60 180.00L247.83 184.76ZM218.04 236.37L244.80 292.24L209.80 241.12ZM150.20 241.12L115.20 292.24L141.96 236.37ZM112.17 184.76L50.40 180.00L112.17 175.24Z" fill="{{d.crease}}" filter="url(#dcrease)"></path>
+<linearGradient id="dln0" gradientUnits="userSpaceOnUse" x1="145.0" y1="119.4" x2="102.0" y2="44.9"><stop offset="0" stop-color="{{d.line}}"></stop><stop offset="1" stop-color="{{d.line}}" stop-opacity="0"></stop></linearGradient>
+<line x1="145.0" y1="119.4" x2="102.0" y2="44.9" stroke="url(#dln0)" stroke-width="1" stroke-linecap="round"></line>
+<linearGradient id="dln3" gradientUnits="userSpaceOnUse" x1="215.0" y1="240.6" x2="258.0" y2="315.1"><stop offset="0" stop-color="{{d.line}}"></stop><stop offset="1" stop-color="{{d.line}}" stop-opacity="0"></stop></linearGradient>
+<line x1="215.0" y1="240.6" x2="258.0" y2="315.1" stroke="url(#dln3)" stroke-width="1" stroke-linecap="round"></line>
+<linearGradient id="dln4" gradientUnits="userSpaceOnUse" x1="145.0" y1="240.6" x2="102.0" y2="315.1"><stop offset="0" stop-color="{{d.line}}"></stop><stop offset="1" stop-color="{{d.line}}" stop-opacity="0"></stop></linearGradient>
+<line x1="145.0" y1="240.6" x2="102.0" y2="315.1" stroke="url(#dln4)" stroke-width="1" stroke-linecap="round"></line>
+<linearGradient id="dln5" gradientUnits="userSpaceOnUse" x1="110.0" y1="180.0" x2="24.0" y2="180.0"><stop offset="0" stop-color="{{d.line}}"></stop><stop offset="1" stop-color="{{d.line}}" stop-opacity="0"></stop></linearGradient>
+<line x1="110.0" y1="180.0" x2="24.0" y2="180.0" stroke="url(#dln5)" stroke-width="1" stroke-linecap="round"></line>
+<path d="M269.72 57.30A152 152 0 0 1 331.12 163.65Q331.90 174.62 320.91 175.01L264.95 176.99Q253.95 177.38 252.75 166.46A74 74 0 0 0 228.10 123.77Q219.24 117.26 225.08 107.94L254.78 60.46Q260.61 51.14 269.72 57.30Z" fill="{{d.halo}}" filter="url(#dblur)"></path>
+<path d="M269.72 57.30A152 152 0 0 1 331.12 163.65Q331.90 174.62 320.91 175.01L264.95 176.99Q253.95 177.38 252.75 166.46A74 74 0 0 0 228.10 123.77Q219.24 117.26 225.08 107.94L254.78 60.46Q260.61 51.14 269.72 57.30Z" fill="url(#dhot)"></path>
+<ellipse cx="280.5" cy="124.0" rx="34" ry="22" fill="{{d.labelGlow}}" filter="url(#dblur)"></ellipse>
+<path d="M269.72 57.30A152 152 0 0 1 331.12 163.65Q331.90 174.62 320.91 175.01L264.95 176.99Q253.95 177.38 252.75 166.46A74 74 0 0 0 228.10 123.77Q219.24 117.26 225.08 107.94L254.78 60.46Q260.61 51.14 269.72 57.30Z" fill="none" stroke="{{d.sheen}}" stroke-width="1" transform="translate(0 0.6)" opacity=".7"></path>
+<path d="M269.72 57.30A152 152 0 0 1 331.12 163.65Q331.90 174.62 320.91 175.01L264.95 176.99Q253.95 177.38 252.75 166.46A74 74 0 0 0 228.10 123.77Q219.24 117.26 225.08 107.94L254.78 60.46Q260.61 51.14 269.72 57.30Z" fill="none" stroke="{{d.edge}}" stroke-width="1.4"></path>
+<circle cx="180" cy="180" r="70" fill="none" stroke="{{d.wellShadow}}" stroke-width="10" filter="url(#dsoft)"></circle>
+<circle cx="180" cy="180" r="64" fill="{{d.plate}}" stroke="{{d.plateRim}}" stroke-width="1"></circle>
+<circle cx="180" cy="180" r="56" fill="url(#dwell)" stroke="{{d.wellRim}}" stroke-width="1"></circle>
+<path d="M195.81 128.37A54 54 0 0 1 232.62 192.12" stroke="{{d.wellLight}}" stroke-width="4" stroke-linecap="round" fill="none" filter="url(#dsoft)" opacity=".85"></path>
+<text x="180.0" y="64.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" letter-spacing="0.1em" fill="{{d.label}}">PNG</text>
+<text x="280.5" y="122.0" text-anchor="middle" dominant-baseline="middle" font-size="15.5" font-weight="700" letter-spacing="0.1em" fill="{{d.hotText}}">JPG</text>
+<text x="280.5" y="238.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" letter-spacing="0.1em" fill="{{d.label}}">PDF</text>
+<text x="180.0" y="296.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" letter-spacing="0.1em" fill="{{d.label}}">WEBP</text>
+<text x="79.5" y="238.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" letter-spacing="0.1em" fill="{{d.label}}">TIFF</text>
+<text x="79.5" y="122.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" letter-spacing="0.1em" fill="{{d.label}}">ZIP</text>
+<text x="180" y="166" text-anchor="middle" font-size="8.5" font-weight="600" letter-spacing="0.16em" fill="{{d.muted}}">2 ARQUIVOS</text>
+<text x="180" y="185" text-anchor="middle" font-size="16" font-weight="700" letter-spacing="0.04em" fill="{{d.title}}">Converter</text>
+<text x="180" y="201" text-anchor="middle" font-size="8.5" font-weight="600" letter-spacing="0.06em" fill="{{d.muted}}">‹ Extras · Ferram. ›</text>
+<rect x="158" y="210" width="14" height="3" rx="1.5" fill="{{d.acc}}"></rect>
+<rect x="177" y="210" width="6" height="3" rx="1.5" fill="{{d.dot}}"></rect>
+<rect x="188" y="210" width="6" height="3" rx="1.5" fill="{{d.dot}}"></rect>
+<rect x="199" y="210" width="6" height="3" rx="1.5" fill="{{d.dot}}"></rect>
+<rect x="210" y="210" width="6" height="3" rx="1.5" fill="{{d.dot}}"></rect>
+</svg>
+  </div>
+  <figcaption style="display: flex; flex-direction: column; gap: 4px; width: 380px">
+    <span style="font-size: 14px; font-weight: 700; color: #f2f2f2">Minimalista Escuro</span>
+    <span style="font-size: 12px; line-height: 1.5; color: #9a9aa1">Mesmo desenho, sem neon nem luzes: preto e chumbo, e a fatia ativa é um degradê leve com borda fina.</span>
+  </figcaption>
+</figure>
+<figure style="margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; width: 400px">
+  <div style="width: 400px; height: 400px; border-radius: 28px; background: {{l.stage}}; display: flex; align-items: center; justify-content: center">
+<svg viewBox="0 0 360 360" width="360" height="360" role="img" aria-label="Menu circular">
+<defs>
+<linearGradient id="ldisc" x1="0.15" y1="0.05" x2="0.85" y2="0.95"><stop offset="0" stop-color="{{l.discA}}"></stop><stop offset="1" stop-color="{{l.discB}}"></stop></linearGradient>
+<linearGradient id="lrim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{{l.rimA}}"></stop><stop offset="1" stop-color="{{l.rimB}}"></stop></linearGradient>
+<radialGradient id="lhot" gradientUnits="userSpaceOnUse" cx="180" cy="180" r="162"><stop offset="0.432" stop-color="{{l.hotA}}"></stop><stop offset="0.62" stop-color="{{l.hotB}}"></stop><stop offset="1" stop-color="{{l.hotC}}"></stop></radialGradient>
+<radialGradient id="lwell" cx="0.5" cy="0.38" r="0.65"><stop offset="0" stop-color="{{l.wellA}}"></stop><stop offset="1" stop-color="{{l.wellB}}"></stop></radialGradient>
+<filter id="lblur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7"></feGaussianBlur></filter>
+<filter id="lshadowBlur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="{{l.sblur}}"></feGaussianBlur></filter>
+<filter id="lsoft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.2"></feGaussianBlur></filter>
+<filter id="lcrease" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2.4"></feGaussianBlur></filter>
+</defs>
+<circle cx="180" cy="186" r="174" fill="{{l.shadow}}" filter="url(#lshadowBlur)"></circle>
+<circle cx="180" cy="180" r="170" fill="url(#ldisc)" stroke="url(#lrim)" stroke-width="1.2"></circle>
+<path d="M99.50 40.57L101.50 44.03M111.96 34.08L110.27 30.46M124.93 28.71L123.57 24.95M138.33 24.49L137.29 20.62M152.04 21.45L151.35 17.51M165.97 19.61L165.62 15.63M180.00 19.00L180.00 15.00M194.03 19.61L194.38 15.63M207.96 21.45L208.65 17.51M221.67 24.49L220.63 28.35M235.07 28.71L236.43 24.95M248.04 34.08L249.73 30.46M260.50 40.57L262.50 37.11M272.35 48.12L274.64 44.84M283.49 56.67L286.06 53.60M293.84 66.16L296.67 63.33M303.33 76.51L306.40 73.94M311.88 87.65L315.16 85.36M319.43 99.50L315.97 101.50M325.92 111.96L329.54 110.27M331.29 124.93L335.05 123.57M335.51 138.33L339.38 137.29M338.55 152.04L342.49 151.35M340.39 165.97L344.37 165.62M341.00 180.00L345.00 180.00M340.39 194.03L344.37 194.38M338.55 207.96L342.49 208.65M335.51 221.67L331.65 220.63M331.29 235.07L335.05 236.43M325.92 248.04L329.54 249.73M319.43 260.50L322.89 262.50M311.88 272.35L315.16 274.64M303.33 283.49L306.40 286.06M293.84 293.84L296.67 296.67M283.49 303.33L286.06 306.40M272.35 311.88L274.64 315.16M260.50 319.43L258.50 315.97M248.04 325.92L249.73 329.54M235.07 331.29L236.43 335.05M221.67 335.51L222.71 339.38M207.96 338.55L208.65 342.49M194.03 340.39L194.38 344.37M180.00 341.00L180.00 345.00M165.97 340.39L165.62 344.37M152.04 338.55L151.35 342.49M138.33 335.51L139.37 331.65M124.93 331.29L123.57 335.05M111.96 325.92L110.27 329.54M99.50 319.43L97.50 322.89M87.65 311.88L85.36 315.16M76.51 303.33L73.94 306.40M66.16 293.84L63.33 296.67M56.67 283.49L53.60 286.06M48.12 272.35L44.84 274.64M40.57 260.50L44.03 258.50M34.08 248.04L30.46 249.73M28.71 235.07L24.95 236.43M24.49 221.67L20.62 222.71M21.45 207.96L17.51 208.65M19.61 194.03L15.63 194.38M19.00 180.00L15.00 180.00M19.61 165.97L15.63 165.62M21.45 152.04L17.51 151.35M24.49 138.33L28.35 139.37M28.71 124.93L24.95 123.57M34.08 111.96L30.46 110.27M40.57 99.50L37.11 97.50M48.12 87.65L44.84 85.36M56.67 76.51L53.60 73.94M66.16 66.16L63.33 63.33M76.51 56.67L73.94 53.60M87.65 48.12L85.36 44.84" stroke="{{l.tick}}" stroke-width="1" stroke-linecap="round" fill="none"></path>
+<path d="M265.70 41.35A163 163 0 0 1 342.93 175.11" stroke="{{l.arc}}" stroke-width="3" stroke-linecap="round" fill="none" filter="url(#lsoft)" opacity=".9"></path>
+<path d="M265.70 41.35A163 163 0 0 1 342.93 175.11" stroke="{{l.arc}}" stroke-width="1.6" stroke-linecap="round" fill="none"></path>
+<path d="M141.96 123.63L115.20 67.76L150.20 118.88ZM209.80 118.88L244.80 67.76L218.04 123.63ZM247.83 175.24L309.60 180.00L247.83 184.76ZM218.04 236.37L244.80 292.24L209.80 241.12ZM150.20 241.12L115.20 292.24L141.96 236.37ZM112.17 184.76L50.40 180.00L112.17 175.24Z" fill="{{l.crease}}" filter="url(#lcrease)"></path>
+<linearGradient id="lln0" gradientUnits="userSpaceOnUse" x1="145.0" y1="119.4" x2="102.0" y2="44.9"><stop offset="0" stop-color="{{l.line}}"></stop><stop offset="1" stop-color="{{l.line}}" stop-opacity="0"></stop></linearGradient>
+<line x1="145.0" y1="119.4" x2="102.0" y2="44.9" stroke="url(#lln0)" stroke-width="1" stroke-linecap="round"></line>
+<linearGradient id="lln3" gradientUnits="userSpaceOnUse" x1="215.0" y1="240.6" x2="258.0" y2="315.1"><stop offset="0" stop-color="{{l.line}}"></stop><stop offset="1" stop-color="{{l.line}}" stop-opacity="0"></stop></linearGradient>
+<line x1="215.0" y1="240.6" x2="258.0" y2="315.1" stroke="url(#lln3)" stroke-width="1" stroke-linecap="round"></line>
+<linearGradient id="lln4" gradientUnits="userSpaceOnUse" x1="145.0" y1="240.6" x2="102.0" y2="315.1"><stop offset="0" stop-color="{{l.line}}"></stop><stop offset="1" stop-color="{{l.line}}" stop-opacity="0"></stop></linearGradient>
+<line x1="145.0" y1="240.6" x2="102.0" y2="315.1" stroke="url(#lln4)" stroke-width="1" stroke-linecap="round"></line>
+<linearGradient id="lln5" gradientUnits="userSpaceOnUse" x1="110.0" y1="180.0" x2="24.0" y2="180.0"><stop offset="0" stop-color="{{l.line}}"></stop><stop offset="1" stop-color="{{l.line}}" stop-opacity="0"></stop></linearGradient>
+<line x1="110.0" y1="180.0" x2="24.0" y2="180.0" stroke="url(#lln5)" stroke-width="1" stroke-linecap="round"></line>
+<path d="M269.72 57.30A152 152 0 0 1 331.12 163.65Q331.90 174.62 320.91 175.01L264.95 176.99Q253.95 177.38 252.75 166.46A74 74 0 0 0 228.10 123.77Q219.24 117.26 225.08 107.94L254.78 60.46Q260.61 51.14 269.72 57.30Z" fill="{{l.halo}}" filter="url(#lblur)"></path>
+<path d="M269.72 57.30A152 152 0 0 1 331.12 163.65Q331.90 174.62 320.91 175.01L264.95 176.99Q253.95 177.38 252.75 166.46A74 74 0 0 0 228.10 123.77Q219.24 117.26 225.08 107.94L254.78 60.46Q260.61 51.14 269.72 57.30Z" fill="url(#lhot)"></path>
+<ellipse cx="280.5" cy="124.0" rx="34" ry="22" fill="{{l.labelGlow}}" filter="url(#lblur)"></ellipse>
+<path d="M269.72 57.30A152 152 0 0 1 331.12 163.65Q331.90 174.62 320.91 175.01L264.95 176.99Q253.95 177.38 252.75 166.46A74 74 0 0 0 228.10 123.77Q219.24 117.26 225.08 107.94L254.78 60.46Q260.61 51.14 269.72 57.30Z" fill="none" stroke="{{l.sheen}}" stroke-width="1" transform="translate(0 0.6)" opacity=".7"></path>
+<path d="M269.72 57.30A152 152 0 0 1 331.12 163.65Q331.90 174.62 320.91 175.01L264.95 176.99Q253.95 177.38 252.75 166.46A74 74 0 0 0 228.10 123.77Q219.24 117.26 225.08 107.94L254.78 60.46Q260.61 51.14 269.72 57.30Z" fill="none" stroke="{{l.edge}}" stroke-width="1.4"></path>
+<circle cx="180" cy="180" r="70" fill="none" stroke="{{l.wellShadow}}" stroke-width="10" filter="url(#lsoft)"></circle>
+<circle cx="180" cy="180" r="64" fill="{{l.plate}}" stroke="{{l.plateRim}}" stroke-width="1"></circle>
+<circle cx="180" cy="180" r="56" fill="url(#lwell)" stroke="{{l.wellRim}}" stroke-width="1"></circle>
+<path d="M195.81 128.37A54 54 0 0 1 232.62 192.12" stroke="{{l.wellLight}}" stroke-width="4" stroke-linecap="round" fill="none" filter="url(#lsoft)" opacity=".85"></path>
+<text x="180.0" y="64.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" letter-spacing="0.1em" fill="{{l.label}}">PNG</text>
+<text x="280.5" y="122.0" text-anchor="middle" dominant-baseline="middle" font-size="15.5" font-weight="700" letter-spacing="0.1em" fill="{{l.hotText}}">JPG</text>
+<text x="280.5" y="238.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" letter-spacing="0.1em" fill="{{l.label}}">PDF</text>
+<text x="180.0" y="296.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" letter-spacing="0.1em" fill="{{l.label}}">WEBP</text>
+<text x="79.5" y="238.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" letter-spacing="0.1em" fill="{{l.label}}">TIFF</text>
+<text x="79.5" y="122.0" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" letter-spacing="0.1em" fill="{{l.label}}">ZIP</text>
+<text x="180" y="166" text-anchor="middle" font-size="8.5" font-weight="600" letter-spacing="0.16em" fill="{{l.muted}}">2 ARQUIVOS</text>
+<text x="180" y="185" text-anchor="middle" font-size="16" font-weight="700" letter-spacing="0.04em" fill="{{l.title}}">Converter</text>
+<text x="180" y="201" text-anchor="middle" font-size="8.5" font-weight="600" letter-spacing="0.06em" fill="{{l.muted}}">‹ Extras · Ferram. ›</text>
+<rect x="158" y="210" width="14" height="3" rx="1.5" fill="{{l.acc}}"></rect>
+<rect x="177" y="210" width="6" height="3" rx="1.5" fill="{{l.dot}}"></rect>
+<rect x="188" y="210" width="6" height="3" rx="1.5" fill="{{l.dot}}"></rect>
+<rect x="199" y="210" width="6" height="3" rx="1.5" fill="{{l.dot}}"></rect>
+<rect x="210" y="210" width="6" height="3" rx="1.5" fill="{{l.dot}}"></rect>
+</svg>
+  </div>
+  <figcaption style="display: flex; flex-direction: column; gap: 4px; width: 380px">
+    <span style="font-size: 14px; font-weight: 700; color: #f2f2f2">Minimalista Claro</span>
+    <span style="font-size: 12px; line-height: 1.5; color: #9a9aa1">Porcelana fosca: divisórias em linha fina que some, fatia ativa em vidro branco sem borda, só com sombra suave.</span>
+  </figcaption>
+</figure>
+
+  </div>
+  <p style="margin: 0; font-size: 13px; color: #9a9aa1">Lados do menu: Converter · Ferramentas · PDF · Extras. Gire a roda do mouse ou clique no centro para trocar de lado. O Padrão Windows usa o disco de vidro simples.</p>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"neon":{"editor":"enum","options":["Laranja","Rosa","Ciano","Lima","Roxo","Amarelo"],"default":"Laranja"},"$preview":{"width":1776,"height":640}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const neons = { "Laranja": "#ff6633", "Rosa": "#ff2d95", "Ciano": "#00e5ff", "Lima": "#b6ff3b", "Roxo": "#a855f7", "Amarelo": "#ffd400" };
+    const n = neons[this.props.neon] || "#ff6633";
+    const a = (hex, al) => { const v = parseInt(hex.slice(1), 16); return `rgba(${v >> 16 & 255},${v >> 8 & 255},${v & 255},${al})`; };
+    const crispyOld = { stage: "#16161a", discA: "#1d1d20", discB: "#050506", rimA: "rgba(140,140,150,0.6)", rimB: "rgba(60,60,66,0.4)", shadow: "rgba(0,0,0,0.7)",
+      crease: "rgba(0,0,0,0.85)", hotA: n, hotB: a(n, 0.45), hotC: "rgba(14,10,8,0.9)", halo: a(n, 0.45), edge: n, sheen: "transparent", labelGlow: "transparent",
+      wellShadow: "rgba(0,0,0,0.8)", plate: "#141416", plateRim: "rgba(255,255,255,0.08)", wellA: "#1a1a1c", wellB: "#020203", wellRim: "rgba(255,255,255,0.12)",
+      acc: n, arc: n, wellLight: n, line: "transparent", sblur: "7", label: "#8e8e95", hotText: "#ffffff", hotSub: n, title: n, muted: "#8e8e95", dot: "rgba(255,255,255,0.18)", tick: "transparent" };
+    const crispy = { ...crispyOld, stage: "#121215", hotA: a(n, 0.95), hotB: a(n, 0.28), hotC: "rgba(12,10,10,0.85)", halo: a(n, 0.38), crease: "rgba(0,0,0,0.6)",
+      sheen: "rgba(255,255,255,0.35)", labelGlow: "rgba(0,0,0,0.35)", tick: "transparent", arc: "transparent", wellLight: "transparent", label: "#6c6c73", hotSub: "#ffffff", hotText: "#ffffff" };
+    const dark = { ...crispy, stage: "#121214", rimA: "rgba(160,160,168,0.45)", rimB: "rgba(50,50,56,0.35)", hotA: "rgba(74,79,87,0.95)", hotB: "rgba(74,79,87,0.7)", hotC: "rgba(74,79,87,0.45)",
+      halo: "transparent", edge: "rgba(154,161,173,0.35)", sheen: "rgba(255,255,255,0.10)", labelGlow: "transparent", acc: "#9AA1AD", arc: "transparent", wellLight: "transparent",
+      hotSub: "#8d8d93", title: "#ffffff", tick: "transparent", label: "#66666c" };
+    const light = { stage: "#e7e8ec", discA: "#fbfbfc", discB: "#dcdee3", rimA: "rgba(255,255,255,1)", rimB: "rgba(0,0,0,0.10)", shadow: "rgba(30,34,50,0.11)", sblur: "18",
+      crease: "transparent", line: "rgba(40,44,60,0.22)", hotA: "rgba(255,255,255,1)", hotB: "rgba(255,255,255,0.85)", hotC: "rgba(255,255,255,0.55)", halo: "rgba(30,34,50,0.11)",
+      edge: "transparent", sheen: "transparent", labelGlow: "rgba(255,255,255,0.6)", wellShadow: "rgba(30,34,50,0.06)", plate: "#eceef1",
+      plateRim: "rgba(255,255,255,0.9)", wellA: "#ffffff", wellB: "#e3e5ea", wellRim: "rgba(0,0,0,0.06)", acc: "#1d1d1f", arc: "transparent", wellLight: "transparent", label: "#bdbdc3",
+      hotText: "#1d1d1f", hotSub: "#6b6b72", title: "#1d1d1f", muted: "#7a7a82", dot: "rgba(0,0,0,0.14)", tick: "transparent" };
+    return { c: crispyOld, n: crispy, d: dark, l: light };
+  }
+}
+</script>
+</body>
+</html>

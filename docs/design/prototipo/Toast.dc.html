@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Vizu · Aviso e bandeja</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&amp;family=Inter:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 760px; height: 460px; box-sizing: border-box; padding: 36px; color: #F2F2F2; font-family: 'Inter', system-ui, sans-serif; display: flex; flex-direction: column; gap: 28px; border-radius: 16px; background-color: #FFFFFF">
+  <div style="display: flex; flex-direction: column; gap: 14px">
+    <div style="font-size: 13px; color: #CDD2DA">Aviso ao terminar uma conversão</div>
+    <div style="background: #4A4F57; border-radius: 12px; padding: 16px 18px; display: flex; gap: 14px; align-items: center">
+      <span style="width: 10px; height: 10px; border-radius: 50%; background: #FF6633; flex: none"></span>
+      <div style="display: flex; flex-direction: column; gap: 3px; flex: 1">
+        <span style="font-size: 15px; font-weight: 600">Pronto · clique para ver na pasta</span>
+        <span style="font-size: 13px; color: #CDD2DA; font-variant-numeric: tabular-nums">3 arquivos gerados · 1 com erro</span>
+      </div>
+    </div>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 12px">
+    <div style="font-size: 13px; color: #CDD2DA">Menu da bandeja</div>
+    <div style="background: #262A31; border-radius: 10px; padding: 8px; width: 260px; display: flex; flex-direction: column; font-size: 14px">
+      <span style="padding: 9px 12px; color: #CDD2DA">Vizu 9.8.4</span>
+      <span style="padding: 9px 12px; border-radius: 6px; background: #4A4F57">Configurações</span>
+      <span style="padding: 9px 12px">Atualizações</span>
+      <span style="padding: 9px 12px">Reiniciar</span>
+      <span style="padding: 9px 12px">Encerrar</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":760,"height":460}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

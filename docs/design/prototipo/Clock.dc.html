@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>DesktopClock, Pomodoro e Roubo de Tempo</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Barlow+Semi+Condensed:wght@500;600&amp;family=Barlow:wght@500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.ic{fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+</style>
+</helmet>
+<div style="width: 1180px; height: 820px; position: relative; overflow: hidden; background: {{t.wall}}; font-family: {{t.font}}; color: {{t.text}}">
+  <div aria-hidden="true" style="position: absolute; left: -140px; top: -120px; width: 560px; height: 560px; border-radius: 50%; background: {{t.blobA}}; filter: blur(90px)"></div>
+  <div aria-hidden="true" style="position: absolute; right: -120px; bottom: -180px; width: 560px; height: 560px; border-radius: 50%; background: {{t.blobB}}; filter: blur(100px)"></div>
+
+  <!-- coluna esquerda: estados do relógio -->
+  <div style="position: absolute; left: 40px; top: 36px; width: 560px; display: flex; flex-direction: column; gap: 14px">
+    <p style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .06em; color: {{t.text2}}">RELÓGIO NA ÁREA DE TRABALHO</p>
+
+    <!-- 1 normal -->
+    <p style="margin: 6px 0 0 4px; font-size: 12px; color: {{t.text2}}">Normal · agenda · roubo de tempo · Pomodoro · atalho · OCR</p>
+    <div style="align-self: flex-start; display: flex; align-items: center; gap: 6px; height: 64px; padding: 0 8px 0 14px; border-radius: 22px; background: {{t.card}}; border: 1px solid {{t.rim}}; box-shadow: {{t.shadow}}; backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px)">
+      <svg class="ic" width="18" height="18" viewBox="0 0 24 24" stroke="{{t.text2}}"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      <span style="font-size: 38px; font-weight: 600; letter-spacing: .02em; color: {{t.digits}}; font-family: Bahnschrift, 'Barlow Semi Condensed', Barlow, system-ui, sans-serif; padding: 0 10px; font-variant-numeric: tabular-nums">14<span style="opacity: .55">:</span>32</span>
+      <span title="Roubo de tempo" style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: {{t.chip}}">
+        <svg class="ic" width="18" height="18" viewBox="0 0 24 24" stroke="{{t.icon}}"><path d="M12 3a7 7 0 0 0-7 7v3a2 2 0 0 0 2 2h1v3a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-3h1a2 2 0 0 0 2-2v-3a7 7 0 0 0-7-7z"></path><circle cx="9.5" cy="11" r="1.4"></circle><circle cx="14.5" cy="11" r="1.4"></circle><line x1="11" y1="19" x2="11" y2="17"></line><line x1="13" y1="19" x2="13" y2="17"></line></svg>
+      </span>
+      <span title="Pomodoro" style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: {{t.chip}}">
+        <svg class="ic" width="18" height="18" viewBox="0 0 24 24" stroke="{{t.icon}}"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2 2"></path><path d="M9 2h6"></path></svg>
+      </span>
+      <span title="Atalho" style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: {{t.chip}}">
+        <svg class="ic" width="18" height="18" viewBox="0 0 24 24" stroke="{{t.icon}}"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+      </span>
+      <span title="Ler texto (OCR)" style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: {{t.chip}}">
+        <svg class="ic" width="18" height="18" viewBox="0 0 24 24" stroke="{{t.icon}}"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><polyline points="8 9 8 8 16 8 16 9"></polyline><line x1="12" y1="8" x2="12" y2="16"></line><line x1="10" y1="16" x2="14" y2="16"></line></svg>
+      </span>
+    </div>
+
+    <!-- 2 pomodoro foco -->
+    <p style="margin: 10px 0 0 4px; font-size: 12px; color: {{t.text2}}">Pomodoro · foco (a cor do relógio vira a cor do foco)</p>
+    <div style="align-self: flex-start; position: relative; display: flex; align-items: center; gap: 6px; height: 64px; padding: 0 8px 0 16px; border-radius: 22px; background: {{p.focusBg}}; border: 1px solid {{p.focus}}; box-shadow: 0 0 24px {{p.focusGlow}}, {{t.shadow}}; overflow: hidden">
+      <svg class="ic" width="18" height="18" viewBox="0 0 24 24" stroke="{{p.focus}}"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>
+      <span style="display: flex; flex-direction: column; padding: 0 10px; line-height: 1">
+        <span style="font-size: 10px; font-weight: 700; letter-spacing: .1em; color: {{p.focus}}">FOCO · 2/4</span>
+        <span style="font-size: 34px; font-weight: 600; color: {{t.digits}}; font-family: Bahnschrift, 'Barlow Semi Condensed', Barlow, system-ui, sans-serif; font-variant-numeric: tabular-nums">18<span style="opacity: .55">:</span>42</span>
+      </span>
+      <span style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: {{p.focus}}">
+        <svg class="ic" width="16" height="16" viewBox="0 0 24 24" stroke="{{p.onFocus}}"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+      </span>
+      <span style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: {{t.chip}}">
+        <svg class="ic" width="16" height="16" viewBox="0 0 24 24" stroke="{{t.icon}}"><rect x="5" y="5" width="14" height="14" rx="2"></rect></svg>
+      </span>
+      <div style="position: absolute; left: 0; bottom: 0; height: 3px; width: 26%; background: {{p.focus}}; box-shadow: 0 0 8px {{p.focus}}"></div>
+    </div>
+
+    <!-- 3 pomodoro pausa -->
+    <p style="margin: 10px 0 0 4px; font-size: 12px; color: {{t.text2}}">Pomodoro · pausa</p>
+    <div style="align-self: flex-start; position: relative; display: flex; align-items: center; gap: 6px; height: 64px; padding: 0 8px 0 16px; border-radius: 22px; background: {{p.breakBg}}; border: 1px solid {{p.brk}}; box-shadow: {{t.shadow}}; overflow: hidden">
+      <svg class="ic" width="18" height="18" viewBox="0 0 24 24" stroke="{{p.brk}}"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>
+      <span style="display: flex; flex-direction: column; padding: 0 10px; line-height: 1">
+        <span style="font-size: 10px; font-weight: 700; letter-spacing: .1em; color: {{p.brk}}">PAUSA</span>
+        <span style="font-size: 34px; font-weight: 600; color: {{t.digits}}; font-family: Bahnschrift, 'Barlow Semi Condensed', Barlow, system-ui, sans-serif; font-variant-numeric: tabular-nums">03<span style="opacity: .55">:</span>10</span>
+      </span>
+      <span style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: {{p.brk}}">
+        <svg class="ic" width="16" height="16" viewBox="0 0 24 24" stroke="{{p.onBreak}}"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
+      </span>
+      <div style="position: absolute; left: 0; bottom: 0; height: 3px; width: 62%; background: {{p.brk}}"></div>
+    </div>
+
+    <!-- 4 roubo de tempo ativo -->
+    <p style="margin: 10px 0 0 4px; font-size: 12px; color: {{t.text2}}">Roubo de tempo · contando (clique de novo para parar e registrar)</p>
+    <div style="align-self: flex-start; display: flex; align-items: center; gap: 6px; height: 64px; padding: 0 8px 0 14px; border-radius: 22px; background: {{t.card}}; border: 1px solid {{t.rim}}; box-shadow: {{t.shadow}}; backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%)">
+      <svg class="ic" width="18" height="18" viewBox="0 0 24 24" stroke="{{t.text2}}"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      <span style="font-size: 38px; font-weight: 600; color: {{t.digits}}; font-family: Bahnschrift, 'Barlow Semi Condensed', Barlow, system-ui, sans-serif; padding: 0 10px; font-variant-numeric: tabular-nums">14<span style="opacity: .55">:</span>35</span>
+      <span style="height: 40px; padding: 0 14px 0 10px; border-radius: 20px; display: flex; align-items: center; gap: 8px; background: rgba(255,59,92,0.16); border: 1px solid #ff3b5c; box-shadow: 0 0 16px rgba(255,59,92,0.45)">
+        <svg class="ic" width="18" height="18" viewBox="0 0 24 24" stroke="#ff3b5c"><path d="M12 3a7 7 0 0 0-7 7v3a2 2 0 0 0 2 2h1v3a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-3h1a2 2 0 0 0 2-2v-3a7 7 0 0 0-7-7z"></path><circle cx="9.5" cy="11" r="1.4"></circle><circle cx="14.5" cy="11" r="1.4"></circle><line x1="11" y1="19" x2="11" y2="17"></line><line x1="13" y1="19" x2="13" y2="17"></line></svg>
+        <span style="font-size: 15px; font-weight: 700; color: #ff7a8f; font-variant-numeric: tabular-nums">02:13</span>
+      </span>
+    </div>
+    <p style="margin: 2px 0 0 4px; font-size: 11px; color: {{t.text2}}; max-width: 520px; line-height: 1.5">Ícones no estilo Feather (traço 2 px, pontas redondas). A caveira não existe no Feather: foi desenhada no mesmo estilo. Botão direito no relógio: Agenda, Histórico do roubo de tempo, Configurações, Ocultar.</p>
+  </div>
+
+  <!-- coluna direita: histórico + configurações -->
+  <div style="position: absolute; left: 640px; top: 36px; width: 500px; display: flex; flex-direction: column; gap: 14px">
+    <p style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .06em; color: {{t.text2}}">ROUBO DE TEMPO · HOJE</p>
+    <div style="border-radius: 22px; background: {{t.card}}; border: 1px solid {{t.rim}}; box-shadow: {{t.shadow}}; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%)">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between">
+        <span style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 12px; color: {{t.text2}}">Total perdido hoje · 6 interrupções</span>
+          <span style="font-size: 40px; font-weight: 600; letter-spacing: -.01em; line-height: 1">47 <span style="font-size: 18px; color: {{t.text2}}">min</span> 20 <span style="font-size: 18px; color: {{t.text2}}">s</span></span>
+        </span>
+        <span style="display: flex; align-items: flex-end; gap: 6px; height: 56px">
+          <span style="width: 14px; height: 30%; border-radius: 4px; background: {{t.track}}"></span>
+          <span style="width: 14px; height: 55%; border-radius: 4px; background: {{t.track}}"></span>
+          <span style="width: 14px; height: 40%; border-radius: 4px; background: {{t.track}}"></span>
+          <span style="width: 14px; height: 75%; border-radius: 4px; background: {{t.track}}"></span>
+          <span style="width: 14px; height: 100%; border-radius: 4px; background: #ff3b5c"></span>
+        </span>
+      </div>
+      <div style="height: 1px; background: {{t.sep}}"></div>
+      <div style="display: flex; flex-direction: column; gap: 2px; font-size: 13px">
+        <div style="display: flex; justify-content: space-between; padding: 7px 4px"><span>16:05</span><span style="color: {{t.text2}}">—</span><span style="font-weight: 600; font-variant-numeric: tabular-nums">12:40</span></div>
+        <div style="display: flex; justify-content: space-between; padding: 7px 4px"><span>14:32</span><span style="color: {{t.text2}}">—</span><span style="font-weight: 600; font-variant-numeric: tabular-nums">02:13</span></div>
+        <div style="display: flex; justify-content: space-between; padding: 7px 4px"><span>11:18</span><span style="color: {{t.text2}}">—</span><span style="font-weight: 600; font-variant-numeric: tabular-nums">18:02</span></div>
+        <div style="display: flex; justify-content: space-between; padding: 7px 4px; color: {{t.text2}}"><span>+ 3 mais</span><span></span><span>14:25</span></div>
+      </div>
+      <div style="display: flex; gap: 8px">
+        <span style="flex: 1; height: 34px; border-radius: 17px; border: 1px solid {{t.rim2}}; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600">Exportar CSV</span>
+        <span style="flex: 1; height: 34px; border-radius: 17px; border: 1px solid {{t.rim2}}; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600">Ver semana</span>
+      </div>
+    </div>
+
+    <p style="margin: 6px 0 0; font-size: 12px; font-weight: 600; letter-spacing: .06em; color: {{t.text2}}">TAMANHO · 90% E 70%</p>
+    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 10px"><div style="display: flex; align-items: center; gap: 5px; height: 58px; padding: 0 9px 0 13px; border-radius: 20px; background: {{t.card}}; border: 1px solid {{t.rim}}; backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%)">
+      <svg class="ic" width="16" height="16" viewBox="0 0 24 24" stroke="{{t.text2}}"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path></svg>
+      <span style="font-size: 34px; font-weight: 600; color: {{t.digits}}; font-family: Bahnschrift, 'Barlow Semi Condensed', Barlow, system-ui, sans-serif; padding: 0 7px">14<span style="opacity: .55">:</span>32</span><span style="width: 36px; height: 36px; border-radius: 50%; background: {{t.chip}}"></span><span style="width: 36px; height: 36px; border-radius: 50%; background: {{t.chip}}"></span><span style="width: 36px; height: 36px; border-radius: 50%; background: {{t.chip}}"></span><span style="width: 36px; height: 36px; border-radius: 50%; background: {{t.chip}}"></span></div><div style="display: flex; align-items: center; gap: 4px; height: 45px; padding: 0 7px 0 10px; border-radius: 15px; background: {{t.card}}; border: 1px solid {{t.rim}}; backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%)">
+      <svg class="ic" width="13" height="13" viewBox="0 0 24 24" stroke="{{t.text2}}"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path></svg>
+      <span style="font-size: 27px; font-weight: 600; color: {{t.digits}}; font-family: Bahnschrift, 'Barlow Semi Condensed', Barlow, system-ui, sans-serif; padding: 0 6px">14<span style="opacity: .55">:</span>32</span><span style="width: 28px; height: 28px; border-radius: 50%; background: {{t.chip}}"></span><span style="width: 28px; height: 28px; border-radius: 50%; background: {{t.chip}}"></span><span style="width: 28px; height: 28px; border-radius: 50%; background: {{t.chip}}"></span><span style="width: 28px; height: 28px; border-radius: 50%; background: {{t.chip}}"></span></div></div>
+    <p style="margin: 10px 0 0; font-size: 12px; font-weight: 600; letter-spacing: .06em; color: {{t.text2}}">ANEXADO À BARRA DE TAREFAS</p>
+    <div style="height: 48px; border-radius: 10px; background: #1c1c1e; display: flex; align-items: center; padding: 0 10px; gap: 6px; color: #fff">
+      <span style="width: 24px; height: 24px; border-radius: 6px; background: linear-gradient(135deg, #3b8beb, #1a5fb4)"></span>
+      <span style="display: flex; align-items: center; gap: 4px; padding: 0 8px; height: 40px">
+        <svg class="ic" width="14" height="14" viewBox="0 0 24 24" stroke="rgba(255,255,255,.6)"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path></svg>
+        <span style="font-size: 24px; font-weight: 600; padding: 0 6px; color: {{t.dockDigits}}; font-family: Bahnschrift, 'Barlow Semi Condensed', Barlow, system-ui, sans-serif">14<span style="opacity: .55">:</span>32</span>
+        <span style="width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.08)"></span><span style="width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.08)"></span><span style="width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.08)"></span><span style="width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.08)"></span>
+      </span>
+      <span style="flex: 1"></span>
+      <span style="width: 22px; height: 22px; border-radius: 6px; background: rgba(255,255,255,.12)"></span><span style="width: 22px; height: 22px; border-radius: 6px; background: rgba(255,255,255,.12)"></span>
+    </div>
+    <p style="margin: 0; font-size: 11.5px; line-height: 1.5; color: {{t.text2}}">Sem cartão nem sombra, na cor da barra; desliza para os lados. O relógio do Windows na bandeja é ocultado enquanto estiver anexado e volta ao desanexar.</p>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"tema":{"editor":"enum","options":["Minimalista Claro","Minimalista Escuro","Padrão Windows","Crispy"],"default":"Crispy"},"pomodoro":{"editor":"enum","options":["Verde / Vermelho","Azul / Cinza","Lima / Roxo","Âmbar / Céu"],"default":"Verde / Vermelho"},"$preview":{"width":1180,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const themes = {
+      "Minimalista Claro": { font: "Inter, system-ui, sans-serif", wall: "#e9ebef", blobA: "rgba(205,210,220,0.8)", blobB: "rgba(230,232,238,0.9)",
+        card: "rgba(250,250,252,0.78)", rim: "rgba(255,255,255,0.9)", rim2: "rgba(0,0,0,0.10)", shadow: "0 20px 50px rgba(20,20,40,0.12), inset 0 1px 0 rgba(255,255,255,0.95)",
+        text: "#1d1d1f", icon: "#1d1d1f", text2: "#6b6b72", digits: "#1d1d1f", dockDigits: "#ffffff", chip: "rgba(0,0,0,0.05)", track: "rgba(0,0,0,0.07)", sep: "rgba(0,0,0,0.07)", accent: "#1d1d1f", knobOn: "#ffffff" },
+      "Minimalista Escuro": { font: "Inter, system-ui, sans-serif", wall: "#09090a", blobA: "rgba(70,70,76,0.55)", blobB: "rgba(45,45,50,0.7)",
+        card: "rgba(22,22,24,0.78)", rim: "rgba(255,255,255,0.09)", rim2: "rgba(255,255,255,0.14)", shadow: "0 20px 50px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.07)",
+        text: "#ededef", icon: "#9AA1AD", text2: "#8d8d93", digits: "#ffffff", dockDigits: "#ffffff", chip: "rgba(255,255,255,0.07)", track: "rgba(255,255,255,0.08)", sep: "rgba(255,255,255,0.07)", accent: "#4A4F57", knobOn: "#ffffff" },
+      "Padrão Windows": { font: "Inter, system-ui, sans-serif", wall: "#e4e9f1", blobA: "rgba(120,170,230,0.5)", blobB: "rgba(175,205,240,0.6)",
+        card: "rgba(249,250,252,0.8)", rim: "rgba(255,255,255,0.9)", rim2: "rgba(0,0,0,0.10)", shadow: "0 20px 50px rgba(20,30,60,0.12), inset 0 1px 0 rgba(255,255,255,0.95)",
+        text: "#1b1b1f", icon: "#1b1b1f", text2: "#5f6470", digits: "#1b1b1f", dockDigits: "#ffffff", chip: "rgba(0,103,192,0.08)", track: "rgba(0,0,0,0.06)", sep: "rgba(0,0,0,0.07)", accent: "#0067c0", knobOn: "#ffffff" },
+      "Crispy": { font: "Inter, system-ui, sans-serif", wall: "#070708", blobA: "rgba(255,102,51,0.28)", blobB: "rgba(255,102,51,0.08)",
+        card: "rgba(14,14,16,0.85)", rim: "rgba(255,102,51,0.42)", rim2: "rgba(255,102,51,0.5)", shadow: "0 0 28px rgba(255,102,51,0.16), 0 20px 50px rgba(0,0,0,0.65)",
+        text: "#f2f2f2", icon: "#f2f2f2", text2: "#9a9aa1", digits: "#ff6633", dockDigits: "#ff6633", chip: "rgba(255,255,255,0.06)", track: "rgba(255,255,255,0.08)", sep: "rgba(255,102,51,0.16)", accent: "#ff6633", knobOn: "#f2f2f2" }
+    };
+    const pomos = {
+      "Verde / Vermelho": { focus: "#34c759", brk: "#ff3b30", onFocus: "#04140a", onBreak: "#ffffff", focusBg: "rgba(52,199,89,0.14)", breakBg: "rgba(255,59,48,0.12)", focusGlow: "rgba(52,199,89,0.35)" },
+      "Azul / Cinza": { focus: "#0a84ff", brk: "#8e8e93", onFocus: "#ffffff", onBreak: "#ffffff", focusBg: "rgba(10,132,255,0.14)", breakBg: "rgba(142,142,147,0.14)", focusGlow: "rgba(10,132,255,0.35)" },
+      "Lima / Roxo": { focus: "#b6ff3b", brk: "#a855f7", onFocus: "#0b1400", onBreak: "#ffffff", focusBg: "rgba(182,255,59,0.12)", breakBg: "rgba(168,85,247,0.14)", focusGlow: "rgba(182,255,59,0.35)" },
+      "Âmbar / Céu": { focus: "#ff9f0a", brk: "#5ac8fa", onFocus: "#1a0e00", onBreak: "#00121a", focusBg: "rgba(255,159,10,0.14)", breakBg: "rgba(90,200,250,0.14)", focusGlow: "rgba(255,159,10,0.35)" }
+    };
+    return { t: themes[this.props.tema] || themes['Crispy'], p: pomos[this.props.pomodoro] || pomos['Verde / Vermelho'] };
+  }
+}
+</script>
+</body>
+</html>

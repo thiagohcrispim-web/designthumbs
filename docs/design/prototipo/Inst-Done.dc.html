@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Instalador · Concluído</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 700px; height: 640px; box-sizing: border-box; padding: 40px 44px; background: #2E333B; color: #F2F2F2; font-family: 'Inter', system-ui, sans-serif; display: flex; flex-direction: column; gap: 26px; border-radius: 16px">
+  <div style="display: flex; justify-content: space-between; align-items: baseline">
+    <div style="font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 700">Vizu<span style="color: #FF6633">.</span></div>
+    <div style="font-size: 13px; color: #CDD2DA; font-variant-numeric: tabular-nums">9.8.4</div>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <div style="font-family: 'Space Grotesk', sans-serif; font-size: 30px; font-weight: 700; line-height: 1.15">Tudo pronto.</div>
+    <div style="font-size: 15px; line-height: 1.5; color: #CDD2DA">Selecione um arquivo no Explorer e aperte Espaço para ver. Segure Alt para abrir as ferramentas.</div>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 10px; background: #4A4F57; border-radius: 12px; padding: 20px 22px">
+    <div style="font-size: 16px; font-weight: 600">Vizu Ultra instalado</div>
+    <div style="font-size: 14px; line-height: 1.5; color: #CDD2DA">O motor vetorial foi baixado e conferido. SVG e EPS vetoriais já aparecem no menu Converter.</div>
+  </div>
+  <div style="font-size: 14px; line-height: 1.5; color: #CDD2DA">Nas edições Lite e Vizu, o menu Converter mostra só os formatos de imagem.</div>
+  <div style="margin-top: auto; display: flex; justify-content: flex-end">
+    <button style="all: unset; cursor: pointer; background: #FF6633; color: #1E2126; border-radius: 10px; padding: 14px 32px; font-size: 15px; font-weight: 700">Concluir</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":700,"height":640}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
