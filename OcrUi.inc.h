@@ -1,6 +1,6 @@
 // OcrUi.inc.h - "Ler texto da tela": congela a tela, o usuário arrasta sobre o texto, o OCR do Windows lê,
 // o texto vai para a área de transferência e um cartão oferece tradução para PT / ES / EN (Google Tradutor,
-// com o MyMemory de reserva). Incluído no DesignPeek.cpp depois do Clock.inc.h.
+// com o MyMemory de reserva). Incluído no Vizu.cpp depois do Clock.inc.h.
 
 #include "Ocr.h"
 #include <shellscalingapi.h>

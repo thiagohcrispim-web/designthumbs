@@ -1,5 +1,5 @@
 // Agenda.inc.h - janela da agenda do DesktopClock (dia, semana, novo evento) e avisos no canto (10 e 5 min antes).
-// Incluído no DesignPeek.cpp depois do Clock.inc.h. Tudo desenhado em Direct2D, seguindo o tema escolhido.
+// Incluído no Vizu.cpp depois do Clock.inc.h. Tudo desenhado em Direct2D, seguindo o tema escolhido.
 
 #include <set>
 

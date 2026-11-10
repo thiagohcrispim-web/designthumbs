@@ -1,4 +1,4 @@
-// Formats.h - decodificadores compartilhados entre DesignThumbs.dll (miniaturas) e DesignPeek.exe (preview).
+// Formats.h - decodificadores compartilhados entre DesignThumbs.dll (miniaturas) e Vizu.exe (preview).
 // Tudo em um header para manter os dois binários independentes e sem dependências externas.
 #pragma once
 #include <windows.h>
@@ -18,7 +18,7 @@ namespace fmt {
 using std::min; using std::max;
 typedef std::vector<BYTE> Bytes;
 
-// Extensões tratadas (registradas como miniatura e decodificadas direto pelo DesignPeek).
+// Extensões tratadas (registradas como miniatura e decodificadas direto pelo Vizu).
 static const wchar_t* const kExtensions[] = {
     L".psd", L".psb", L".ai", L".indd", L".indt", L".eps", L".epsf", L".epsi", L".svg", L".svgz",
     L".cdr", L".afdesign", L".afphoto", L".afpub", L".xd", L".sketch", L".kra", L".ora", L".procreate",
@@ -957,7 +957,7 @@ inline HRESULT Render(IStream* s, const std::wstring& ext, UINT cx, int page, HB
     return E_FAIL;
 }
 
-// ---------- informações para o DesignPeek ----------
+// ---------- informações para o Vizu ----------
 
 struct Info {
     UINT w = 0, h = 0;          // pixels nativos (0 = desconhecido)

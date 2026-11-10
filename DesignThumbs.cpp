@@ -1,5 +1,5 @@
 // DesignThumbs - miniaturas e painel de visualização (Alt+P) leves para o Explorer do Windows.
-// Os formatos suportados e os decodificadores ficam em Formats.h (compartilhado com o DesignPeek).
+// Os formatos suportados e os decodificadores ficam em Formats.h (compartilhado com o Vizu).
 // Registro por usuário (HKCU): instala sem administrador.
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX

@@ -16,6 +16,6 @@ if [ ! -f build/webp/libwebp.a ]; then
   done
   x86_64-w64-mingw32-ar rcs build/webp/libwebp.a build/webp/*.o
 fi
-$RC -c 65001 DesignPeek.rc -O coff -o DesignPeek.res.o # embute a DLL no EXE
-$CXX $FLAGS -municode -mwindows -D_WIN32_WINNT=0x0A00 -o DesignPeek.exe DesignPeek.cpp DesignPeek.res.o build/webp/libwebp.a -lshlwapi -lole32 -loleaut32 -luuid -lgdi32 -ldwmapi -lshell32 -ld2d1 -ldwrite -lwindowscodecs -lruntimeobject -lshcore -lwinhttp -lurlmon -lcomctl32 -lcomdlg32 -lxmllite -lbcrypt -lmscms
-cp DesignPeek.exe DesignThumbs-Setup.exe # o próprio DesignPeek é o instalador
+$RC -c 65001 Vizu.rc -O coff -o Vizu.res.o # embute a DLL no EXE
+$CXX $FLAGS -municode -mwindows -D_WIN32_WINNT=0x0A00 -o Vizu.exe Vizu.cpp Vizu.res.o build/webp/libwebp.a -lshlwapi -lole32 -loleaut32 -luuid -lgdi32 -ldwmapi -lshell32 -ld2d1 -ldwrite -lwindowscodecs -lruntimeobject -lshcore -lwinhttp -lurlmon -lcomctl32 -lcomdlg32 -lxmllite -lbcrypt -lmscms
+cp Vizu.exe DesignThumbs-Setup.exe # o próprio Vizu é o instalador

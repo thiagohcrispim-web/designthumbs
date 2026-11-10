@@ -1,6 +1,6 @@
 static void StartOcr();
-// Clock.inc.h - DesktopClock integrado ao DesignPeek: relógio na área de trabalho, agenda, Pomodoro e Roubo de Tempo.
-// Incluído dentro do DesignPeek.cpp (usa g_theme, g_dw, g_inst, T(), ReadDword...). Desligado até o usuário ativar.
+// Clock.inc.h - DesktopClock integrado ao Vizu: relógio na área de trabalho, agenda, Pomodoro e Roubo de Tempo.
+// Incluído dentro do Vizu.cpp (usa g_theme, g_dw, g_inst, T(), ReadDword...). Desligado até o usuário ativar.
 
 static std::wstring ReadStr(const wchar_t* name, const wchar_t* def) {
     wchar_t buf[1024]; DWORD sz = sizeof(buf);

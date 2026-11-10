@@ -1,6 +1,6 @@
 #include <winver.h>
-1 ICON "DesignPeek.ico"
-1 24 "DesignPeek.manifest"
+1 ICON "Vizu.ico"
+1 24 "Vizu.manifest"
 2 RCDATA "DesignThumbs.dll"
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION 9,8,2,0
@@ -15,8 +15,8 @@ BEGIN
       VALUE "CompanyName", "Thiago Crispim"
       VALUE "FileDescription", "Vizu"
       VALUE "FileVersion", "9.8.2"
-      VALUE "InternalName", "DesignPeek"
-      VALUE "OriginalFilename", "DesignPeek.exe"
+      VALUE "InternalName", "Vizu"
+      VALUE "OriginalFilename", "Vizu.exe"
       VALUE "LegalCopyright", "MIT License - Thiago Crispim"
       VALUE "ProductName", "Vizu"
       VALUE "ProductVersion", "9.8.2"

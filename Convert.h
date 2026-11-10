@@ -1,4 +1,4 @@
-// Convert.h - geração de imagens a partir de arquivos e conversão para PNG/JPG/PDF (usado pelo DesignPeek).
+// Convert.h - geração de imagens a partir de arquivos e conversão para PNG/JPG/PDF (usado pelo Vizu).
 // Sem estado global: as funções rodam tanto na thread da janela quanto nas threads de trabalho.
 #pragma once
 #include <shlobj.h>

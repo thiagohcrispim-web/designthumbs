@@ -150,10 +150,10 @@ https://docs.github.com/site-policy/privacy-policies/github-general-privacy-stat
 
 - Compilar no Linux: `./build.sh` (MinGW `g++-mingw-w64-x86-64-posix`; os headers mais novos do mingw-w64 estão em `third_party/`).
 - O GitHub Actions compila a cada envio e publica o instalador como artefato (`.github/workflows/build.yml`).
-- Instalação silenciosa: `DesignThumbs-Setup.exe /install /S` · desinstalar: `DesignPeek.exe /uninstall [/S]`.
-- Diagnóstico de um arquivo: `DesignPeek.exe /diag "arquivo"` ou arraste o arquivo sobre `diagnostico.bat`.
-- Os arquivos do programa ainda se chamam `DesignPeek.exe` e `DesignThumbs.dll` (e o repositório, `designthumbs`):
-  mantidos assim para não quebrar as configurações e a atualização automática de quem já usa.
+- Instalação silenciosa: `DesignThumbs-Setup.exe /install /S` · desinstalar: `Vizu.exe /uninstall [/S]`.
+- Diagnóstico de um arquivo: `Vizu.exe /diag "arquivo"` ou arraste o arquivo sobre `diagnostico.bat`.
+- A biblioteca `DesignThumbs.dll` (miniaturas do Explorer) e a chave de registro `HKCU\Software\DesignThumbs` mantêm o
+  nome antigo, para não quebrar as miniaturas nem as configurações de quem já usa.
 </details>
 
 <details>
@@ -210,7 +210,7 @@ https://docs.github.com/site-policy/privacy-policies/github-general-privacy-stat
 - **v9** — menu circular com lados (converter, ferramentas, PDF, extras, predefinições); WEBP, TIFF, ICO, GIF, BMP;
   redimensionar, recortar, girar, espelhar, cinza, sem metadados; juntar/dividir/extrair PDF mantendo o original; comprimir PDF;
   camadas do PSD, paletas (folha, HEX/CSS, ASE⇄ACO), amostra de fonte; instalador oferece desinstalar ao ser reaberto.
-- **v8.1** — instalador próprio (o DesignPeek se instala; sem NSIS), que não reinicia o Explorer; evita o alarme falso de "PUP" de antivírus.
+- **v8.1** — instalador próprio (o Vizu se instala; sem NSIS), que não reinicia o Explorer; evita o alarme falso de "PUP" de antivírus.
 - **v8** — instalador (DesignThumbs-Setup.exe) com desinstalação pelo Windows; atualização automática; paletas .ase/.aco;
   fontes .ttf/.otf; conta-gotas no preview; Pasta Padrão Maker configurável; português, inglês e espanhol.
 - **v7.3** — ícone do programa.
@@ -221,7 +221,7 @@ https://docs.github.com/site-policy/privacy-policies/github-general-privacy-stat
   da imagem no painel Alt+P, só para PDF e InDesign; Pasta Padrão Maker logo abaixo de Pasta/Atalho no menu Novo.
 - **v6** — setas de página no painel Alt+P e no preview; Novo › Pasta Padrão Maker (Edit, Links, Preview).
 - **v5** — nova interface de vidro (preview, botões do Alt, aviso e configurações), tema claro/escuro do Windows,
-  animação de abertura, `DesignPeek.exe /peek arquivo` para abrir um arquivo direto.
+  animação de abertura, `Vizu.exe /peek arquivo` para abrir um arquivo direto.
 - **v4.2** — botões de conversão no Alt; 72/300 dpi; PDF comprimido ou sem compressão; ordem do PDF = ordem dos cliques.
 - **v4.1** — botões de conversão passam do Shift para o Ctrl; Ctrl+clique reinicia a contagem.
 - **v4** — painel de visualização (Alt+P), preview em segundo plano com cache e pré-carregamento dos vizinhos,
@@ -230,8 +230,8 @@ https://docs.github.com/site-policy/privacy-policies/github-general-privacy-stat
 - **v3** — preview com zoom/arrastar, fundo xadrez, páginas do InDesign, barra de informações com fontes faltando,
   Enter/Ctrl+C, AI nítido via PDF, novos formatos (EPS completo, SVGZ, CDR, Affinity, XD, Sketch, Krita, Procreate, RAW de câmera),
   instalação sem administrador.
-- **v2.1** — DesignPeek sem hook de teclado (WinEvents + atalho só na lista de arquivos), inicialização pela pasta Inicializar.
-- **v2** — DesignPeek (preview com Espaço).
+- **v2.1** — Vizu sem hook de teclado (WinEvents + atalho só na lista de arquivos), inicialização pela pasta Inicializar.
+- **v2** — Vizu (preview com Espaço).
 - **v1.1** — PSD lido sob demanda (arquivos grandes e na nuvem); miniaturas XMP truncadas ignoradas.
 - **v1** — thumbnail provider inicial.
 </details>

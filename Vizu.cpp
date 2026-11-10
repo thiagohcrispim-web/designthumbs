@@ -1,4 +1,4 @@
-// DesignPeek - "Quick Look" para o Explorer: selecione um arquivo e aperte Espaço.
+// Vizu - "Quick Look" para o Explorer: selecione um arquivo e aperte Espaço.
 //   Espaço/Esc: fecha         Setas/clique em outro arquivo: troca o preview
 //   Roda do mouse/+/-: zoom   Arrastar: mover        Z: 100%   0: ajustar   Duplo clique: alterna
 //   PgUp/PgDn: páginas        Enter: abre no programa padrão  Ctrl+C: copia a imagem
@@ -545,7 +545,7 @@ static bool OpenSelection() {
     return OpenPath(p, neighbors);
 }
 
-// Abre o preview de um arquivo (seleção do Explorer ou "DesignPeek.exe /peek arquivo").
+// Abre o preview de um arquivo (seleção do Explorer ou "Vizu.exe /peek arquivo").
 static bool OpenPath(const std::wstring& p, const std::vector<std::wstring>& neighbors) {
     if (p.empty() || !IsFile(p)) return g_open;
     if (g_open && p == g_path) return true;
@@ -1985,7 +1985,7 @@ static void OpenDialog(int mode) {
     int w = (int)(460 * s), h = (int)((mode == 0 ? 330 : 230) * s);
     int x = max((int)mi.rcWork.left, min((int)mi.rcWork.right - w, (int)pt.x - w / 2));
     int y = max((int)mi.rcWork.top, min((int)mi.rcWork.bottom - h, (int)pt.y - h / 2));
-    g_dlgWnd = CreateWindowExW(WS_EX_TOPMOST, L"DesignPeekDialog", L"Vizu", WS_POPUP, x, y, w, h, nullptr, nullptr, g_inst, nullptr);
+    g_dlgWnd = CreateWindowExW(WS_EX_TOPMOST, L"VizuDialog", L"Vizu", WS_POPUP, x, y, w, h, nullptr, nullptr, g_inst, nullptr);
     ui::EnableGlass(g_dlgWnd, g_theme.dark);
     if (mode == 1) {
         g_dlgEdit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL, 0, 0, 10, 10, g_dlgWnd, nullptr, g_inst, nullptr);
@@ -2224,7 +2224,7 @@ static void OpenCropEditor() {
     MONITORINFO mi = {sizeof(mi)};
     GetMonitorInfoW(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi);
     int w = (int)((mi.rcWork.right - mi.rcWork.left) * 0.7), h = (int)((mi.rcWork.bottom - mi.rcWork.top) * 0.8);
-    g_cropWnd = CreateWindowExW(WS_EX_APPWINDOW, L"DesignPeekCrop", T(L"Vizu — Recortar", L"Vizu — Crop", L"Vizu — Recortar"), WS_POPUP,
+    g_cropWnd = CreateWindowExW(WS_EX_APPWINDOW, L"VizuCrop", T(L"Vizu — Recortar", L"Vizu — Crop", L"Vizu — Recortar"), WS_POPUP,
                                 mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - w) / 2, mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - h) / 2, w, h,
                                 nullptr, nullptr, g_inst, nullptr);
     ui::EnableGlass(g_cropWnd, g_theme.dark);
@@ -2258,7 +2258,7 @@ static LRESULT CALLBACK ToastProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_LBUTTONUP:
         if (g_converting) return 0;
         ShowWindow(h, SW_HIDE);
-        if (g_toastAction == 1) { // baixa e roda o instalador (ele fecha e reabre o DesignPeek)
+        if (g_toastAction == 1) { // baixa e roda o instalador (ele fecha e reabre o Vizu)
             g_toastAction = 2;
             g_toastDone = 0; g_toastTotal = 0;
             ShowToast(T(L"Baixando atualização…", L"Downloading update…", L"Descargando actualización…"), g_release.tag, 0, 0);
@@ -2764,11 +2764,11 @@ static LRESULT CALLBACK DimProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 }
 static HWND ShowDim(HMONITOR mon) {
     static bool reg = false;
-    if (!reg) { WNDCLASSW wc = {}; wc.lpfnWndProc = DimProc; wc.hInstance = g_inst; wc.lpszClassName = L"DesignPeekDim"; wc.hCursor = LoadCursor(nullptr, IDC_ARROW); RegisterClassW(&wc); reg = true; }
+    if (!reg) { WNDCLASSW wc = {}; wc.lpfnWndProc = DimProc; wc.hInstance = g_inst; wc.lpszClassName = L"VizuDim"; wc.hCursor = LoadCursor(nullptr, IDC_ARROW); RegisterClassW(&wc); reg = true; }
     MONITORINFO mi = {sizeof(mi)};
     GetMonitorInfoW(mon, &mi);
     RECT r = mi.rcWork; // a barra de tarefas continua visível
-    HWND h = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_LAYERED, L"DesignPeekDim", L"", WS_POPUP, r.left, r.top, r.right - r.left, r.bottom - r.top, nullptr, nullptr, g_inst, nullptr);
+    HWND h = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_LAYERED, L"VizuDim", L"", WS_POPUP, r.left, r.top, r.right - r.left, r.bottom - r.top, nullptr, nullptr, g_inst, nullptr);
     if (!h) return nullptr;
     // vidro escuro: desfoque "acrylic" com preto a 70%; sem ele, só o preto translúcido
     struct AccentPolicy { int state, flags; DWORD color; int anim; };
@@ -2797,7 +2797,7 @@ static void OpenSettings() {
     g_setHot = 0;
     if (g_dimWnd) DestroyWindow(g_dimWnd);
     g_dimWnd = ShowDim(mon);
-    g_settingsWnd = CreateWindowExW(WS_EX_APPWINDOW, L"DesignPeekSettings", T(L"Vizu — Configurações", L"Vizu — Settings", L"Vizu — Configuración"), WS_POPUP | WS_MINIMIZEBOX | WS_SYSMENU,
+    g_settingsWnd = CreateWindowExW(WS_EX_APPWINDOW, L"VizuSettings", T(L"Vizu — Configurações", L"Vizu — Settings", L"Vizu — Configuración"), WS_POPUP | WS_MINIMIZEBOX | WS_SYSMENU,
                                     mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - w) / 2, mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - h) / 2,
                                     w, h, g_dimWnd, nullptr, g_inst, nullptr); // o fundo escuro é o dono: a janela fica sempre por cima dele
     ui::EnableGlass(g_settingsWnd, g_theme.dark);
@@ -2812,6 +2812,10 @@ static std::wstring StartupLink() {
     std::wstring lnk = std::wstring(startup) + L"\\Vizu.lnk";
     CoTaskMemFree(startup);
     return lnk;
+}
+static HWND FindRunning() { // Vizu atual ou uma versão antiga (janela com o nome anterior)
+    if (HWND w = FindWindowW(L"VizuWnd", nullptr)) return w;
+    return FindWindowW(L"DesignPeekWnd", nullptr);
 }
 static std::wstring OldLink(const std::wstring& lnk) { return lnk.substr(0, lnk.size() - 8) + L"DesignPeek.lnk"; } // atalho das versões antigas
 static bool AutostartEnabled() {
@@ -2944,7 +2948,7 @@ static const wchar_t* kNewExt = L"Software\\Classes\\.0pastapadraomaker";
 static const wchar_t* kNewExtOld = L"Software\\Classes\\.designpeekfolders"; // v6
 static const wchar_t* kNewProgId = L"Software\\Classes\\DesignThumbs.PastaPadraoMaker";
 
-// Entrada no menu Novo do Explorer (por usuário). O Explorer chama "DesignPeek.exe /newfolders <arquivo novo>".
+// Entrada no menu Novo do Explorer (por usuário). O Explorer chama "Vizu.exe /newfolders <arquivo novo>".
 static void SetNewMenu(bool on) {
     RegDeleteTreeW(HKEY_CURRENT_USER, kNewExt);
     RegDeleteTreeW(HKEY_CURRENT_USER, kNewExtOld);
@@ -3123,7 +3127,7 @@ static void CleanTemp() {
         SHEmptyRecycleBinW(nullptr, nullptr, SHERB_NOCONFIRMATION);
 }
 
-// Diagnóstico: "DesignPeek.exe /diag arquivo" mostra, passo a passo, como o arquivo é lido.
+// Diagnóstico: "Vizu.exe /diag arquivo" mostra, passo a passo, como o arquivo é lido.
 static void Diagnose(const std::wstring& path) {
     std::wstring r;
     wchar_t t[512];
@@ -3177,7 +3181,7 @@ static void Diagnose(const std::wstring& path) {
     MessageBoxW(nullptr, r.c_str(), L"Vizu — diagnóstico", MB_OK | MB_ICONINFORMATION);
 }
 
-// ---------- instalação (o próprio DesignPeek.exe é o instalador; a DLL vai embutida) ----------
+// ---------- instalação (o próprio Vizu.exe é o instalador; a DLL vai embutida) ----------
 // Sem derrubar o Explorer: DLL/EXE em uso são renomeados para *.old e apagados depois.
 
 static const wchar_t* kUninstKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DesignThumbs";
@@ -3225,7 +3229,7 @@ static bool CallDll(const std::wstring& dll, const char* fn) {
 }
 
 static void QuitRunning() {
-    if (HWND w = FindWindowW(L"DesignPeekWnd", nullptr)) {
+    if (HWND w = FindRunning()) {
         DWORD pid = 0; GetWindowThreadProcessId(w, &pid);
         HANDLE p = OpenProcess(SYNCHRONIZE, FALSE, pid);
         PostMessage(w, WM_CLOSE, 0, 0);
@@ -3260,11 +3264,12 @@ static bool InstallFiles(int edition, const installui::Progress& progress, std::
     WriteDword(L"Edition", (DWORD)edition); // antes do /autostart (menu Novo depende da edição)
     WriteDword(L"VectorConverterInstalled", vectors ? 1 : 0);
     progress(65, T(L"Instalando arquivos e miniaturas…",L"Installing files and thumbnails…",L"Instalando archivos y miniaturas…"));
-    std::wstring exe = dir + L"\\DesignPeek.exe", dll = dir + L"\\DesignThumbs.dll";
+    std::wstring exe = dir + L"\\Vizu.exe", dll = dir + L"\\DesignThumbs.dll";
     HRSRC r = FindResourceW(nullptr, MAKEINTRESOURCEW(2), RT_RCDATA);
     HGLOBAL g = r ? LoadResource(nullptr, r) : nullptr;
     bool ok = g && ReplaceFile(dll, LockResource(g), SizeofResource(nullptr, r)) && ReplaceFile(exe, nullptr, 0, SelfPath());
     DeleteFileW((dir + L"\\Uninstall.exe").c_str()); // sobra do instalador antigo
+    DeleteFileW((dir + L"\\DesignPeek.exe").c_str()); // nome da versão antiga (9.8.2 e anteriores)
     ok = ok && CallDll(dll, "DllRegisterServer");
     if (!ok) {
         error = T(L"Não foi possível instalar os arquivos do Vizu.", L"Could not install Vizu files.", L"No se pudieron instalar los archivos de Vizu.");
@@ -3296,7 +3301,7 @@ static bool InstallFiles(int edition, const installui::Progress& progress, std::
 }
 
 static void StartInstalledApp(bool settings) {
-    std::wstring command = L"\"" + InstallDir() + L"\\DesignPeek.exe\"" + (settings ? L" /settings" : L"");
+    std::wstring command = L"\"" + InstallDir() + L"\\Vizu.exe\"" + (settings ? L" /settings" : L"");
     STARTUPINFOW si = {sizeof(si)}; PROCESS_INFORMATION pi = {};
     if(CreateProcessW(nullptr, &command[0], nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {CloseHandle(pi.hProcess);CloseHandle(pi.hThread);}
 }
@@ -3344,13 +3349,13 @@ static int Uninstall(bool silent, bool ask) {
     RegDeleteTreeW(HKEY_CURRENT_USER, kUninstKey);
     // Arquivos em uso (a DLL no Explorer e este EXE) vão para a pasta temporária; a pasta do programa some.
     wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp);
-    for (const wchar_t* f : {L"DesignThumbs.dll", L"DesignPeek.exe"}) {
+    for (const wchar_t* f : {L"DesignThumbs.dll", L"Vizu.exe", L"DesignPeek.exe"}) { // DesignPeek.exe: sobra da versão antiga
         std::wstring src = dir + L"\\" + f;
         if (!DeleteFileW(src.c_str()))
             MoveFileExW(src.c_str(), (std::wstring(tmp) + L"DesignThumbs-" + std::to_wstring(GetTickCount()) + L"-" + f + L".old").c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED);
     }
     CleanupOld(dir);
-    for (const wchar_t* f : {L"DesignPeek.ico", L"diagnostico.bat", L"README.md", L"Uninstall.exe"}) DeleteFileW((dir + L"\\" + f).c_str());
+    for (const wchar_t* f : {L"Vizu.ico", L"DesignPeek.ico", L"diagnostico.bat", L"README.md", L"Uninstall.exe"}) DeleteFileW((dir + L"\\" + f).c_str());
     RemoveDirectoryW(dir.c_str());
     if (!silent) MessageBoxW(nullptr, T(L"Vizu removido.", L"Vizu removed.", L"Vizu eliminado."), L"Vizu", MB_ICONINFORMATION);
     return 0;
@@ -3411,7 +3416,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
         return 0;
     }
     if (args.find(L"/quit") != std::wstring::npos) { // encerra a instância em execução
-        if (HWND w = FindWindowW(L"DesignPeekWnd", nullptr)) PostMessage(w, WM_CLOSE, 0, 0);
+        if (HWND w = FindRunning()) PostMessage(w, WM_CLOSE, 0, 0);
         return 0;
     }
     size_t wp = args.find(L"/waitpid ");
@@ -3420,9 +3425,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
         if (old) { WaitForSingleObject(old, 8000); CloseHandle(old); }
         args.erase(wp);
     }
-    CreateMutexW(nullptr, TRUE, L"DesignPeek.SingleInstance");
+    CreateMutexW(nullptr, TRUE, L"Vizu.SingleInstance");
     if (GetLastError() == ERROR_ALREADY_EXISTS) { // já rodando: abrir de novo = abrir as configurações
-        if (HWND w = FindWindowW(L"DesignPeekWnd", nullptr)) { AllowSetForegroundWindow(ASFW_ANY); PostMessage(w, WM_OPEN_SETTINGS, 0, 0); }
+        if (HWND w = FindRunning()) { AllowSetForegroundWindow(ASFW_ANY); PostMessage(w, WM_OPEN_SETTINGS, 0, 0); }
         return 0;
     }
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -3438,21 +3443,21 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     wc.lpfnWndProc = WndProc;
     wc.hInstance = inst;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.lpszClassName = L"DesignPeekWnd";
+    wc.lpszClassName = L"VizuWnd";
     RegisterClassW(&wc);
     wc.style = 0;
-    wc.lpfnWndProc = AltProc; wc.lpszClassName = L"DesignPeekAlt"; RegisterClassW(&wc);
-    wc.lpfnWndProc = ToastProc; wc.lpszClassName = L"DesignPeekToast"; RegisterClassW(&wc);
-    wc.lpfnWndProc = DialogProc; wc.lpszClassName = L"DesignPeekDialog"; RegisterClassW(&wc);
-    wc.lpfnWndProc = CropProc; wc.lpszClassName = L"DesignPeekCrop"; RegisterClassW(&wc);
-    wc.lpfnWndProc = SettingsProc; wc.lpszClassName = L"DesignPeekSettings";
+    wc.lpfnWndProc = AltProc; wc.lpszClassName = L"VizuAlt"; RegisterClassW(&wc);
+    wc.lpfnWndProc = ToastProc; wc.lpszClassName = L"VizuToast"; RegisterClassW(&wc);
+    wc.lpfnWndProc = DialogProc; wc.lpszClassName = L"VizuDialog"; RegisterClassW(&wc);
+    wc.lpfnWndProc = CropProc; wc.lpszClassName = L"VizuCrop"; RegisterClassW(&wc);
+    wc.lpfnWndProc = SettingsProc; wc.lpszClassName = L"VizuSettings";
     wc.hIcon = LoadIcon(inst, MAKEINTRESOURCE(1)); // ícone do programa
     RegisterClassW(&wc);
 
     DWORD exStyle = WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE;
-    g_wnd = CreateWindowExW(exStyle, L"DesignPeekWnd", L"Vizu", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
-    g_altWnd = CreateWindowExW(exStyle | WS_EX_LAYERED, L"DesignPeekAlt", L"Vizu", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
-    g_toastWnd = CreateWindowExW(exStyle, L"DesignPeekToast", L"Vizu", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
+    g_wnd = CreateWindowExW(exStyle, L"VizuWnd", L"Vizu", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
+    g_altWnd = CreateWindowExW(exStyle | WS_EX_LAYERED, L"VizuAlt", L"Vizu", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
+    g_toastWnd = CreateWindowExW(exStyle, L"VizuToast", L"Vizu", WS_POPUP, 0, 0, 100, 100, nullptr, nullptr, inst, nullptr);
     g_uiFont = ReadStr(L"UiFont", L"");
     ApplyTheme(); // vidro + tema
     ClockLoad();
