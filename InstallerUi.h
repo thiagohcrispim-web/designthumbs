@@ -42,7 +42,7 @@ struct Window {
             return hot == id;
         };
         ui::Brand(rt, theme, 32*s, 30*s, 38*s);
-        p.Text(L"v9.8.4", rect(width-130,32,width-32,62), 13, theme.text2, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_TEXT_ALIGNMENT_TRAILING);
+        p.Text(L"v9.8.5", rect(width-130,32,width-32,62), 13, theme.text2, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_TEXT_ALIGNMENT_TRAILING);
         if (page == 0) {
             p.Text(installed ? T(L"Seu Vizu, atualizado.",L"Your Vizu, updated.",L"Tu Vizu, actualizado.") : T(L"Veja seus arquivos de outro jeito.",L"See your files in a new way.",L"Mira tus archivos de otra forma."), rect(32,105,width-32,147), 25, theme.text, DWRITE_FONT_WEIGHT_BOLD);
             p.Paragraph(T(L"Miniaturas, prévias e ferramentas para o seu dia a dia.",L"Thumbnails, previews and tools for your everyday work.",L"Miniaturas, vistas previas y herramientas para tu día a día."), 32*s,157*s,w-64*s,13,theme.text2);
