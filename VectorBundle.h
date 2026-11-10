@@ -3,7 +3,9 @@
 #pragma once
 #include "VectorConvert.h"
 #include <bcrypt.h>
-#include <urlmon.h>
+#include <winhttp.h>
+#include <atomic>
+#include <functional>
 
 namespace vbundle {
 static const wchar_t* kUrl = L"https://media.inkscape.org/dl/resources/file/inkscape-1.4.2_2025-05-13_f4327f4-x64.7z";
@@ -27,6 +29,79 @@ inline std::string FileSha256(const std::wstring& path) {
     CloseHandle(f);
     return hex;
 }
+// Progresso e cancelamento do download do motor.
+using Progress = std::function<void(unsigned long long got, unsigned long long total, double bytesPerSec)>;
+inline std::atomic<bool>& Cancel() { static std::atomic<bool> flag{false}; return flag; }
+// Texto do progresso: "42 MB de 99 MB · 3,1 MB/s · ~20 s".
+inline std::wstring Status(unsigned long long got, unsigned long long total, double bps) {
+    auto mb = [](unsigned long long bytes) { return std::to_wstring((bytes + 524288) / 1048576); };
+    unsigned long long tenths = (unsigned long long)(bps / 104857.6 + 0.5); // MB/s com uma casa decimal
+    std::wstring text = L"Baixando o motor vetorial · " + mb(got) + L" MB de " + mb(total) + L" MB · " +
+        std::to_wstring(tenths / 10) + L"," + std::to_wstring(tenths % 10) + L" MB/s";
+    if (total > got && bps > 1) {
+        unsigned long long s = (unsigned long long)((total - got) / bps);
+        text += s >= 90 ? L" · ~" + std::to_wstring(s / 60) + L" min" : L" · ~" + std::to_wstring(s) + L" s";
+    }
+    return text;
+}
+// Baixa com progresso real. Retoma de onde parou (HTTP Range) e tenta de novo em falhas de rede.
+inline bool Fetch(const std::wstring& url, const std::wstring& dest, const Progress& onProgress, std::wstring& error) {
+    URL_COMPONENTS u = {sizeof(u)}; wchar_t host[256] = {}, path[2048] = {};
+    u.lpszHostName = host; u.dwHostNameLength = ARRAYSIZE(host); u.lpszUrlPath = path; u.dwUrlPathLength = ARRAYSIZE(path);
+    if (!WinHttpCrackUrl(url.c_str(), (DWORD)url.size(), 0, &u)) { error = L"Endereço do motor inválido."; return false; }
+    HINTERNET session = WinHttpOpen(L"Vizu-Installer", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!session) { error = L"Não foi possível iniciar a conexão de rede."; return false; }
+    WinHttpSetTimeouts(session, 15000, 15000, 30000, 60000);
+    HANDLE file = CreateFileW(dest.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    bool ok = false;
+    if (file == INVALID_HANDLE_VALUE) { WinHttpCloseHandle(session); error = L"Não foi possível gravar o motor vetorial."; return false; }
+    for (int attempt = 0; attempt < 4 && !ok && !Cancel(); ++attempt) {
+        if (attempt) Sleep(1500 * attempt);
+        LARGE_INTEGER size = {}; GetFileSizeEx(file, &size);
+        unsigned long long offset = (unsigned long long)size.QuadPart;
+        HINTERNET conn = WinHttpConnect(session, host, u.nPort, 0);
+        HINTERNET req = conn ? WinHttpOpenRequest(conn, L"GET", path, nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                                  u.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0) : nullptr;
+        std::wstring range = offset ? L"Range: bytes=" + std::to_wstring(offset) + L"-\r\n" : L"";
+        if (req && WinHttpSendRequest(req, range.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : range.c_str(), (DWORD)-1, nullptr, 0, 0, 0) && WinHttpReceiveResponse(req, nullptr)) {
+            DWORD status = 0, sz = sizeof(status);
+            WinHttpQueryHeaders(req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &status, &sz, WINHTTP_NO_HEADER_INDEX);
+            DWORD length = 0; sz = sizeof(length);
+            bool hasLength = WinHttpQueryHeaders(req, WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &length, &sz, WINHTTP_NO_HEADER_INDEX) != FALSE;
+            bool resumed = status == 206 && offset > 0;
+            if (status == 416 && offset > 0) { // o arquivo parcial já está completo ou inválido: recomeça
+                SetFilePointerEx(file, {}, nullptr, FILE_BEGIN); SetEndOfFile(file); offset = 0;
+            } else if (status == 200 || status == 206) {
+                if (!resumed) { SetFilePointerEx(file, {}, nullptr, FILE_BEGIN); SetEndOfFile(file); offset = 0; }
+                LARGE_INTEGER pos = {}; pos.QuadPart = (LONGLONG)offset; SetFilePointerEx(file, pos, nullptr, FILE_BEGIN);
+                unsigned long long total = hasLength ? offset + length : 0, got = offset;
+                std::vector<BYTE> buf(65536); DWORD n = 0; bool finished = false;
+                ULONGLONG last = GetTickCount64(), lastMark = last; unsigned long long lastGot = got;
+                while (!Cancel()) {
+                    if (!WinHttpReadData(req, buf.data(), (DWORD)buf.size(), &n)) break;
+                    if (n == 0) { finished = true; break; }
+                    DWORD written = 0;
+                    if (!WriteFile(file, buf.data(), n, &written, nullptr) || written != n) break;
+                    got += n;
+                    ULONGLONG now = GetTickCount64();
+                    if (now - last >= 400) {
+                        if (onProgress) onProgress(got, total, (got - lastGot) * 1000.0 / (double)(now - lastMark + 1));
+                        lastMark = now; lastGot = got; last = now;
+                    }
+                }
+                if (onProgress) onProgress(got, total, 0);
+                ok = finished && !Cancel() && (total == 0 || got == total);
+            }
+        }
+        if (req) WinHttpCloseHandle(req);
+        if (conn) WinHttpCloseHandle(conn);
+    }
+    CloseHandle(file); WinHttpCloseHandle(session);
+    if (Cancel()) error = L"Instalação cancelada.";
+    else if (!ok) error = L"Não foi possível baixar o motor vetorial (inkscape.org). Verifique a internet e tente de novo, ou instale a edição Vizu.";
+    return ok;
+}
+
 // Motor já instalado na versão certa? (atualizações não baixam nem extraem de novo)
 inline bool Current(const std::wstring& root) {
     std::string marker;
@@ -82,17 +157,20 @@ inline std::wstring Unique(const std::wstring& root, const wchar_t* prefix) {
     StringFromGUID2(id, name, ARRAYSIZE(name));
     return Full(root) + L"\\" + prefix + name;
 }
-inline bool Prepare(const std::wstring& root, std::wstring& staging, std::wstring& error) {
+inline bool Prepare(const std::wstring& root, std::wstring& staging, std::wstring& error, const Progress& onProgress = nullptr) {
     staging = Unique(root, L"vector-engine-stage-");
     if (staging.empty() || !Owned(root, staging) || !CreateDirectoryW(staging.c_str(), nullptr)) {
         error = L"Não foi possível preparar a pasta do motor vetorial."; return false;
     }
     auto fail = [&]() { Remove(root, staging); staging.clear(); return false; };
     std::wstring archive = staging + L"\\engine.7z";
-    if (FAILED(URLDownloadToFileW(nullptr, kUrl, archive.c_str(), 0, nullptr))) {
-        error = L"Não foi possível baixar o motor vetorial (inkscape.org). Verifique a internet e tente de novo, ou instale a edição Vizu."; return fail();
+    // Integridade: se o arquivo baixado não confere, descarta e baixa de novo uma vez.
+    for (int pass = 0; pass < 2; ++pass) {
+        if (!Fetch(kUrl, archive, onProgress, error)) return fail();
+        if (FileSha256(archive) == kSha256) break;
+        DeleteFileW(archive.c_str());
+        if (pass == 1) { error = L"O motor vetorial baixado não confere com a assinatura esperada (SHA-256). Instalação recusada."; return fail(); }
     }
-    if (FileSha256(archive) != kSha256) { error = L"O motor vetorial baixado não confere com a assinatura esperada (SHA-256). Instalação recusada."; return fail(); }
     wchar_t system[32768] = {}; GetSystemDirectoryW(system, ARRAYSIZE(system));
     std::wstring log;
     if (!vec::Run(std::wstring(system) + L"\\tar.exe", {L"-xf", archive, L"-C", staging}, staging + L"\\install.log", log, error, 300000)) {
@@ -144,14 +222,14 @@ inline bool Cleanup(const std::wstring& root, bool uninstall) {
     }
     return ok;
 }
-inline bool Configure(const std::wstring& root, bool enabled, std::wstring& error) {
+inline bool Configure(const std::wstring& root, bool enabled, std::wstring& error, const Progress& onProgress = nullptr) {
     if (!enabled) {
         if (!Cleanup(root, true)) { error = L"Não foi possível remover o conversor anterior. Feche os processos de conversão e tente novamente."; return false; }
         return true;
     }
     if (Current(root)) { Cleanup(root, false); return true; }
     std::wstring staging;
-    if (!Prepare(root, staging, error)) return false;
+    if (!Prepare(root, staging, error, onProgress)) return false;
     if (!Commit(root, staging, error)) { Remove(root, staging); return false; }
     Cleanup(root, false);
     return true;

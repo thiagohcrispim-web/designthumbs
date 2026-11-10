@@ -2,6 +2,7 @@
 #pragma once
 #include "Ui.h"
 #include "I18n.h"
+#include <atomic>
 #include <functional>
 #include <mutex>
 #include <thread>
@@ -16,6 +17,7 @@ struct Window {
     ui::Surface surface;
     ui::Theme theme;
     Work work;
+    std::atomic<bool>* cancel = nullptr; // pedido de cancelamento do download
     std::thread worker;
     std::mutex mutex;
     int edition = 1; // 0 Lite, 1 Vizu, 2 Ultra
@@ -40,7 +42,7 @@ struct Window {
             return hot == id;
         };
         ui::Brand(rt, theme, 32*s, 30*s, 38*s);
-        p.Text(L"v9.8.3", rect(width-130,32,width-32,62), 13, theme.text2, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_TEXT_ALIGNMENT_TRAILING);
+        p.Text(L"v9.8.4", rect(width-130,32,width-32,62), 13, theme.text2, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_TEXT_ALIGNMENT_TRAILING);
         if (page == 0) {
             p.Text(installed ? T(L"Seu Vizu, atualizado.",L"Your Vizu, updated.",L"Tu Vizu, actualizado.") : T(L"Veja seus arquivos de outro jeito.",L"See your files in a new way.",L"Mira tus archivos de otra forma."), rect(32,105,width-32,147), 25, theme.text, DWRITE_FONT_WEIGHT_BOLD);
             p.Paragraph(T(L"Miniaturas, prévias e ferramentas para o seu dia a dia.",L"Thumbnails, previews and tools for your everyday work.",L"Miniaturas, vistas previas y herramientas para tu día a día."), 32*s,157*s,w-64*s,13,theme.text2);
@@ -85,6 +87,7 @@ struct Window {
                 p.Fill(rect(32,293,32+(width-64)*value/100.0f,303),5*s,theme.accent);
                 p.Text(std::to_wstring(value)+L"%",rect(32,319,width-32,350),13,theme.text2,DWRITE_FONT_WEIGHT_MEDIUM,DWRITE_TEXT_ALIGNMENT_TRAILING);
                 p.Text(T(L"Estamos preparando tudo para você.",L"We're getting everything ready for you.",L"Estamos preparando todo para ti."),rect(32,461,width-32,490),12,theme.text2);
+                p.Pill(rect(32,493,132,539),T(L"Cancelar",L"Cancel",L"Cancelar"),hit(3,rect(32,493,132,539)));
             } else {
                 p.Paragraph(success?T(L"Selecione um arquivo no Explorer e aperte Espaço para visualizar. Segure Alt para acessar as ferramentas.",L"Select a file in Explorer and press Space to preview. Hold Alt to access tools.",L"Selecciona un archivo en el Explorador y pulsa Espacio para verlo. Mantén Alt para acceder a las herramientas."):error.substr(0,500),32*s,204*s,w-64*s,14,theme.text2);
                 if(success) p.Text(edition==2?T(L"Vizu Ultra instalado, com o conversor vetorial.",L"Vizu Ultra installed, with the vector converter.",L"Vizu Ultra instalado, con el conversor vectorial."):edition==0?T(L"Vizu Lite instalado.",L"Vizu Lite installed.",L"Vizu Lite instalado."):T(L"Vizu instalado.",L"Vizu installed.",L"Vizu instalado."),rect(32,373,width-32,410),13,theme.text);
@@ -98,7 +101,7 @@ struct Window {
         surface.End();
     }
     void Action(int id) {
-        if(page==1) return;
+        if(page==1) { if(id==3 && cancel) cancel->store(true); return; }
         if(page==2) { if(id==2) DestroyWindow(hwnd); return; }
         if(id>=10 && id<=12) { edition=id-10; InvalidateRect(hwnd,nullptr,FALSE); }
         if(id==3 || id==4) { result=id==4?3:0; DestroyWindow(hwnd); }

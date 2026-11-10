@@ -159,6 +159,7 @@ https://docs.github.com/site-policy/privacy-policies/github-general-privacy-stat
 <details>
 <summary><b>Histórico de versões</b></summary>
 
+- **v9.8.4** — Download do motor vetorial (Ultra) com progresso real: MB, velocidade e tempo restante. Retoma de onde parou se a conexão cair e permite cancelar.
 - **v9.8.3** — Renomeado para Vizu: executável `Vizu.exe`, instalador `Vizu-Setup.exe` e repositório `vizu`.
 - **v9.8.2** — Correções do conta-gotas: textos "Sugestão:" traduzidos; busca PANTONE mantém o resultado exato.
 - **v9.8.1** — Conta-gotas mostra, embaixo do HEX, o **CMYK** (perfil de impressão do Windows) e o **PANTONE** Coated mais

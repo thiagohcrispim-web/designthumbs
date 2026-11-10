@@ -3259,8 +3259,13 @@ static bool InstallFiles(int edition, const installui::Progress& progress, std::
         error = T(L"Não foi possível criar a pasta do Vizu.",L"Could not create the Vizu folder.",L"No se pudo crear la carpeta de Vizu."); return false;
     }
     QuitRunning();
-    progress(10, vectors ? T(L"Baixando o motor vetorial (cerca de 100 MB)…",L"Downloading the vector engine (about 100 MB)…",L"Descargando el motor vectorial (unos 100 MB)…") : T(L"Preparando os arquivos do Vizu…",L"Preparing Vizu files…",L"Preparando los archivos de Vizu…"));
-    if (!vbundle::Configure(dir, vectors, error)) return false;
+    progress(10, vectors ? T(L"Preparando o motor vetorial…",L"Preparing the vector engine…",L"Preparando el motor vectorial…") : T(L"Preparando os arquivos do Vizu…",L"Preparing Vizu files…",L"Preparando los archivos de Vizu…"));
+    vbundle::Cancel().store(false);
+    bool engineReady = vbundle::Configure(dir, vectors, error, [&progress](unsigned long long got, unsigned long long total, double bps) {
+        int pct = total ? 10 + (int)(60.0 * got / total) : 10;
+        progress(pct, vbundle::Status(got, total, bps));
+    });
+    if (!engineReady) return false;
     WriteDword(L"Edition", (DWORD)edition); // antes do /autostart (menu Novo depende da edição)
     WriteDword(L"VectorConverterInstalled", vectors ? 1 : 0);
     progress(65, T(L"Instalando arquivos e miniaturas…",L"Installing files and thumbnails…",L"Instalando archivos y miniaturas…"));
@@ -3326,6 +3331,7 @@ static int Install(bool silent) {
     ui.edition=(int)vec::Edition();
     ui.theme=ui::MakeTheme(ReadDword(L"Theme2",ui::kThemeClassic),false);
     ui.work=InstallFiles;
+    ui.cancel=&vbundle::Cancel();
     int result=ui.Show(g_inst);
     if(result==3) return Uninstall(false,false);
     if(result==2) StartInstalledApp(true);
