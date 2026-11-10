@@ -3,8 +3,8 @@
 1 24 "DesignPeek.manifest"
 2 RCDATA "DesignThumbs.dll"
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 9,8,1,0
-PRODUCTVERSION 9,8,1,0
+FILEVERSION 9,8,2,0
+PRODUCTVERSION 9,8,2,0
 FILEOS VOS_NT_WINDOWS32
 FILETYPE VFT_APP
 BEGIN
@@ -14,12 +14,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "Thiago Crispim"
       VALUE "FileDescription", "Vizu"
-      VALUE "FileVersion", "9.8.1"
+      VALUE "FileVersion", "9.8.2"
       VALUE "InternalName", "DesignPeek"
       VALUE "OriginalFilename", "DesignPeek.exe"
       VALUE "LegalCopyright", "MIT License - Thiago Crispim"
       VALUE "ProductName", "Vizu"
-      VALUE "ProductVersion", "9.8.1"
+      VALUE "ProductVersion", "9.8.2"
     END
   END
   BLOCK "VarFileInfo"

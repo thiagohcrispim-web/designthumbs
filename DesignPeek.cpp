@@ -971,9 +971,10 @@ static void Paint() {
     if (g_cfg.picker && g_pickOn && !g_dragging) {
         std::wstring hex = HexOf(g_pickColor);
         const cinfo::Info& ci = cinfo::For(g_pickColor);
-        std::wstring pms = ci.pantone.empty() ? std::wstring(T(L"≈ PANTONE: sem equivalente próximo", L"≈ PANTONE: no close match", L"≈ PANTONE: sin equivalente cercano"))
-                                              : L"≈ PANTONE " + ci.pantone;
-        float tw = max(p.Measure(hex, 12, DWRITE_FONT_WEIGHT_SEMI_BOLD), max(p.Measure(ci.cmyk, 11), p.Measure(pms, 11)));
+        const wchar_t* lead = T(L"Sugestão: ", L"Suggestion: ", L"Sugerencia: ");
+        std::wstring cmykLine = lead + ci.cmyk;
+        std::wstring pmsLine = lead + (ci.pantone.empty() ? std::wstring(T(L"PANTONE sem equivalente próximo", L"no close PANTONE match", L"sin PANTONE cercano")) : L"PANTONE " + ci.pantone);
+        float tw = max(p.Measure(hex, 12, DWRITE_FONT_WEIGHT_SEMI_BOLD), max(p.Measure(cmykLine, 11), p.Measure(pmsLine, 11)));
         float pw = tw + 48 * s, ph = 62 * s;
         float px = min(g_pickPt.x + 18 * s, size.width - pw - 8 * s), py = min(g_pickPt.y + 18 * s, size.height - ph - 8 * s);
         D2D1_RECT_F pr = D2D1::RectF(px, py, px + pw, py + ph);
@@ -983,8 +984,8 @@ static void Paint() {
         p.Fill(dot, 9 * s, D2D1::ColorF(GetRValue(g_pickColor) / 255.0f, GetGValue(g_pickColor) / 255.0f, GetBValue(g_pickColor) / 255.0f));
         p.Stroke(dot, 9 * s, th.stroke);
         p.Text(hex, D2D1::RectF(px + 36 * s, py + 6 * s, pr.right - 8 * s, py + 30 * s), 12, th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD);
-        p.Text(ci.cmyk, D2D1::RectF(px + 36 * s, py + 27 * s, pr.right - 8 * s, py + 43 * s), 11, th.text2);
-        p.Text(pms, D2D1::RectF(px + 36 * s, py + 42 * s, pr.right - 8 * s, py + 58 * s), 11, th.text2);
+        p.Text(cmykLine, D2D1::RectF(px + 36 * s, py + 27 * s, pr.right - 8 * s, py + 43 * s), 11, th.text2);
+        p.Text(pmsLine, D2D1::RectF(px + 36 * s, py + 42 * s, pr.right - 8 * s, py + 58 * s), 11, th.text2);
     }
 
     // barra de cima: engrenagem, nome, zoom/página
