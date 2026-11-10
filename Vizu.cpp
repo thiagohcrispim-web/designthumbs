@@ -2321,7 +2321,7 @@ static bool AutostartEnabled();
 
 enum { kTogSpace = 1, kTogAlt, kDelayMinus, kDelayPlus, kDpi72, kDpi300, kPdfSmall, kPdfRaw, kQualMinus, kQualPlus, kTogAuto, kBtnFolder, kBtnQuit, kBtnClose,
        kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate, kTheme0, kTheme1, kTheme2, kTheme3, kWebpMinus, kWebpPlus, kTogTray, kTogTempDel, kNeon0, kNeon1, kNeon2, kNeon3, kNeon4, kNeon5, kNeonRgb,
-       kClockOn, kClockFont, kPomoT0, kPomoT1, kPomoT2, kPomoC0, kPomoC1, kPomoC2, kPomoC3, kTheftHist, kUiFont, kOcrOn, kOcrKeep, kOcrJoin, kOcrLang, kClk100, kClk90, kClk70, kClockDock, kSte, kTheme4, kTheftOn, kFocoOn, kAgendaOn, kVecText, kVecCurves };
+       kClockOn, kClockFont, kPomoT0, kPomoT1, kPomoT2, kPomoC0, kPomoC1, kPomoC2, kPomoC3, kTheftHist, kUiFont, kOcrOn, kOcrKeep, kOcrJoin, kOcrLang, kClk100, kClk90, kClk70, kClockDock, kSte, kTheme4, kTheftOn, kFocoOn, kAgendaOn, kVecText, kVecCurves, kSysToggle, kGmailOff };
 static const UINT kNeonPresets[6] = {0xFF6633, 0xFF2D95, 0x00E5FF, 0xB6FF3B, 0xA855F7, 0xFFD400};
 
 
@@ -2371,6 +2371,7 @@ static const wchar_t* kAboutEs =
 static std::vector<std::pair<int, D2D1_RECT_F>> g_setHits;
 static int g_setHot;
 static float g_setScroll, g_setContentH;
+static bool g_sysOpen = false; // SISTEMA começa recolhido
 
 static void SettingsAction(int id) {
     switch (id) {
@@ -2448,6 +2449,7 @@ static void SettingsAction(int id) {
         i18n::Load();
         return;
     }
+    case kSysToggle: g_sysOpen = !g_sysOpen; return;
     case kBtnClose: DestroyWindow(g_settingsWnd); return;
     default: return;
     }
@@ -2556,8 +2558,8 @@ static void PaintSettings(HWND h) {
     if (vec::Available()) rows.insert(rows.begin()+4, {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Texto em SVG / EPS", L"Text in SVG / EPS", L"Texto en SVG / EPS"), T(L"CDR/SVG: instale as fontes originais", L"CDR/SVG: install the original fonts", L"CDR/SVG: instala las fuentes originales")); rseg(r, 240 * s, {T(L"Editável", L"Editable", L"Editable"), T(L"Em curvas", L"As paths", L"En curvas")}, g_cfg.vectorTextPaths ? 1 : 0, kVecText); }});
     drawCard(rows);
 
-    // OUTROS: Relógio, OCR, Pastas Padrão Vizu, Limpeza
-    section(T(L"OUTROS", L"OTHER", L"OTROS"));
+    // TEMPO: Relógio (com opções) e Agenda
+    section(T(L"TEMPO", L"TIME", L"TIEMPO"));
     rows.clear();
     rows.push_back({RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Ativar Relógio", L"Enable Clock", L"Activar Reloj"), T(L"Relógio na área de trabalho", L"Desktop clock", L"Reloj en el escritorio")); rtoggle(kClockOn, r, g_clock.on); }});
     if (g_clock.on) {
@@ -2572,9 +2574,9 @@ static void PaintSettings(HWND h) {
             rows.push_back({SH, 2, [&](D2D1_RECT_F r) { rlabel(r, T(L"Tempos", L"Times", L"Tiempos"), T(L"Foco · pausa · pausa longa (min)", L"Focus · break · long break (min)", L"Enfoque · pausa · pausa larga (min)")); rseg(r, 270 * s, {L"25 · 5 · 15", L"50 · 10 · 20", L"15 · 3 · 10"}, (int)g_clock.pomoTimes, kPomoT0); }});
             rows.push_back({SH, 2, [&](D2D1_RECT_F r) {
                 rlabel(r, T(L"Cores do Pomodoro", L"Pomodoro colors", L"Colores del Pomodoro"), T(L"Foco / pausa", L"Focus / break", L"Enfoque / pausa"));
-                D2D1_RECT_F box = rbox(r, 4 * 50 * s);
+                D2D1_RECT_F box = rbox(r, 3 * 50 * s);
                 float cy = (box.top + box.bottom) / 2;
-                for (int i = 0; i < 4; ++i) {
+                for (int i = 0; i < 3; ++i) {
                     float x0 = box.left + i * 50 * s + 6 * s;
                     D2D1_RECT_F all = D2D1::RectF(x0 - 4 * s, cy - 15 * s, x0 + 42 * s, cy + 15 * s);
                     bool h = hit(kPomoC0 + i, all), sel = (int)g_clock.pomoColors == i;
@@ -2585,11 +2587,24 @@ static void PaintSettings(HWND h) {
                 }
             }});
         }
-        rows.push_back({SH, 1, [&](D2D1_RECT_F r) { rlabel(r, T(L"Ativar Agenda", L"Enable Agenda", L"Activar Agenda"), T(L"Seu dia e avisos antes dos eventos", L"Your day and reminders before events", L"Tu día y avisos antes de los eventos")); rtoggle(kAgendaOn, r, g_clock.agendaOn); }});
     }
+    rows.push_back({RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Ativar Agenda", L"Enable Agenda", L"Activar Agenda"), T(L"Seu dia e avisos antes dos eventos", L"Your day and reminders before events", L"Tu día y avisos antes de los eventos")); rtoggle(kAgendaOn, r, g_clock.agendaOn); }});
+    if (g_clock.agendaOn)
+        rows.push_back({SH, 1, [&](D2D1_RECT_F r) { // "Conta Google": desativado por enquanto, só mostra o que virá
+            rlabel(r, T(L"Conta Google", L"Google account", L"Cuenta de Google"), T(L"Conecte para ver seus eventos", L"Connect to see your events", L"Conecta para ver tus eventos"));
+            D2D1_RECT_F b = rbox(r, 190 * s);
+            float rad = (b.bottom - b.top) / 2;
+            p.Fill(b, rad, ui::Rgba(0x2E333B));
+            p.Stroke(b, rad, ui::Rgba(0x3F444C));
+            p.Text(T(L"Conectar Gmail", L"Connect Gmail", L"Conectar Gmail"), b, 12.5f, ui::Rgba(0x5E6570), DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+        }});
+    drawCard(rows);
+
+    section(T(L"OUTROS", L"OTHER", L"OTROS"));
+    rows.clear();
     rows.push_back({RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Ativar OCR", L"Enable OCR", L"Activar OCR"), T(L"Lê o texto de qualquer área da tela · Ctrl+Alt+T", L"Reads text from any area of the screen · Ctrl+Alt+T", L"Lee el texto de cualquier área de la pantalla · Ctrl+Alt+T")); rtoggle(kOcrOn, r, g_clock.ocr); }});
     if (g_clock.ocr) {
-        rows.push_back({SH, 1, [&](D2D1_RECT_F r) { rlabel(r, T(L"Quebras de linha", L"Line breaks", L"Saltos de línea"), T(L"Ao copiar o texto lido", L"When copying the text", L"Al copiar el texto")); rseg(r, 200 * s, {T(L"Manter", L"Keep", L"Mantener"), T(L"Juntar", L"Join", L"Unir")}, ReadDword(L"OcrJoin", 0) ? 1 : 0, kOcrKeep); }});
+        rows.push_back({SH, 1, [&](D2D1_RECT_F r) { rlabel(r, T(L"Quebras de linha", L"Line breaks", L"Saltos de línea"), T(L"Ao copiar o texto lido", L"When copying the text", L"Al copiar el texto")); rseg(r, 200 * s, {T(L"Manter", L"Keep", L"Mantener"), T(L"Juntar", L"Join", L"Unir")}, ReadDword(L"OcrJoin", 1) ? 1 : 0, kOcrKeep); }});
         rows.push_back({SH, 1, [&](D2D1_RECT_F r) {
             static std::wstring langs; static bool got = false;
             if (!got) { got = true; for (auto& n : ocr::Languages()) langs += (langs.empty() ? L"" : L", ") + n; if (langs.empty()) langs = T(L"nenhum encontrado", L"none found", L"ninguno"); }
@@ -2605,16 +2620,35 @@ static void PaintSettings(HWND h) {
     drawCard(rows);
     } // !g_lite
 
-    // SISTEMA
-    section(T(L"SISTEMA", L"SYSTEM", L"SISTEMA"));
-    rows = {
-        {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Fonte da interface", L"Interface font", L"Fuente de la interfaz"), T(L"Qualquer fonte instalada no Windows", L"Any font installed in Windows", L"Cualquier fuente instalada en Windows")); rpill(r, kUiFont, g_uiFont.empty() ? std::wstring(DefaultUiFont()) : g_uiFont, 150 * s); }},
-        {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Iniciar com o Windows", L"Start with Windows", L"Iniciar con Windows"), nullptr); rtoggle(kTogAuto, r, AutostartEnabled()); }},
-        {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Ícone na área de notificação", L"Notification area icon", L"Icono en el área de notificación"), T(L"Reiniciar ou encerrar com um clique", L"Restart or quit in one click", L"Reiniciar o salir con un clic")); rtoggle(kTogTray, r, g_cfg.tray); }},
-        {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Idioma", L"Language", L"Idioma"), nullptr); rseg(r, 270 * s, {L"Português", L"English", L"Español"}, i18n::Current(), kLangPt); }},
-        {RH, 0, [&](D2D1_RECT_F r) { std::wstring ver = std::wstring(T(L"Versão ", L"Version ", L"Versión ")) + upd::kVersion; rlabel(r, T(L"Atualizar automaticamente", L"Update automatically", L"Actualizar automáticamente"), ver.c_str()); rtoggle(kTogUpdate, r, g_cfg.autoUpdate); }},
-    };
-    drawCard(rows);
+    // SISTEMA: recolhível (começa fechado), como um dropdown
+    {
+        D2D1_RECT_F hd = D2D1::RectF(x, y, x + w, y + 46 * s);
+        bool hh = hit(kSysToggle, hd);
+        p.Text(T(L"Sistema", L"System", L"Sistema"), D2D1::RectF(x + 10 * s, y + 6 * s, x + w - 40 * s, y + 26 * s), 13, th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+        if (!g_sysOpen) p.Text(T(L"5 ajustes (clique para expandir)", L"5 settings (click to expand)", L"5 ajustes (clic para expandir)"), D2D1::RectF(x + 10 * s, y + 26 * s, x + w - 40 * s, y + 44 * s), 11, th.text2);
+        D2D1_RECT_F chev = D2D1::RectF(x + w - 34 * s, y + 12 * s, x + w - 10 * s, y + 36 * s);
+        if (hh) p.Fill(D2D1::RectF(x, y, x + w, y + 46 * s), 10 * s, ui::Rgba(0xFFFFFF, 0.05f));
+        p.Feather(g_sysOpen ? "m18 15-6-6-6 6" : "m6 9 6 6 6-6", chev, 18 * s, th.text2, 1.5f);
+        y += 52 * s;
+    }
+    if (g_sysOpen) {
+        rows = {
+            {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Fonte da interface", L"Interface font", L"Fuente de la interfaz"), T(L"Qualquer fonte instalada no Windows", L"Any font installed in Windows", L"Cualquier fuente instalada en Windows")); rpill(r, kUiFont, g_uiFont.empty() ? std::wstring(DefaultUiFont()) : g_uiFont, 150 * s); }},
+            {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Iniciar com o Windows", L"Start with Windows", L"Iniciar con Windows"), nullptr); rtoggle(kTogAuto, r, AutostartEnabled()); }},
+            {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Ícone na área de notificação", L"Notification area icon", L"Icono en el área de notificación"), T(L"Reiniciar ou encerrar com um clique", L"Restart or quit in one click", L"Reiniciar o salir con un clic")); rtoggle(kTogTray, r, g_cfg.tray); }},
+            {RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Idioma", L"Language", L"Idioma"), nullptr); rseg(r, 270 * s, {L"Português", L"English", L"Español"}, i18n::Current(), kLangPt); }},
+            {RH, 0, [&](D2D1_RECT_F r) {
+                std::wstring ver = std::wstring(T(L"Versão ", L"Version ", L"Versión ")) + upd::kVersion;
+                rlabel(r, T(L"Atualizar automaticamente", L"Update automatically", L"Actualizar automáticamente"), ver.c_str());
+                D2D1_RECT_F tg = rbox(r, 46 * s, 26);
+                float cy = (tg.top + tg.bottom) / 2;
+                D2D1_RECT_F pb = D2D1::RectF(tg.left - 12 * s - 170 * s, cy - 15 * s, tg.left - 12 * s, cy + 15 * s);
+                p.Pill(pb, T(L"Procurar nova versão", L"Check for new version", L"Buscar nueva versión"), hit(kBtnUpdate, pb));
+                p.Toggle(tg, g_cfg.autoUpdate, hit(kTogUpdate, tg));
+            }},
+        };
+        drawCard(rows);
+    }
 
     // TEMAS: miniaturas
     section(T(L"TEMAS", L"THEMES", L"TEMAS"));
@@ -2659,16 +2693,6 @@ static void PaintSettings(HWND h) {
             }
         }});
     drawCard(rows);
-    y -= 10 * s;
-    {
-        float bw = (w - 20 * s) / 3;
-        D2D1_RECT_F b1 = D2D1::RectF(x, y, x + bw, y + 36 * s), b2 = D2D1::RectF(x + bw + 10 * s, y, x + 2 * bw + 10 * s, y + 36 * s),
-                    b3 = D2D1::RectF(x + 2 * bw + 20 * s, y, x + w, y + 36 * s);
-        p.Pill(b1, T(L"Pasta do programa", L"Program folder", L"Carpeta del programa"), hit(kBtnFolder, b1));
-        p.Pill(b2, T(L"Procurar atualização", L"Check for updates", L"Buscar actualización"), hit(kBtnUpdate, b2));
-        p.Pill(b3, T(L"Encerrar", L"Quit", L"Salir"), hit(kBtnQuit, b3));
-        y = b1.bottom + 22 * s;
-    }
 
     section(T(L"AGRADECIMENTO ESPECIAL", L"SPECIAL THANKS", L"AGRADECIMIENTO ESPECIAL"));
     {
@@ -2697,6 +2721,13 @@ static void PaintSettings(HWND h) {
         p.Glass(about, 16 * s);
         p.Paragraph(aboutText, x + 16 * s, y + 14 * s, w - 32 * s, 12, th.text2);
         y = about.bottom + 20 * s;
+    }
+    {
+        float bw = (w - 10 * s) / 2;
+        D2D1_RECT_F b1 = D2D1::RectF(x, y, x + bw, y + 36 * s), b2 = D2D1::RectF(x + bw + 10 * s, y, x + w, y + 36 * s);
+        p.Pill(b1, T(L"Pasta do programa", L"Program folder", L"Carpeta del programa"), hit(kBtnFolder, b1));
+        p.Pill(b2, T(L"Encerrar", L"Quit", L"Salir"), hit(kBtnQuit, b2));
+        y = b1.bottom + 22 * s;
     }
     g_setContentH = y + g_setScroll - top;
     rt->PopAxisAlignedClip();

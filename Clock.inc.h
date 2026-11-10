@@ -19,7 +19,7 @@ static std::wstring DataPath(const wchar_t* file) {
 }
 
 // Cores do Pomodoro: foco / pausa.
-static const UINT kPomoPairs[4][2] = {{0x34C759, 0xFF3B30}, {0x0A84FF, 0x8E8E93}, {0xB6FF3B, 0xA855F7}, {0xFF9F0A, 0x5AC8FA}};
+static const UINT kPomoPairs[3][2] = {{0x25D366, 0xE0245E}, {0x0A84FF, 0x8E8E93}, {0xB6FF3B, 0xA855F7}};
 static const int kPomoTimes[3][3] = {{25, 5, 15}, {50, 10, 20}, {15, 3, 10}}; // foco, pausa, pausa longa (min)
 
 struct ClockState {
@@ -243,7 +243,7 @@ static void ClockRender() {
     g_clock.s = s;
     float H = 64 * s, M = docked ? 0 : 14 * s, fpx = (float)g_clock.fontPx;
     bool pomo = g_clock.phase != 0;
-    UINT pc = kPomoPairs[min(3ul, (unsigned long)g_clock.pomoColors)][g_clock.phase == 1 ? 0 : 1];
+    UINT pc = kPomoPairs[min(2ul, (unsigned long)g_clock.pomoColors)][g_clock.phase == 1 ? 0 : 1];
 
     // largura fixa dos dígitos (nada pula quando o ":" pisca)
     float w2 = fpx * 1.2f * s, wc = fpx * 0.36f * s;
@@ -606,7 +606,7 @@ static void ClockLoad() {
     g_clock.font = ReadStr(L"ClockFont", L"Bahnschrift");
     g_clock.fontPx = max(18ul, min(96ul, (unsigned long)ReadDword(L"ClockSize", 38)));
     g_clock.pomoTimes = min(2ul, (unsigned long)ReadDword(L"PomoTimes", 0));
-    g_clock.pomoColors = min(3ul, (unsigned long)ReadDword(L"PomoColors", 0));
+    g_clock.pomoColors = min(2ul, (unsigned long)ReadDword(L"PomoColors", 0));
     g_clock.app = ReadStr(L"ClockApp", L"https://chatgpt.com");
     g_clock.ocr = ReadDword(L"OcrOn", 1) != 0;
     g_clock.theftOn = ReadDword(L"ClockTheft", 1) != 0;

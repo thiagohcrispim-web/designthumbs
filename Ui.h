@@ -77,7 +77,7 @@ inline Theme ClassicTheme() {
     t.text = Rgba(0xFFFFFF); t.text2 = Rgba(0xBCC2CC);
     t.accent = Rgba(0xFF6633); t.onAccent = Rgba(0x000000); t.danger = Rgba(0xFF6961);
     t.track = Rgba(0x23272E); t.knob = Rgba(0xBCC2CC); t.knobOn = Rgba(0x000000);
-    t.segFill = Rgba(0xFF6633); t.segText = Rgba(0x000000); t.icon = Rgba(0xFFFFFF);
+    t.segFill = Rgba(0xF2F2F2); t.segText = Rgba(0x1E2126); t.icon = Rgba(0xFFFFFF);
     t.glow = 0xFFFFFF; t.glowA = 0.05f;
     return t;
 }

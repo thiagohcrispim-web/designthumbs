@@ -344,7 +344,7 @@ static void ShowCard(const std::wstring& text, const std::wstring& lang, POINT a
     if (!reg) { WNDCLASSW wc = {}; wc.lpfnWndProc = CardProc; wc.hInstance = g_inst; wc.lpszClassName = L"DesignThumbsOcrCard"; RegisterClassW(&wc); reg = true; }
     g_card = OcrCard();
     g_card.original = text; g_card.lang = lang; g_card.anchor = anchor;
-    g_card.joined = ReadDword(L"OcrJoin", 0) != 0;
+    g_card.joined = ReadDword(L"OcrJoin", 1) != 0;
     g_card.shown = g_card.joined ? JoinLines(text) : text;
     g_card.status = std::wstring(T(L"Copiado", L"Copied", L"Copiado")) + (lang.empty() ? L"" : L" · " + LangName(lang));
     UINT dpix = 96, dpiy = 96;
@@ -409,7 +409,7 @@ static void SelFinish() {
     POINT anchor = {g_sel.vx + r.left, g_sel.vy + r.bottom + 8};
     SelClose();
     std::wstring text, lang;
-    bool keep = ReadDword(L"OcrJoin", 0) == 0;
+    bool keep = ReadDword(L"OcrJoin", 1) == 0;
     if (!ocr::Recognize(px.data(), ow, oh, ow * 4, true, &text, &lang)) {
         MessageBoxW(nullptr, T(L"O leitor de texto do Windows não está disponível neste PC.\n\nEle vem no Windows 10 e 11; confira em Configurações › Hora e idioma › Idioma se há um idioma com \"Reconhecimento óptico de caracteres\".",
                                L"The Windows text reader isn't available on this PC.\n\nIt ships with Windows 10 and 11; check Settings › Time & language › Language for a language with \"Optical character recognition\".",
@@ -422,7 +422,7 @@ static void SelFinish() {
         ShowToast(T(L"Nenhum texto encontrado", L"No text found", L"No se encontró texto"), T(L"Tente selecionar uma área maior ou mais nítida.", L"Try a larger or sharper area.", L"Prueba un área más grande o más nítida."), 4000, 2);
         return;
     }
-    std::wstring copy = ReadDword(L"OcrJoin", 0) ? JoinLines(text) : text;
+    std::wstring copy = ReadDword(L"OcrJoin", 1) ? JoinLines(text) : text;
     CopyText(copy);
     ShowCard(text, lang, anchor);
 }
