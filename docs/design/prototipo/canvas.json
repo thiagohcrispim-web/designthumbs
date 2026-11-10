@@ -1,0 +1,551 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Agenda.dc.html": {
+      "h": 940,
+      "radius": 28,
+      "title": "4 · Ferramentas · Agenda",
+      "w": 1500,
+      "x": -3040,
+      "y": 9733
+    },
+    "C-Agenda.dc.html": {
+      "h": 940,
+      "radius": 28,
+      "title": "Vizu Crispy (cópia) · Agenda e avisos",
+      "w": 1500,
+      "x": 8240,
+      "y": 6180
+    },
+    "C-Clock.dc.html": {
+      "h": 820,
+      "radius": 28,
+      "title": "Vizu Crispy (cópia) · DesktopClock",
+      "w": 1180,
+      "x": 8240,
+      "y": 8140
+    },
+    "C-Ocr.dc.html": {
+      "h": 900,
+      "radius": 28,
+      "title": "Vizu Crispy (cópia) · OCR e tradução",
+      "w": 1500,
+      "x": 8240,
+      "y": 7180
+    },
+    "C-Preview.dc.html": {
+      "h": 760,
+      "radius": 28,
+      "title": "Vizu Crispy (cópia) · Preview com Espaço",
+      "w": 1100,
+      "x": 8240,
+      "y": 5360
+    },
+    "C-Ring.dc.html": {
+      "h": 640,
+      "radius": 28,
+      "title": "Vizu Crispy (cópia) · Menu circular (segurar Alt)",
+      "w": 520,
+      "x": 8240,
+      "y": 4662
+    },
+    "C-Settings.dc.html": {
+      "h": 2520,
+      "radius": 28,
+      "title": "Vizu Crispy (cópia) · Configurações (completas)",
+      "w": 1300,
+      "x": 8240,
+      "y": 9640
+    },
+    "C-Toast.dc.html": {
+      "h": 460,
+      "radius": 28,
+      "title": "Vizu Crispy (cópia) · Aviso de conversão e menu da bandeja",
+      "w": 760,
+      "x": 8240,
+      "y": 9060
+    },
+    "Clock.dc.html": {
+      "h": 820,
+      "radius": 28,
+      "title": "4 · Ferramentas · Relógio",
+      "w": 1180,
+      "x": -3040,
+      "y": 7853
+    },
+    "D-Agenda.dc.html": {
+      "h": 940,
+      "radius": 28,
+      "title": "Escuro · Agenda e avisos",
+      "w": 1500,
+      "x": 6620,
+      "y": 6180
+    },
+    "D-Clock.dc.html": {
+      "h": 820,
+      "radius": 28,
+      "title": "Escuro · DesktopClock",
+      "w": 1180,
+      "x": 6620,
+      "y": 8140
+    },
+    "D-Ocr.dc.html": {
+      "h": 900,
+      "radius": 28,
+      "title": "Escuro · OCR e tradução",
+      "w": 1500,
+      "x": 6620,
+      "y": 7180
+    },
+    "D-Preview.dc.html": {
+      "h": 760,
+      "radius": 28,
+      "title": "Escuro · Preview com Espaço",
+      "w": 1100,
+      "x": 6620,
+      "y": 5360
+    },
+    "D-Ring.dc.html": {
+      "h": 640,
+      "radius": 28,
+      "title": "Escuro · Menu circular (segurar Alt)",
+      "w": 520,
+      "x": 6620,
+      "y": 4662
+    },
+    "D-Settings.dc.html": {
+      "h": 2520,
+      "radius": 28,
+      "title": "Escuro · Configurações (completas)",
+      "w": 1300,
+      "x": 6620,
+      "y": 9640
+    },
+    "D-Toast.dc.html": {
+      "h": 460,
+      "radius": 28,
+      "title": "Escuro · Aviso de conversão e menu da bandeja",
+      "w": 760,
+      "x": 6620,
+      "y": 9060
+    },
+    "Extras.dc.html": {
+      "h": 900,
+      "radius": 28,
+      "title": "4 · Ferramentas · Extras",
+      "w": 1500,
+      "x": -3040,
+      "y": 10753
+    },
+    "Inst-Choice-copia.dc.html": {
+      "h": 640,
+      "radius": 28,
+      "title": "1.1 · Instalar · cópia · Escolha da edição",
+      "w": 700,
+      "x": -1090,
+      "y": 4700
+    },
+    "Inst-Done-copia.dc.html": {
+      "h": 640,
+      "radius": 28,
+      "title": "1.3 · Instalar · cópia · Concluído",
+      "w": 700,
+      "x": -1090,
+      "y": 6100
+    },
+    "Inst-Progress-copia.dc.html": {
+      "h": 640,
+      "radius": 28,
+      "title": "1.2 · Instalar · cópia · Baixando o motor (Ultra)",
+      "w": 700,
+      "x": -1090,
+      "y": 5400
+    },
+    "L-Agenda.dc.html": {
+      "h": 940,
+      "radius": 28,
+      "title": "Claro · Agenda e avisos",
+      "w": 1500,
+      "x": 5000,
+      "y": 6180
+    },
+    "L-Clock.dc.html": {
+      "h": 820,
+      "radius": 28,
+      "title": "Claro · DesktopClock",
+      "w": 1180,
+      "x": 5000,
+      "y": 8140
+    },
+    "L-Ocr.dc.html": {
+      "h": 900,
+      "radius": 28,
+      "title": "Claro · OCR e tradução",
+      "w": 1500,
+      "x": 5000,
+      "y": 7180
+    },
+    "L-Preview.dc.html": {
+      "h": 760,
+      "radius": 28,
+      "title": "Claro · Preview com Espaço",
+      "w": 1100,
+      "x": 5000,
+      "y": 5360
+    },
+    "L-Ring.dc.html": {
+      "h": 640,
+      "radius": 28,
+      "title": "Claro · Menu circular (segurar Alt)",
+      "w": 520,
+      "x": 5000,
+      "y": 4662
+    },
+    "L-Settings.dc.html": {
+      "h": 2520,
+      "radius": 28,
+      "title": "Claro · Configurações (completas)",
+      "w": 1300,
+      "x": 5000,
+      "y": 9640
+    },
+    "L-Toast.dc.html": {
+      "h": 460,
+      "radius": 28,
+      "title": "Claro · Aviso de conversão e menu da bandeja",
+      "w": 760,
+      "x": 5000,
+      "y": 9060
+    },
+    "Main.dc.html": {
+      "h": 640,
+      "w": 720,
+      "x": 21960,
+      "y": 0
+    },
+    "Ocr.dc.html": {
+      "h": 900,
+      "radius": 28,
+      "title": "4 · Ferramentas · Ler texto",
+      "w": 1500,
+      "x": -3040,
+      "y": 8753
+    },
+    "Picker.dc.html": {
+      "h": 300,
+      "radius": 28,
+      "title": "3.4 · Usar · Conta-gotas",
+      "w": 420,
+      "x": 1432,
+      "y": 6832
+    },
+    "Ring.dc.html": {
+      "h": 640,
+      "radius": 28,
+      "title": "3.2 · Usar · Converter com Alt",
+      "w": 1776,
+      "x": 1427,
+      "y": 5507
+    },
+    "Settings-Lite-copia.dc.html": {
+      "h": 1000,
+      "radius": 28,
+      "title": "2.1 · Configurar · cópia · Vizu Lite",
+      "w": 1300,
+      "x": -197,
+      "y": 4700
+    },
+    "Settings-copia.dc.html": {
+      "h": 2520,
+      "radius": 28,
+      "title": "2.2 · Configurar · cópia · Vizu completo",
+      "w": 1300,
+      "x": -197,
+      "y": 5780
+    },
+    "Toast.dc.html": {
+      "h": 460,
+      "radius": 28,
+      "title": "3.3 · Usar · Aviso e bandeja",
+      "w": 760,
+      "x": 1432,
+      "y": 6283
+    },
+    "V-Agenda.dc.html": {
+      "h": 840,
+      "radius": 28,
+      "title": "Vizu Classic · Dia e avisos",
+      "w": 1420,
+      "x": 3460,
+      "y": 6180
+    },
+    "V-Clock.dc.html": {
+      "h": 860,
+      "radius": 28,
+      "title": "Vizu Classic · Relógio: Foco, roubo de tempo, tamanhos e barra",
+      "w": 1220,
+      "x": 3460,
+      "y": 8140
+    },
+    "V-Extras.dc.html": {
+      "h": 720,
+      "radius": 28,
+      "title": "2.3 Configurar · Extras",
+      "w": 1300,
+      "x": -197,
+      "y": 8400
+    },
+    "V-Ocr.dc.html": {
+      "h": 640,
+      "radius": 28,
+      "title": "Vizu Classic · Ler texto",
+      "w": 1320,
+      "x": 3460,
+      "y": 7180
+    },
+    "V-Preview.dc.html": {
+      "h": 730,
+      "radius": 28,
+      "title": "3.1 Vizu Classic · Espiar (Espaço)",
+      "w": 1320,
+      "x": 3460,
+      "y": 5360
+    },
+    "V-Ring.dc.html": {
+      "h": 640,
+      "radius": 28,
+      "title": "Vizu Classic · Converter (Alt)",
+      "w": 1100,
+      "x": 3460,
+      "y": 4662
+    },
+    "V-Settings.dc.html": {
+      "h": 2520,
+      "radius": 28,
+      "title": "Vizu Classic · Configurações",
+      "w": 1300,
+      "x": 3460,
+      "y": 9640
+    },
+    "V-Toast.dc.html": {
+      "h": 520,
+      "radius": 28,
+      "title": "Vizu Classic · Avisos e bandeja",
+      "w": 820,
+      "x": 3460,
+      "y": 9060
+    },
+    "W-Agenda.dc.html": {
+      "h": 940,
+      "radius": 28,
+      "title": "Padrão Windows · Agenda e avisos",
+      "w": 1500,
+      "x": 9860,
+      "y": 6180
+    },
+    "W-Clock.dc.html": {
+      "h": 820,
+      "radius": 28,
+      "title": "Padrão Windows · DesktopClock",
+      "w": 1180,
+      "x": 9860,
+      "y": 8140
+    },
+    "W-Ocr.dc.html": {
+      "h": 900,
+      "radius": 28,
+      "title": "Padrão Windows · OCR e tradução",
+      "w": 1500,
+      "x": 9860,
+      "y": 7180
+    },
+    "W-Preview.dc.html": {
+      "h": 760,
+      "radius": 28,
+      "title": "Padrão Windows · Preview com Espaço",
+      "w": 1100,
+      "x": 9860,
+      "y": 5360
+    },
+    "W-Ring.dc.html": {
+      "h": 640,
+      "radius": 28,
+      "title": "Padrão Windows · Menu circular (claro e escuro, destaque do Windows)",
+      "w": 920,
+      "x": 9860,
+      "y": 4662
+    },
+    "W-Settings.dc.html": {
+      "h": 2520,
+      "radius": 28,
+      "title": "Padrão Windows · Configurações (completas)",
+      "w": 1300,
+      "x": 9860,
+      "y": 9640
+    },
+    "W-Toast.dc.html": {
+      "h": 460,
+      "radius": 28,
+      "title": "Padrão Windows · Aviso de conversão e menu da bandeja",
+      "w": 760,
+      "x": 9860,
+      "y": 9060
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-05T12:00:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "noteOrder": [
+    "t2",
+    "t3",
+    "t4",
+    "t5",
+    "t6",
+    "j3",
+    "j4",
+    "j0",
+    "j5",
+    "j6"
+  ],
+  "notes": {
+    "j0": {
+      "kind": "title1",
+      "maxW": 3600,
+      "text": "Jornada do usuário, da instalação às ferramentas (9.8.4)",
+      "w": 240,
+      "x": -1850,
+      "y": 3982
+    },
+    "j3": {
+      "kind": "title1",
+      "maxW": 1300,
+      "text": "3 · Usar",
+      "w": 240,
+      "x": 1554,
+      "y": 4440
+    },
+    "j4": {
+      "kind": "title1",
+      "maxW": 1300,
+      "text": "4 · Ferramentas",
+      "w": 240,
+      "x": -3040,
+      "y": 7593
+    },
+    "j5": {
+      "kind": "title1",
+      "maxW": 1300,
+      "text": "1 · Instalar_aprovado",
+      "w": 240,
+      "x": -1090,
+      "y": 4440
+    },
+    "j6": {
+      "kind": "title1",
+      "maxW": 1300,
+      "text": "2 · Configurar_Aprovado",
+      "w": 240,
+      "x": -197,
+      "y": 4440
+    },
+    "t2": {
+      "kind": "title1",
+      "maxW": 1900,
+      "text": "Vizu Classic — as mesmas telas no Design System Vizu",
+      "w": 240,
+      "x": 3460,
+      "y": 4329
+    },
+    "t3": {
+      "kind": "title1",
+      "maxW": 1900,
+      "text": "Claro — o tema Claro atual do app (9.8.4)",
+      "w": 240,
+      "x": 5000,
+      "y": 4329
+    },
+    "t4": {
+      "kind": "title1",
+      "maxW": 1900,
+      "text": "Escuro — o tema Escuro atual do app (9.8.4)",
+      "w": 240,
+      "x": 6620,
+      "y": 4329
+    },
+    "t5": {
+      "kind": "title1",
+      "maxW": 1900,
+      "text": "Padrão Windows — o tema atual do app (9.8.4)",
+      "w": 240,
+      "x": 9860,
+      "y": 4329
+    },
+    "t6": {
+      "kind": "title1",
+      "maxW": 1900,
+      "text": "Vizu Crispy — cópia (9.8.4)",
+      "w": 240,
+      "x": 8240,
+      "y": 4329
+    }
+  },
+  "order": [
+    "V-Ring.dc.html",
+    "V-Preview.dc.html",
+    "V-Settings.dc.html",
+    "V-Toast.dc.html",
+    "V-Clock.dc.html",
+    "V-Ocr.dc.html",
+    "V-Agenda.dc.html",
+    "V-Extras.dc.html",
+    "L-Ring.dc.html",
+    "L-Preview.dc.html",
+    "L-Settings.dc.html",
+    "L-Toast.dc.html",
+    "L-Clock.dc.html",
+    "L-Ocr.dc.html",
+    "L-Agenda.dc.html",
+    "D-Ring.dc.html",
+    "D-Preview.dc.html",
+    "D-Settings.dc.html",
+    "D-Toast.dc.html",
+    "D-Clock.dc.html",
+    "D-Ocr.dc.html",
+    "D-Agenda.dc.html",
+    "W-Ring.dc.html",
+    "W-Preview.dc.html",
+    "W-Settings.dc.html",
+    "W-Toast.dc.html",
+    "W-Clock.dc.html",
+    "W-Ocr.dc.html",
+    "W-Agenda.dc.html",
+    "C-Ring.dc.html",
+    "C-Preview.dc.html",
+    "C-Settings.dc.html",
+    "C-Toast.dc.html",
+    "C-Clock.dc.html",
+    "C-Ocr.dc.html",
+    "C-Agenda.dc.html",
+    "Ring.dc.html",
+    "Toast.dc.html",
+    "Clock.dc.html",
+    "Ocr.dc.html",
+    "Agenda.dc.html",
+    "Extras.dc.html",
+    "Picker.dc.html",
+    "Main.dc.html",
+    "Inst-Choice-copia.dc.html",
+    "Inst-Progress-copia.dc.html",
+    "Inst-Done-copia.dc.html",
+    "Settings-Lite-copia.dc.html",
+    "Settings-copia.dc.html"
+  ],
+  "pages": [],
+  "title": "Vizu — protótipo por jornada (9.8.4)"
+}
