@@ -3416,6 +3416,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         installui::Window ui; ui.preview=true; ui.theme=ui::ClassicTheme();
         if(args.find(L"/installer-preview-progress")!=std::wstring::npos){ui.page=1;ui.percent=65;ui.phase=T(L"Instalando arquivos e miniaturas…",L"Installing files and thumbnails…",L"Instalando archivos y miniaturas…");}
+        if(args.find(L"/installer-preview-download")!=std::wstring::npos){ui.page=1;ui.edition=2;ui.percent=42;ui.phase=vbundle::Status(42ull<<20,99ull<<20,3.1*1048576);}
         if(args.find(L"/installer-preview-done")!=std::wstring::npos){ui.page=2;ui.success=true;ui.focus=2;}
         ui.Show(g_inst); CoUninitialize(); return 0;
     }
