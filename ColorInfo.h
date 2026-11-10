@@ -76,18 +76,16 @@ inline double DeltaE2000(const Lab& p, const Lab& q) {
     return sqrt(l * l + c * c + h * h + Rt * c * h);
 }
 // Nome do PANTONE Coated mais próximo; vazio se nada estiver razoavelmente perto (ΔE > 10).
-inline std::wstring NearestPantone(COLORREF c, double* deltaE = nullptr) {
+inline std::wstring NearestPantone(COLORREF c) {
     static const size_t n = sizeof(pms::kCoated) / sizeof(pms::kCoated[0]);
     static Lab* labs = [] { Lab* l = new Lab[n]; for (size_t i = 0; i < n; ++i) l[i] = ToLab(pms::kCoated[i].rgb); return l; }();
     Lab me = ToLab((unsigned)GetRValue(c) << 16 | GetGValue(c) << 8 | GetBValue(c));
     size_t best = 0; double bd = 1e9;
     for (size_t i = 0; i < n; ++i) {
-        double cheap = fabs(labs[i].L - me.L); // poda: ΔL grande nunca vence
-        if (cheap > bd * 2.5) continue;
+        if (fabs(labs[i].L - me.L) > bd * 2.5) continue; // S_L <= 1.75, então ΔE2000 >= |ΔL|/1.75: poda segura
         double d = DeltaE2000(me, labs[i]);
         if (d < bd) { bd = d; best = i; }
     }
-    if (deltaE) *deltaE = bd;
     if (bd > 10) return L"";
     const char* s = pms::kCoated[best].name;
     return std::wstring(s, s + strlen(s));
