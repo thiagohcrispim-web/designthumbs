@@ -18,4 +18,4 @@ if [ ! -f build/webp/libwebp.a ]; then
 fi
 $RC -c 65001 Vizu.rc -O coff -o Vizu.res.o # embute a DLL no EXE
 $CXX $FLAGS -municode -mwindows -D_WIN32_WINNT=0x0A00 -o Vizu.exe Vizu.cpp Vizu.res.o build/webp/libwebp.a -lshlwapi -lole32 -loleaut32 -luuid -lgdi32 -ldwmapi -lshell32 -ld2d1 -ldwrite -lwindowscodecs -lruntimeobject -lshcore -lwinhttp -lurlmon -lcomctl32 -lcomdlg32 -lxmllite -lbcrypt -lmscms
-cp Vizu.exe DesignThumbs-Setup.exe # o próprio Vizu é o instalador
+cp Vizu.exe Vizu-Setup.exe # o próprio Vizu é o instalador

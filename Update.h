@@ -8,7 +8,7 @@
 
 namespace upd {
 
-static const wchar_t* kVersion = L"9.8.2";
+static const wchar_t* kVersion = L"9.8.3";
 static const wchar_t* kRepoApi = L"/repos/thiagohcrispim-web/designthumbs/releases/latest";
 // Alternativa às Releases: arquivo no próprio repositório com a versão e o link do instalador.
 static const wchar_t* kLatestJson = L"/thiagohcrispim-web/designthumbs/main/latest.json";
@@ -92,7 +92,7 @@ inline bool Latest(Release* out) {
 inline bool Download(const std::wstring& url, std::wstring* path, const std::string& sha256 = "") {
     wchar_t tmp[MAX_PATH];
     if (!GetTempPathW(MAX_PATH, tmp)) return false;
-    *path = std::wstring(tmp) + L"DesignThumbs-Setup.exe";
+    *path = std::wstring(tmp) + L"Vizu-Setup.exe";
     DeleteFileW(path->c_str());
     if (FAILED(URLDownloadToFileW(nullptr, url.c_str(), path->c_str(), 0, nullptr))) return false;
     std::string want = sha256; for (auto& c : want) c = (char)tolower((unsigned char)c);

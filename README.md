@@ -3,8 +3,8 @@
 <h3 align="center">Veja todos os seus arquivos de design no Windows,<br>mesmo sem os programas instalados.</h3>
 
 <p align="center">
-  <a href="https://github.com/thiagohcrispim-web/designthumbs/releases/latest/download/DesignThumbs-Setup.exe"><b>⬇ Baixar o Vizu para Windows</b></a> &nbsp;·&nbsp;
-  <a href="https://github.com/thiagohcrispim-web/designthumbs/releases/latest/download/DesignThumbs.zip">versão .zip</a> &nbsp;·&nbsp; grátis e de código aberto (MIT)
+  <a href="https://github.com/thiagohcrispim-web/vizu/releases/latest/download/Vizu-Setup.exe"><b>⬇ Baixar o Vizu para Windows</b></a> &nbsp;·&nbsp;
+  <a href="https://github.com/thiagohcrispim-web/vizu/releases/latest/download/Vizu.zip">versão .zip</a> &nbsp;·&nbsp; grátis e de código aberto (MIT)
 </p>
 
 ---
@@ -94,7 +94,7 @@ desligado nas Configurações.
 
 ## Instalar
 
-1. Baixe o **[instalador](https://github.com/thiagohcrispim-web/designthumbs/releases/latest/download/DesignThumbs-Setup.exe)** e abra. Não precisa de administrador.
+1. Baixe o **[instalador](https://github.com/thiagohcrispim-web/vizu/releases/latest/download/Vizu-Setup.exe)** e abra. Não precisa de administrador.
 2. Pronto: as miniaturas aparecem conforme você navega pelas pastas.
 
 Para atualizar, o Vizu avisa sozinho quando sai versão nova. Para desinstalar, rode o instalador de novo ou use
@@ -150,7 +150,7 @@ https://docs.github.com/site-policy/privacy-policies/github-general-privacy-stat
 
 - Compilar no Linux: `./build.sh` (MinGW `g++-mingw-w64-x86-64-posix`; os headers mais novos do mingw-w64 estão em `third_party/`).
 - O GitHub Actions compila a cada envio e publica o instalador como artefato (`.github/workflows/build.yml`).
-- Instalação silenciosa: `DesignThumbs-Setup.exe /install /S` · desinstalar: `Vizu.exe /uninstall [/S]`.
+- Instalação silenciosa: `Vizu-Setup.exe /install /S` · desinstalar: `Vizu.exe /uninstall [/S]`.
 - Diagnóstico de um arquivo: `Vizu.exe /diag "arquivo"` ou arraste o arquivo sobre `diagnostico.bat`.
 - A biblioteca `DesignThumbs.dll` (miniaturas do Explorer) e a chave de registro `HKCU\Software\DesignThumbs` mantêm o
   nome antigo, para não quebrar as miniaturas nem as configurações de quem já usa.
@@ -159,6 +159,7 @@ https://docs.github.com/site-policy/privacy-policies/github-general-privacy-stat
 <details>
 <summary><b>Histórico de versões</b></summary>
 
+- **v9.8.3** — Renomeado para Vizu: executável `Vizu.exe`, instalador `Vizu-Setup.exe` e repositório `vizu`.
 - **v9.8.2** — Correções do conta-gotas: textos "Sugestão:" traduzidos; busca PANTONE mantém o resultado exato.
 - **v9.8.1** — Conta-gotas mostra, embaixo do HEX, o **CMYK** (perfil de impressão do Windows) e o **PANTONE** Coated mais
   próximo (marcado como "Sugestão:", consultivo; confirme no guia físico). O clique continua copiando só o HEX.

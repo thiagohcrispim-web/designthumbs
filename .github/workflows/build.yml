@@ -29,7 +29,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: DesignThumbs-Setup
-          path: DesignThumbs-Setup.exe
+          path: Vizu-Setup.exe
           if-no-files-found: error
 
       # Depois da aprovação na SignPath Foundation, descomente e preencha os IDs do projeto
