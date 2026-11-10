@@ -1,0 +1,51 @@
+name: Publish Vizu release
+
+on:
+  workflow_run:
+    workflows: [Build, Bundled vector engine tests, Vector conversion tests]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vizu-release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      ready: ${{ steps.verify.outputs.ready }}
+      sha: ${{ steps.verify.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - id: verify
+        run: python3 .github/scripts/release.py verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  publish:
+    needs: verify
+    if: needs.verify.outputs.ready == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+      - name: Create tag, attach verified installer and publish release
+        run: python3 .github/scripts/release.py publish
+        env:
+          GH_TOKEN: ${{ github.token }}
