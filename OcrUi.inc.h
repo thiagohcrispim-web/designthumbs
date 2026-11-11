@@ -147,8 +147,8 @@ static void CardRender() {
     if (!w) return;
     const ui::Theme& th = g_theme;
     float s = g_card.s, W = 440 * s, pad = 16 * s, M = 14 * s;
-    D2D1_COLOR_F accent = th.neon ? ui::Rgba(ui::NeonColor()) : g_cfg.themeMode == ui::kThemeWindows ? th.accent : th.dark ? ui::Rgba(0xE6E6E8) : ui::Rgba(0x1D1D1F);
-    D2D1_COLOR_F onAccent = th.neon || (th.dark && g_cfg.themeMode != ui::kThemeWindows) ? ui::Rgba(0x0E0E10) : ui::Rgba(0xFFFFFF);
+    D2D1_COLOR_F accent = th.classic ? ui::Rgba(0xFF6633) : th.neon ? ui::Rgba(ui::NeonColor()) : g_cfg.themeMode == ui::kThemeWindows ? th.accent : th.dark ? ui::Rgba(0xE6E6E8) : ui::Rgba(0x1D1D1F);
+    D2D1_COLOR_F onAccent = th.classic ? ui::Rgba(0x000000) : th.neon || (th.dark && g_cfg.themeMode != ui::kThemeWindows) ? ui::Rgba(0x0E0E10) : ui::Rgba(0xFFFFFF);
     std::wstring disp = g_card.shown.size() > 700 ? g_card.shown.substr(0, 700) + L"…" : g_card.shown;
     // mede o texto
     float textW = W - 2 * pad - 24 * s, textH = 20 * s;
@@ -167,8 +167,8 @@ static void CardRender() {
     D2D1_RECT_F card = D2D1::RectF(M, M, M + W, M + H);
     float rad = 22 * s;
     p.Shadow(card, rad);
-    p.Fill(card, rad, th.neon ? ui::Rgba(0x0E0E10, 0.96f) : th.dark ? ui::Rgba(0x161618, 0.97f) : ui::Rgba(0xFAFAFC, 0.98f));
-    p.Stroke(card, rad, th.neon ? ui::Rgba(ui::NeonColor(), 0.42f) : th.stroke, 1 * s);
+    p.Fill(card, rad, th.classic ? ui::Rgba(0x4A4F57) : th.neon ? ui::Rgba(0x0E0E10, 0.96f) : th.dark ? ui::Rgba(0x161618, 0.97f) : ui::Rgba(0xFAFAFC, 0.98f));
+    p.Stroke(card, rad, th.classic ? ui::Rgba(0x5C6472) : th.neon ? ui::Rgba(ui::NeonColor(), 0.42f) : th.stroke, 1 * s);
     float x = card.left + pad, y = card.top + pad;
     D2D1_COLOR_F ok = th.dark ? ui::Rgba(0x30D158) : ui::Rgba(0x248A3D), bad = ui::Rgba(0xFF453A);
     // cabeçalho
@@ -182,7 +182,7 @@ static void CardRender() {
     y += 30 * s;
     // texto
     D2D1_RECT_F box = D2D1::RectF(x, y, card.right - pad, y + textH + 24 * s);
-    p.Fill(box, 14 * s, th.dark ? ui::Rgba(0xFFFFFF, 0.05f) : ui::Rgba(0x000000, 0.04f));
+    p.Fill(box, 14 * s, th.classic ? ui::Rgba(0x23272E) : th.dark ? ui::Rgba(0xFFFFFF, 0.05f) : ui::Rgba(0x000000, 0.04f));
     {
         ID2D1Factory* fac = nullptr; rt->GetFactory(&fac);
         ID2D1RectangleGeometry* clip = nullptr;
@@ -208,6 +208,7 @@ static void CardRender() {
         g_card.r[kCardPt + i] = b;
         bool sel = g_card.state >= 1 && g_card.target == tags[i];
         bool same = g_card.lang.substr(0, 2) == tags[i] && !sel;
+        if (g_card.state == 0 && !same && wcscmp(tags[i], T(L"pt", L"en", L"es")) == 0) sel = true; // sugere o idioma do usuário (protótipo)
         if (sel) p.Fill(b, 16 * s, accent);
         else { if (g_card.hot == kCardPt + i) p.Fill(b, 16 * s, th.dark ? ui::Rgba(0xFFFFFF, 0.08f) : ui::Rgba(0x000000, 0.05f)); p.Stroke(b, 16 * s, th.neon ? ui::Rgba(ui::NeonColor(), 0.5f) : th.dark ? ui::Rgba(0xFFFFFF, 0.16f) : ui::Rgba(0x000000, 0.12f), 1 * s); }
         D2D1_COLOR_F tc = sel ? onAccent : th.text; if (same) tc.a = 0.45f;
@@ -346,7 +347,7 @@ static void ShowCard(const std::wstring& text, const std::wstring& lang, POINT a
     g_card.original = text; g_card.lang = lang; g_card.anchor = anchor;
     g_card.joined = ReadDword(L"OcrJoin", 1) != 0;
     g_card.shown = g_card.joined ? JoinLines(text) : text;
-    g_card.status = std::wstring(T(L"Copiado", L"Copied", L"Copiado")) + (lang.empty() ? L"" : L" · " + LangName(lang));
+    g_card.status = std::wstring(T(L"Copiado", L"Copied", L"Copiado")) + (lang.empty() ? L"" : L" · " + LangName(lang) + T(L" detectado", L" detected", L" detectado"));
     UINT dpix = 96, dpiy = 96;
     GetDpiForMonitor(MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST), MDT_EFFECTIVE_DPI, &dpix, &dpiy);
     g_card.s = dpix / 96.0f;
@@ -507,7 +508,7 @@ static void StartOcr() {
     if (clockVis) ShowWindow(g_clock.wnd, SW_SHOWNOACTIVATE);
     if (!g_sel.shotBits) { SelClose(); return; }
     const ui::Theme& th = g_theme;
-    UINT acc = th.neon ? ui::NeonColor() : g_cfg.themeMode == ui::kThemeWindows ? ui::SystemAccent() : 0xFFFFFF;
+    UINT acc = th.classic ? 0xFF6633 : th.neon ? ui::NeonColor() : g_cfg.themeMode == ui::kThemeWindows ? ui::SystemAccent() : 0xFFFFFF;
     g_sel.accent = RGB(acc >> 16 & 255, acc >> 8 & 255, acc & 255);
     static bool reg = false;
     if (!reg) { WNDCLASSW wc = {}; wc.lpfnWndProc = SelProc; wc.hInstance = g_inst; wc.lpszClassName = L"DesignThumbsOcrSel"; wc.hCursor = LoadCursor(nullptr, IDC_CROSS); RegisterClassW(&wc); reg = true; }

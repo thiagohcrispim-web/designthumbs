@@ -3705,6 +3705,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     }
     if (args.find(L"/theft-history") != std::wstring::npos) ShowTheftHistory(); // abre o histórico do roubo de tempo
     if (args.find(L"/agenda") != std::wstring::npos) OpenAgendaWindow();
+    if (args.find(L"/ocr-card-preview") != std::wstring::npos) { // cartão de resultado do OCR com um texto de exemplo
+        POINT pt = {400, 300};
+        ShowCard(L"Join us for five days of talks, workshops and open studios. Free entry for students with a valid ID.", L"en", pt);
+    }
     MSG m;
     while (GetMessageW(&m, nullptr, 0, 0) > 0) {
         if (g_dlgEdit && m.hwnd == g_dlgEdit && m.message == WM_KEYDOWN && (m.wParam == VK_RETURN || m.wParam == VK_ESCAPE)) {
