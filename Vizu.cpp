@@ -564,10 +564,11 @@ static bool OpenPath(const std::wstring& p, const std::vector<std::wstring>& nei
     g_info = ci ? *ci : fmt::Info();
 
     g_ui = (g_defView ? GetDpiForWindow(g_defView) : GetDpiForSystem()) / 96.0f;
-    HMONITOR mon = MonitorFromWindow(g_defView, MONITOR_DEFAULTTONEAREST);
+    // Sem janela do Explorer ("Abrir com" ou /peek) usa o monitor principal; nunca fica com tamanho zero.
+    HMONITOR mon = g_defView ? MonitorFromWindow(g_defView, MONITOR_DEFAULTTONEAREST) : MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
     MONITORINFO mi = {sizeof(mi)};
-    GetMonitorInfoW(mon, &mi);
-    g_screen = (UINT)max(mi.rcWork.right - mi.rcWork.left, mi.rcWork.bottom - mi.rcWork.top);
+    UINT side = GetMonitorInfoW(mon, &mi) ? (UINT)max(mi.rcWork.right - mi.rcWork.left, mi.rcWork.bottom - mi.rcWork.top) : 0;
+    g_screen = side ? side : 2048;
 
     CacheEntry* e = Cached(p, 0);
     g_loading = !e;

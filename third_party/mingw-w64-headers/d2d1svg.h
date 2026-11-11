@@ -278,13 +278,15 @@ interface ID2D1SvgElement : public ID2D1Resource
   STDMETHOD(SetTextValue)(const WCHAR *name, UINT32 name_count) PURE;
   STDMETHOD(GetTextValue)(PWSTR name, UINT32 name_count) PURE;
   STDMETHOD_(UINT32, GetTextValueLength)() PURE;
+  /* Vizu: ordem real da vtable no Windows (conferida com o compilador da Microsoft, SDK 10.0.26100).
+     A ordem anterior fazia SetAttributeValue(texto) cair em outro método e derrubava o programa ao abrir SVG. */
+  STDMETHOD(SetAttributeValue)(PCWSTR name, ID2D1SvgAttribute *value) PURE;
+  STDMETHOD(SetAttributeValue)(PCWSTR name, D2D1_SVG_ATTRIBUTE_POD_TYPE type, const void *value, UINT32 value_size_in_bytes) PURE;
   STDMETHOD(SetAttributeValue)(PCWSTR name, D2D1_SVG_ATTRIBUTE_STRING_TYPE type, PCWSTR value) PURE;
+  STDMETHOD(GetAttributeValue)(PCWSTR name, REFIID riid, void **value) PURE;
+  STDMETHOD(GetAttributeValue)(PCWSTR name, D2D1_SVG_ATTRIBUTE_POD_TYPE type, void *value, UINT32 value_size_in_bytes) PURE;
   STDMETHOD(GetAttributeValue)(PCWSTR name, D2D1_SVG_ATTRIBUTE_STRING_TYPE type, PWSTR value, UINT32 value_count) PURE;
   STDMETHOD(GetAttributeValueLength)(PCWSTR name, D2D1_SVG_ATTRIBUTE_STRING_TYPE type, UINT32 *value_length) PURE;
-  STDMETHOD(SetAttributeValue)(PCWSTR name, D2D1_SVG_ATTRIBUTE_POD_TYPE type, const void *value, UINT32 value_size_in_bytes) PURE;
-  STDMETHOD(GetAttributeValue)(PCWSTR name, D2D1_SVG_ATTRIBUTE_POD_TYPE type, void *value, UINT32 value_size_in_bytes) PURE;
-  STDMETHOD(SetAttributeValue)(PCWSTR name, ID2D1SvgAttribute *value) PURE;
-  STDMETHOD(GetAttributeValue)(PCWSTR name, REFIID riid, void **value) PURE;
 
   COM_DECLSPEC_NOTHROW HRESULT SetAttributeValue(PCWSTR name, FLOAT value) {
     return SetAttributeValue(name, D2D1_SVG_ATTRIBUTE_POD_TYPE_FLOAT, &value, sizeof(value));
