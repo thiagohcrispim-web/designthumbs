@@ -1,0 +1,74 @@
+# Abre a prévia no Windows de verdade e confere que o Vizu continua aberto.
+# Não bloqueia a publicação; serve para pegar fechamentos que só acontecem no Windows.
+name: Preview smoke test
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y g++-mingw-w64-x86-64-posix
+      - run: ./build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vizu-smoke
+          path: Vizu-Setup.exe
+          if-no-files-found: error
+  preview:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vizu-smoke
+      - name: Instalar e abrir prévias
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+          $dir = Join-Path $env:RUNNER_TEMP 'amostras'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          foreach ($i in 1..6) {
+            $bmp = New-Object System.Drawing.Bitmap 1600, 1000
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.Clear([System.Drawing.Color]::FromArgb(255, 40 * $i, 120, 200))
+            $g.Dispose()
+            $bmp.Save((Join-Path $dir "foto$i.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+            $bmp.Save((Join-Path $dir "foto$i.jpg"), [System.Drawing.Imaging.ImageFormat]::Jpeg)
+            $bmp.Dispose()
+            '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200"><rect width="400" height="200" fill="#f63"/><circle cx="100" cy="100" r="60"/><text x="200" y="110" font-size="40">Vizu</text></svg>' | Set-Content (Join-Path $dir "desenho$i.svg")
+          }
+          $log = Join-Path $env:LOCALAPPDATA 'DesignThumbs\crash.log'
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\DesignThumbs\Vizu.exe'
+          $failed = $false
+          function Check($step) {
+            if (Test-Path $log) { Write-Host "::error::$step - o Vizu fechou sozinho"; Get-Content $log; Remove-Item $log; $script:failed = $true }
+            if (-not (Get-Process Vizu -ErrorAction SilentlyContinue)) {
+              Write-Host "::error::$step - o Vizu nao esta mais aberto"; $script:failed = $true
+              Start-Process $exe; Start-Sleep 5
+            } else { Write-Host "ok: $step" }
+          }
+          Start-Process -Wait .\Vizu-Setup.exe -ArgumentList '/S'
+          Start-Sleep 8
+          Check 'instalar e iniciar'
+          foreach ($f in 'foto1.png', 'foto2.jpg', 'desenho1.svg') {
+            Start-Process $exe -ArgumentList '/peek', "`"$(Join-Path $dir $f)`""
+            Start-Sleep 20
+            Check "previa de $f (linha de comando)"
+          }
+          # Como o usuario faz: Explorer, arquivo selecionado, Espaco
+          foreach ($f in 'foto3.png', 'foto4.jpg', 'desenho2.svg') {
+            Start-Process explorer.exe -ArgumentList "/select,`"$(Join-Path $dir $f)`""
+            Start-Sleep 8
+            [System.Windows.Forms.SendKeys]::SendWait(' ')
+            Start-Sleep 25
+            Check "Espaco no Explorer em $f"
+            [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+            Start-Sleep 2
+          }
+          Get-EventLog -LogName Application -Source 'Application Error' -Newest 5 -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'Vizu' } | ForEach-Object { Write-Host $_.Message }
+          if ($failed) { exit 1 }

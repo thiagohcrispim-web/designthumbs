@@ -87,6 +87,7 @@ static void SaveConfig() {
 
 static HINSTANCE g_inst;
 static HWND g_wnd, g_altWnd, g_toastWnd, g_settingsWnd, g_dimWnd;
+static DWORD g_mainThread;
 static HWINEVENTHOOK g_focusHook, g_fgHook, g_selHook;
 static bool g_open, g_spaceKey, g_openKeys;
 static HWND g_defView;           // lista de arquivos de onde veio o Espaço
@@ -3532,8 +3533,43 @@ static int Uninstall(bool silent, bool ask) {
     return 0;
 }
 
+// Se o Vizu fechar sozinho, grava o motivo em %LOCALAPPDATA%\DesignThumbs\crash.log (para diagnóstico):
+// versão, código do erro e os endereços da pilha relativos ao início do programa.
+static void WriteCrashLog(const char* kind, DWORD code, void* address) {
+    wchar_t path[MAX_PATH];
+    DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", path, MAX_PATH);
+    if (!n || n > MAX_PATH - 40) return;
+    wcscat_s(path, L"\\DesignThumbs");
+    CreateDirectoryW(path, nullptr);
+    wcscat_s(path, L"\\crash.log");
+    HANDLE f = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return;
+    ULONG_PTR base = (ULONG_PTR)GetModuleHandleW(nullptr);
+    SYSTEMTIME t; GetLocalTime(&t);
+    char line[256]; DWORD w;
+    int len = wsprintfA(line, "Vizu %ls  %02d/%02d/%04d %02d:%02d:%02d\r\n%s code=0x%08X at=+0x%IX thread=%u main=%u\r\nstack:", upd::kVersion,
+                        t.wDay, t.wMonth, t.wYear, t.wHour, t.wMinute, t.wSecond, kind, (unsigned)code, (ULONG_PTR)address - base, (unsigned)GetCurrentThreadId(), (unsigned)g_mainThread);
+    WriteFile(f, line, len, &w, nullptr);
+    void* frames[48];
+    USHORT count = CaptureStackBackTrace(0, 48, frames, nullptr);
+    for (USHORT i = 0; i < count; ++i) {
+        ULONG_PTR a2 = (ULONG_PTR)frames[i];
+        len = a2 >= base && a2 - base < 0x4000000 ? wsprintfA(line, " +0x%IX", a2 - base) : wsprintfA(line, " ext");
+        WriteFile(f, line, len, &w, nullptr);
+    }
+    WriteFile(f, "\r\n", 2, &w, nullptr);
+    CloseHandle(f);
+}
+static LONG WINAPI CrashFilter(EXCEPTION_POINTERS* e) {
+    WriteCrashLog("exception", e->ExceptionRecord->ExceptionCode, e->ExceptionRecord->ExceptionAddress);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     g_inst = inst;
+    g_mainThread = GetCurrentThreadId();
+    SetUnhandledExceptionFilter(CrashFilter);
+    std::set_terminate([] { WriteCrashLog("terminate", 0, nullptr); TerminateProcess(GetCurrentProcess(), 3); });
     i18n::Load();
     std::wstring args = cmd ? cmd : L"";
     if (args.find(L"/autostart") != std::wstring::npos || args.find(L"/noautostart") != std::wstring::npos) {
