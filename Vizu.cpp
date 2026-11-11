@@ -1094,18 +1094,19 @@ static void Paint() {
         const wchar_t* lead = T(L"Sugestão: ", L"Suggestion: ", L"Sugerencia: ");
         std::wstring cmykLine = lead + ci.cmyk;
         std::wstring pmsLine = lead + (ci.pantone.empty() ? std::wstring(T(L"PANTONE sem equivalente próximo", L"no close PANTONE match", L"sin PANTONE cercano")) : L"PANTONE " + ci.pantone);
-        float tw = max(p.Measure(hex, 12, DWRITE_FONT_WEIGHT_SEMI_BOLD), max(p.Measure(cmykLine, 11), p.Measure(pmsLine, 11)));
-        float pw = tw + 48 * s, ph = 62 * s;
+        // protótipo 3.4: cartão claro com sombra, legível sobre qualquer imagem
+        float tw = max(p.Measure(hex, 13, DWRITE_FONT_WEIGHT_BOLD), max(p.Measure(cmykLine, 11), p.Measure(pmsLine, 11)));
+        float pw = tw + 50 * s, ph = 64 * s;
         float px = min(g_pickPt.x + 18 * s, size.width - pw - 8 * s), py = min(g_pickPt.y + 18 * s, size.height - ph - 8 * s);
         D2D1_RECT_F pr = D2D1::RectF(px, py, px + pw, py + ph);
-        p.Fill(pr, 12 * s, th.dark ? ui::Rgba(0x1C1C1E, 0.92f) : ui::Rgba(0xFFFFFF, 0.96f));
-        p.Stroke(pr, 12 * s, th.stroke);
-        D2D1_RECT_F dot = D2D1::RectF(px + 9 * s, py + 9 * s, px + 27 * s, py + 27 * s);
+        for (int i = 4; i >= 1; --i) { float g = i * 2.5f * s; p.Fill(D2D1::RectF(pr.left - g, pr.top - g + 4 * s, pr.right + g, pr.bottom + g + 4 * s), 12 * s + g, ui::Rgba(0x000000, 0.05f)); }
+        p.Fill(pr, 12 * s, ui::Rgba(0xFFFFFF, 0.96f));
+        D2D1_RECT_F dot = D2D1::RectF(px + 10 * s, py + 13 * s, px + 28 * s, py + 31 * s);
         p.Fill(dot, 9 * s, D2D1::ColorF(GetRValue(g_pickColor) / 255.0f, GetGValue(g_pickColor) / 255.0f, GetBValue(g_pickColor) / 255.0f));
-        p.Stroke(dot, 9 * s, th.stroke);
-        p.Text(hex, D2D1::RectF(px + 36 * s, py + 6 * s, pr.right - 8 * s, py + 30 * s), 12, th.text, DWRITE_FONT_WEIGHT_SEMI_BOLD);
-        p.Text(cmykLine, D2D1::RectF(px + 36 * s, py + 27 * s, pr.right - 8 * s, py + 43 * s), 11, th.text2);
-        p.Text(pmsLine, D2D1::RectF(px + 36 * s, py + 42 * s, pr.right - 8 * s, py + 58 * s), 11, th.text2);
+        p.Stroke(dot, 9 * s, ui::Rgba(0x000000, 0.15f));
+        p.Text(hex, D2D1::RectF(px + 36 * s, py + 9 * s, pr.right - 10 * s, py + 27 * s), 13, ui::Rgba(0x141413), DWRITE_FONT_WEIGHT_BOLD);
+        p.Text(cmykLine, D2D1::RectF(px + 36 * s, py + 28 * s, pr.right - 10 * s, py + 43 * s), 11, ui::Rgba(0x4A4F57));
+        p.Text(pmsLine, D2D1::RectF(px + 36 * s, py + 43 * s, pr.right - 10 * s, py + 58 * s), 11, ui::Rgba(0x4A4F57));
     }
 
     if (bars) { PaintClassicBars(p, size, s); if (g_rt->EndDraw() == D2DERR_RECREATE_TARGET) DiscardDeviceResources(); return; }
