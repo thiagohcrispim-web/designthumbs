@@ -158,6 +158,7 @@ https://docs.github.com/site-policy/privacy-policies/github-general-privacy-stat
 <details>
 <summary><b>Histórico de versões</b></summary>
 
+- **v9.8.8** — Telas no visual do Vizu Classic: menu do Alt, Espiar (com botões copiar, abrir e fechar), avisos, relógio, agenda, OCR e conta-gotas. Histórico do roubo de tempo com Exportar CSV e Ver semana; "Atualizações" no menu da bandeja. Mais segurança: arquivos corrompidos não fecham o Vizu, a limpeza de temporários poupa pastas em uso e a atualização só instala com SHA-256 conferido.
 - **v9.8.7** — Instalador com novo visual: escolha da versão em lista, progresso com etapas (e MB, velocidade e tempo no download do Ultra) e tela final com as teclas Espaço e Alt.
 - **v9.8.6** — Configurações reorganizadas: Tempo (Relógio e Agenda), Outros (OCR, Pastas e Limpeza) e Sistema recolhível, com "Procurar nova versão" na linha de atualização. Cores do Pomodoro atualizadas e OCR com "Juntar" por padrão.
 - **v9.8.5** — Nova versão de distribuição, sem mudanças de funcionamento em relação à 9.8.4.
