@@ -3704,6 +3704,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
         OpenPath(f, {});
     }
     if (args.find(L"/theft-history") != std::wstring::npos) ShowTheftHistory(); // abre o histórico do roubo de tempo
+    if (args.find(L"/agenda") != std::wstring::npos) OpenAgendaWindow();
     MSG m;
     while (GetMessageW(&m, nullptr, 0, 0) > 0) {
         if (g_dlgEdit && m.hwnd == g_dlgEdit && m.message == WM_KEYDOWN && (m.wParam == VK_RETURN || m.wParam == VK_ESCAPE)) {

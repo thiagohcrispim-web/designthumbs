@@ -4,10 +4,10 @@
 #include <set>
 
 static D2D1_COLOR_F AccentOf(const ui::Theme& th) {
-    return th.neon ? ui::Rgba(ui::NeonColor()) : g_cfg.themeMode == ui::kThemeWindows ? th.accent : th.dark ? ui::Rgba(0xE6E6E8) : ui::Rgba(0x1D1D1F);
+    return th.classic ? ui::Rgba(0xFF6633) : th.neon ? ui::Rgba(ui::NeonColor()) : g_cfg.themeMode == ui::kThemeWindows ? th.accent : th.dark ? ui::Rgba(0xE6E6E8) : ui::Rgba(0x1D1D1F);
 }
 static D2D1_COLOR_F OnAccentOf(const ui::Theme& th) {
-    return th.neon || (th.dark && g_cfg.themeMode != ui::kThemeWindows) ? ui::Rgba(0x0E0E10) : ui::Rgba(0xFFFFFF);
+    return th.classic ? ui::Rgba(0x000000) : th.neon || (th.dark && g_cfg.themeMode != ui::kThemeWindows) ? ui::Rgba(0x0E0E10) : ui::Rgba(0xFFFFFF);
 }
 static SYSTEMTIME AddDays(SYSTEMTIME t, int d) {
     FILETIME f; SystemTimeToFileTime(&t, &f);
@@ -453,11 +453,11 @@ static void ReminderRender() {
     float rad = 22 * s;
     p.Shadow(card, rad);
     if (urgent && th.neon) p.Glow(card, rad);
-    p.Fill(card, rad, th.neon ? ui::Rgba(0x0E0E10, 0.97f) : th.dark ? ui::Rgba(0x161618, 0.98f) : ui::Rgba(0xFAFAFC, 0.98f));
-    p.Stroke(card, rad, urgent ? acc : th.neon ? ui::Rgba(ui::NeonColor(), 0.42f) : th.stroke, (urgent ? 1.3f : 1) * s);
+    p.Fill(card, rad, th.classic ? ui::Rgba(0x4A4F57) : th.neon ? ui::Rgba(0x0E0E10, 0.97f) : th.dark ? ui::Rgba(0x161618, 0.98f) : ui::Rgba(0xFAFAFC, 0.98f));
+    p.Stroke(card, rad, urgent ? acc : th.classic ? ui::Rgba(0x5C6472) : th.neon ? ui::Rgba(ui::NeonColor(), 0.42f) : th.stroke, (urgent ? 1.3f : 1) * s);
     float x = card.left + 18 * s, y = card.top + 16 * s;
     D2D1_RECT_F ic = D2D1::RectF(x, y, x + 42 * s, y + 42 * s);
-    p.Fill(ic, 21 * s, urgent ? acc : (th.neon ? ui::Rgba(ui::NeonColor(), 0.14f) : th.dark ? ui::Rgba(0xFFFFFF, 0.08f) : ui::Rgba(0x000000, 0.06f)));
+    p.Fill(ic, 21 * s, urgent ? acc : (th.classic ? ui::Rgba(0x23272E) : th.neon ? ui::Rgba(ui::NeonColor(), 0.14f) : th.dark ? ui::Rgba(0xFFFFFF, 0.08f) : ui::Rgba(0x000000, 0.06f)));
     p.FeatherIcon(urgent ? "timer" : "calendar", ic, 20 * s, urgent ? onAcc : acc);
     float tx = x + 56 * s;
     SYSTEMTIME now; GetLocalTime(&now);
