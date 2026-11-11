@@ -1569,7 +1569,7 @@ static void RenderRing() {
         size_t cn = g_sides[g_side].items.size();
         float cstep = 2 * 3.14159265f / max<size_t>(1, cn), hotA0 = 0, hotA1 = 0;
         if (g_ringHot >= 0) { hotA0 = -3.14159265f / 2 - cstep / 2 + g_ringHot * cstep; hotA1 = hotA0 + cstep; }
-        float well = rIn - 6 * s;   // raio do centro
+        float well = classic ? rIn + 3.5f * s : rIn - 6 * s;   // raio do centro (Classic: 60/160 do disco, como no protótipo)
         UINT nc = ui::NeonColor();
         float nR = (float)(nc >> 16 & 255), nG = (float)(nc >> 8 & 255), nB = (float)(nc & 255);
         struct Style {
@@ -1640,7 +1640,7 @@ static void RenderRing() {
                     }
                 }
                 if (st.lines && !nearHot) { // linha fina que some em direção à borda
-                    float r0 = well + 12 * s, r1 = rO - 14 * s;
+                    float r0 = well + (classic ? 9 : 12) * s, r1 = rO - (classic ? 9 : 14) * s;
                     if (r > r0 && r < r1 && da < 0.7f * s) mix(lineCol[0], lineCol[1], lineCol[2], st.lineA * (classic ? 1.0f : 1 - (r - r0) / (r1 - r0)) * (1 - da / (0.7f * s)));
                 }
             }
@@ -1665,7 +1665,7 @@ static void RenderRing() {
             }
             // fatia ativa
             if (g_ringHot >= 0) {
-                float ri = well + 16 * s, ro = rO - (st.ticks ? 18 : 12) * s, gap = 4 * s, rad = 11 * s;
+                float ri = well + (classic ? 3.5f : 16) * s, ro = rO - (st.ticks ? 18 : classic ? 3.5f : 12) * s, gap = (classic ? 1.2f : 4) * s, rad = (classic ? 3.5f : 11) * s;
                 float a = ang; while (a < hotA0 - 3.14159265f) a += 2 * 3.14159265f; while (a > hotA0 + 3 * 3.14159265f) a -= 2 * 3.14159265f;
                 float dA0 = r * sinf(a - hotA0) - gap, dA1 = r * sinf(hotA1 - a) - gap;
                 if (cosf(a - (hotA0 + hotA1) / 2) < 0) dA0 = dA1 = -999;
@@ -1720,7 +1720,7 @@ static void RenderRing() {
         if (formats) { // só o nome do formato
             const std::wstring& lab = side.items[i].label;
             D2D1_RECT_F lr = D2D1::RectF(cx - bw / 2, cy - 11 * s, cx + bw / 2, cy + 11 * s);
-            p.TextSpaced(lab, lr, hot ? 15.5f : 13, col, hot ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_SEMI_BOLD, 0.1f); // letras espaçadas
+            p.TextSpaced(lab, lr, hot && !classic ? 15.5f : 13, col, classic ? DWRITE_FONT_WEIGHT_MEDIUM : hot ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_SEMI_BOLD, 0.08f); // letras espaçadas
         } else {
             p.Icon(side.items[i].icon, D2D1::RectF(cx - 20 * s, cy - 23 * s, cx + 20 * s, cy - 3 * s), 14, col);
             p.Text(side.items[i].label, D2D1::RectF(cx - bw / 2, cy, cx + bw / 2, cy + 18 * s), 11, col, hot ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -1731,10 +1731,22 @@ static void RenderRing() {
     std::wstring cnt = std::to_wstring(g_convFiles.size()) + (g_convFiles.size() == 1 ? T(L" arquivo", L" file", L" archivo") : T(L" arquivos", L" files", L" archivos"));
     {
         D2D1_COLOR_F titleCol = crispy ? orange : th.dark ? ui::Rgba(0xFFFFFF) : ui::Rgba(0x1D1D1F), muted = classic ? ui::Rgba(0xBCC2CC) : th.dark ? ui::Rgba(0x8E8E95) : ui::Rgba(0x7A7A82);
-        if (g_ringHot == -1) {
+        if (g_ringHot == -1 && !classic) {
             if (crispy) { rt->DrawEllipse(lens, solid(ui::Rgba(ui::NeonColor(), 0.9f)), 1.5f * s); rt->DrawEllipse(lens, solid(ui::Rgba(ui::NeonColor(), 0.25f)), 5 * s); }
             else rt->DrawEllipse(lens, solid(th.dark ? ui::Rgba(0xFFFFFF, 0.35f) : ui::Rgba(0x000000, 0.18f)), 1.2f * s);
         }
+        if (classic) { // protótipo 3.2: nome do lado, quantidade de arquivos e pontinhos dos lados
+            if (g_ringHot == -1) rt->DrawEllipse(D2D1::Ellipse(C, rIn + 2 * s, rIn + 2 * s), solid(ui::Rgba(0xFF6633)), 1.5f * s);
+            p.Text(side.name, D2D1::RectF(c - rIn, c - 22 * s, c + rIn, c - 2 * s), 15.5f, ui::Rgba(0xFFFFFF), DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_TEXT_ALIGNMENT_CENTER);
+            p.Text(cnt, D2D1::RectF(c - rIn, c + 1 * s, c + rIn, c + 17 * s), 12, ui::Rgba(0xBCC2CC), DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
+            size_t ns = g_sides.size();
+            float dw = 6.5f * s, dl = 16 * s, gapd = 4.5f * s, total = (ns - 1) * dw + dl + (ns - 1) * gapd, x = c - total / 2;
+            for (size_t i = 0; ns > 1 && i < ns; ++i) {
+                float w2 = (int)i == g_side ? dl : dw;
+                rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(x, c + 26 * s, x + w2, c + 29.5f * s), 1.7f * s, 1.7f * s), solid(ui::Rgba((int)i == g_side ? 0xFF6633 : 0x5C6472)));
+                x += w2 + gapd;
+            }
+        } else {
         std::wstring up; for (wchar_t ch : cnt) up += (wchar_t)towupper(ch);
         p.Text(up, D2D1::RectF(c - rIn, c - 26 * s, c + rIn, c - 14 * s), 8.5f, muted, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
         p.Text(side.name, D2D1::RectF(c - rIn, c - 14 * s, c + rIn, c + 6 * s), 15, titleCol, DWRITE_FONT_WEIGHT_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -1750,6 +1762,7 @@ static void RenderRing() {
                                          solid((int)i == g_side ? (crispy ? orange : classic ? ui::Rgba(0xFF6633) : winTheme ? th.accent : th.dark ? ui::Rgba(0x9AA1AD) : ui::Rgba(0x1D1D1F)) : (th.dark ? ui::Rgba(0xFFFFFF, 0.18f) : ui::Rgba(0x000000, 0.14f))));
                 x += w2 + gapd;
             }
+        }
         }
     }
     if (br) br->Release();
