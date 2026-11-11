@@ -75,7 +75,7 @@ jobs:
             } else { Write-Host "ok: $step" }
           }
           # -Wait esperaria também o Vizu que o instalador abre no fim; espera só o instalador
-          $setup = Start-Process .\Vizu-Setup.exe -ArgumentList '/S' -PassThru
+          $setup = Start-Process .\Vizu-Setup.exe -ArgumentList '/S', '/update' -PassThru
           if (-not $setup.WaitForExit(60000)) { Write-Host '::error::instalador silencioso nao terminou em 60 s'; $failed = $true; Stacks 'Vizu-Setup'; Stop-Process -Id $setup.Id -Force }
           Get-ChildItem (Split-Path $exe) -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "instalado: $($_.Name) $($_.Length)" }
           Start-Sleep 8
