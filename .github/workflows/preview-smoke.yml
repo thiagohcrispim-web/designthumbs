@@ -52,7 +52,9 @@ jobs:
               Start-Process $exe; Start-Sleep 5
             } else { Write-Host "ok: $step" }
           }
-          Start-Process -Wait .\Vizu-Setup.exe -ArgumentList '/S'
+          # -Wait esperaria também o Vizu que o instalador abre no fim; espera só o instalador
+          $setup = Start-Process .\Vizu-Setup.exe -ArgumentList '/S' -PassThru
+          $setup.WaitForExit(120000) | Out-Null
           Start-Sleep 8
           Check 'instalar e iniciar'
           foreach ($f in 'foto1.png', 'foto2.jpg', 'desenho1.svg') {
