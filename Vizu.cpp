@@ -406,11 +406,14 @@ static bool FontInstalled(const std::wstring& family) {
 // ---------- layout ----------
 
 // Altura reservada embaixo: cápsula de informações e, se houver, a de fontes.
-static float BottomH() { return 66 + (g_hasInfo && !g_info.fonts.empty() ? 38 : 0); }
+// Vizu Classic (protótipo 3.1): barra de cima de 48 px e barra de baixo de 52 px, com a imagem entre elas.
+static bool ClassicBars() { return g_theme.classic; }
+static float BottomH() { return (ClassicBars() ? 68 : 66) + (g_hasInfo && !g_info.fonts.empty() ? 38 : 0); }
 
 static D2D1_RECT_F ImageArea() {
     RECT rc; GetClientRect(g_wnd, &rc);
-    return D2D1::RectF(kPad * g_ui, kCaption * g_ui, rc.right - kPad * g_ui, rc.bottom - BottomH() * g_ui);
+    float top = ClassicBars() ? 64 : kCaption, pad = ClassicBars() ? 16 : kPad;
+    return D2D1::RectF(pad * g_ui, top * g_ui, rc.right - pad * g_ui, rc.bottom - BottomH() * g_ui);
 }
 
 static float FitScale() {
@@ -865,7 +868,19 @@ static void CreateDeviceResources() {
 
 static void DiscardDeviceResources() { SafeRelease(g_gpuBmp); SafeRelease(g_checker); SafeRelease(g_rt); }
 
-static D2D1_RECT_F GearRectF() { return D2D1::RectF(14 * g_ui, 12 * g_ui, 46 * g_ui, 44 * g_ui); }
+static D2D1_RECT_F GearRectF() { return ClassicBars() ? D2D1::RectF(16 * g_ui, 8 * g_ui, 48 * g_ui, 40 * g_ui) : D2D1::RectF(14 * g_ui, 12 * g_ui, 46 * g_ui, 44 * g_ui); }
+// Botões da barra de cima no Vizu Classic: 1 copiar imagem, 2 abrir no programa padrão, 3 fechar.
+static int g_barHot;
+static D2D1_RECT_F BarButton(int id) {
+    RECT rc; GetClientRect(g_wnd, &rc);
+    float right = rc.right - 16 * g_ui - (3 - id) * 44 * g_ui;
+    return D2D1::RectF(right - 36 * g_ui, 6 * g_ui, right, 42 * g_ui);
+}
+static int BarButtonAt(POINT pt) {
+    if (!ClassicBars()) return 0;
+    for (int id = 1; id <= 3; ++id) if (ui::Hit(BarButton(id), pt)) return id;
+    return 0;
+}
 // Setas de página nas laterais da imagem (InDesign e outros com várias páginas).
 static D2D1_RECT_F PageArrow(int dir) {
     D2D1_RECT_F a = ImageArea();
@@ -910,6 +925,110 @@ static std::vector<std::wstring> InfoChips() {
     return parts;
 }
 
+static std::wstring ZoomText() {
+    wchar_t t[64];
+    swprintf(t, 64, L"%.0f%%", g_scale * 100 * (g_nativeKnown ? 1.0f : g_nw / g_bw));
+    return t;
+}
+
+// Vizu Classic (protótipo 3.1 Espiar): barras chapadas em cima e embaixo, informações em etiquetas e atalhos à direita.
+static void PaintClassicBars(ui::Painter& p, D2D1_SIZE_F size, float s) {
+    const D2D1_COLOR_F bar = ui::Rgba(0x2E333B), sunken = ui::Rgba(0x23272E), ink = ui::Rgba(0xFFFFFF), ink2 = ui::Rgba(0xBCC2CC),
+                       line = ui::Rgba(0x9AA1AD), hair = ui::Rgba(0x5C6472), orange = ui::Rgba(0xFF6633);
+    float w = size.width, h = size.height;
+    auto tag = [&](float x, float cy, const std::wstring& text) {
+        float tw = p.Measure(text, 11, DWRITE_FONT_WEIGHT_MEDIUM) + 16 * s;
+        D2D1_RECT_F r = D2D1::RectF(x, cy - 11 * s, x + tw, cy + 11 * s);
+        p.Fill(r, 4 * s, sunken);
+        p.Text(text, r, 11, ink, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_TEXT_ALIGNMENT_CENTER);
+        return tw;
+    };
+    auto key = [&](float right, float cy, const std::wstring& text) { // tecla com contorno, alinhada pela direita
+        float kw = max(22 * s, p.Measure(text, 11, DWRITE_FONT_WEIGHT_MEDIUM) + 12 * s);
+        D2D1_RECT_F r = D2D1::RectF(right - kw, cy - 11 * s, right, cy + 11 * s);
+        p.Stroke(r, 4 * s, line);
+        p.Text(text, r, 11, ink, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_TEXT_ALIGNMENT_CENTER);
+        return kw;
+    };
+    // barra de cima: configurações, nome, zoom e botões
+    p.Fill(D2D1::RectF(0, 0, w, 48 * s), 0, bar);
+    D2D1_RECT_F gear = GearRectF();
+    if (g_gearHot) p.Fill(gear, 8 * s, ui::Rgba(0xFFFFFF, 0.08f));
+    p.Stroke(gear, 8 * s, g_gearHot ? line : hair);
+    p.Icon(L"", gear, 12, ink);
+    const char* icons[4] = {nullptr, "copy", "external-link", "x"};
+    for (int id = 1; id <= 3; ++id) {
+        D2D1_RECT_F r = BarButton(id);
+        bool hot = g_barHot == id;
+        if (hot) p.Fill(r, 8 * s, id == 3 ? orange : ui::Rgba(0xFFFFFF, 0.08f));
+        p.Stroke(r, 8 * s, hot ? (id == 3 ? orange : line) : hair);
+        p.FeatherIcon(icons[id], r, 18 * s, hot && id == 3 ? ui::Rgba(0x000000) : ink);
+    }
+    float x = BarButton(1).left - 8 * s;
+    std::wstring zoom = ZoomText();
+    x -= p.Measure(zoom, 11, DWRITE_FONT_WEIGHT_MEDIUM) + 16 * s;
+    tag(x, 24 * s, zoom);
+    if (g_pages > 1) {
+        wchar_t t[64]; swprintf(t, 64, L"%d / %d", g_page + 1, g_pages);
+        x -= p.Measure(t, 11, DWRITE_FONT_WEIGHT_MEDIUM) + 24 * s;
+        tag(x, 24 * s, t);
+    }
+    float side = max(w - x, gear.right) + 12 * s;
+    p.Text(g_name, D2D1::RectF(side, 0, w - side, 48 * s), 14, ink, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_TEXT_ALIGNMENT_CENTER);
+    if (!g_flash.empty() || g_loading) {
+        std::wstring f = g_flash.empty() ? std::wstring(T(L"Carregando…", L"Loading…", L"Cargando…")) : g_flash;
+        p.Text(f, D2D1::RectF(gear.right + 12 * s, 0, side, 48 * s), 12, g_flash.empty() ? ink2 : orange);
+    }
+    // barra de baixo: etiquetas à esquerda, atalhos à direita (somem se a janela for estreita)
+    float top = h - 52 * s, cy = h - 26 * s;
+    p.Fill(D2D1::RectF(0, top, w, h), 0, bar);
+    float kx = w - 16 * s;
+    struct Hint { const wchar_t* keys[2]; const wchar_t* text; };
+    Hint hints[3] = {{{L"←", L"→"}, T(L"arquivos", L"files", L"archivos")}, {{L"Z", nullptr}, L"100%"}, {{T(L"Espaço", L"Space", L"Espacio"), nullptr}, T(L"fecha", L"closes", L"cierra")}};
+    bool showHints = w > 640 * s;
+    if (showHints)
+        for (const Hint& hnt : hints) {
+            float tw = p.Measure(hnt.text, 12) + 2 * s;
+            p.Text(hnt.text, D2D1::RectF(kx - tw, top, kx, h), 12, ink2);
+            kx -= tw + 6 * s;
+            for (int k = 1; k >= 0; --k) if (hnt.keys[k]) kx -= key(kx, cy, hnt.keys[k]) + 4 * s;
+            kx -= 8 * s;
+        }
+    float tx = 16 * s, limit = showHints ? kx - 8 * s : w - 16 * s;
+    for (const std::wstring& c : InfoChips()) {
+        float tw = p.Measure(c, 11, DWRITE_FONT_WEIGHT_MEDIUM) + 16 * s;
+        if (tx + tw > limit) break; // o que não cabe fica de fora
+        tx += tag(tx, cy, c) + 8 * s;
+    }
+    // fontes do documento (faltando = vermelho), logo acima da barra de baixo
+    if (!g_info.fonts.empty()) {
+        std::wstring l2 = std::wstring(T(L"Fontes", L"Fonts", L"Fuentes")) + L"   ";
+        std::vector<DWRITE_TEXT_RANGE> missing;
+        for (size_t i = 0; i < g_info.fonts.size(); ++i) {
+            if (i) l2 += L"  ·  ";
+            bool ok = FontInstalled(g_info.fontFamilies[i]);
+            if (!ok) missing.push_back({(UINT32)l2.size(), (UINT32)g_info.fonts[i].size() + 2});
+            l2 += g_info.fonts[i];
+            if (!ok) l2 += L" ⚠";
+        }
+        float fh = 30 * s, fw = min(p.Measure(l2, 11.5f) * 1.15f + 32 * s, w - 32 * s);
+        D2D1_RECT_F fr = D2D1::RectF((w - fw) / 2, top - 8 * s - fh, (w + fw) / 2, top - 8 * s);
+        p.Fill(fr, 8 * s, bar);
+        IDWriteTextFormat* f = p.Format(11.5f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
+        IDWriteTextLayout* lay = nullptr;
+        ID2D1SolidColorBrush *txt = nullptr, *red = nullptr, *lbl = nullptr;
+        g_rt->CreateSolidColorBrush(ink, &txt); g_rt->CreateSolidColorBrush(ui::Rgba(0xFF6961), &red); g_rt->CreateSolidColorBrush(ink2, &lbl);
+        if (f && txt && red && lbl && SUCCEEDED(g_dw->CreateTextLayout(l2.c_str(), (UINT32)l2.size(), f, fr.right - fr.left - 32 * s, fh, &lay))) {
+            lay->SetDrawingEffect(lbl, {0, (UINT32)wcslen(T(L"Fontes", L"Fonts", L"Fuentes"))});
+            for (auto& r : missing) { lay->SetDrawingEffect(red, r); lay->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, r); }
+            g_rt->DrawTextLayout(D2D1::Point2F(fr.left + 16 * s, fr.top), lay, txt);
+            lay->Release();
+        }
+        SafeRelease(txt); SafeRelease(red); SafeRelease(lbl);
+        if (f) f->Release();
+    }
+}
+
 static float Ease(float t) { t = max(0.0f, min(1.0f, t)); return 1 - (1 - t) * (1 - t) * (1 - t); }
 
 static void Paint() {
@@ -925,8 +1044,9 @@ static void Paint() {
     D2D1_SIZE_F size = g_rt->GetSize();
     float s = g_ui, anim = Ease((GetTickCount() - g_animStart) / 160.0f);
     g_rt->BeginDraw();
-    g_rt->Clear(th.tint);
-    ui::Backdrop(g_rt, th, size.width, size.height);
+    bool bars = ClassicBars();
+    g_rt->Clear(bars ? ui::Rgba(0x23272E) : th.tint);
+    if (!bars) ui::Backdrop(g_rt, th, size.width, size.height);
     ui::Painter p(g_rt, g_dw, th, s);
 
     // imagem flutuando, com cantos arredondados
@@ -936,8 +1056,8 @@ static void Paint() {
         float w = g_nw * g_scale * k, h = g_nh * g_scale * k;
         float cx = (a.left + a.right) / 2 + g_ox, cy = (a.top + a.bottom) / 2 + g_oy;
         D2D1_RECT_F dst = D2D1::RectF(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2);
-        float radius = 14 * s;
-        if (g_fitMode) p.Shadow(dst, radius);
+        float radius = (bars ? 8 : 14) * s;
+        if (g_fitMode && !bars) p.Shadow(dst, radius);
         ID2D1RoundedRectangleGeometry* clip = nullptr;
         D2D1_RECT_F clipRect = g_fitMode ? dst : a;
         g_d2d->CreateRoundedRectangleGeometry(D2D1::RoundedRect(clipRect, radius, radius), &clip);
@@ -953,7 +1073,7 @@ static void Paint() {
         } else g_rt->DrawBitmap(g_gpuBmp, dst, 1.0f, pixelPeep ? D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR : D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
         if (clip && layer) g_rt->PopLayer();
         SafeRelease(layer); SafeRelease(clip);
-        if (g_fitMode) p.Stroke(dst, radius, th.stroke);
+        if (g_fitMode && !bars) p.Stroke(dst, radius, th.stroke);
     } else p.Text(T(L"Carregando…", L"Loading…", L"Cargando…"), a, 13, th.text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
 
     // setas de página
@@ -988,6 +1108,7 @@ static void Paint() {
         p.Text(pmsLine, D2D1::RectF(px + 36 * s, py + 42 * s, pr.right - 8 * s, py + 58 * s), 11, th.text2);
     }
 
+    if (bars) { PaintClassicBars(p, size, s); if (g_rt->EndDraw() == D2DERR_RECREATE_TARGET) DiscardDeviceResources(); return; }
     // barra de cima: engrenagem, nome, zoom/página
     p.CircleButton(GearRectF(), L"", g_gearHot);
     float side = 170 * s;
@@ -1194,6 +1315,12 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         RECT gr = GearRect();
         if (PtInRect(&gr, pt)) { ClosePreview(); OpenSettings(); return 0; }
+        if (int b = BarButtonAt(pt)) {
+            if (b == 1) CopyImage();
+            else if (b == 2) { std::wstring path = g_path; ClosePreview(); ShellExecuteW(nullptr, nullptr, path.c_str(), nullptr, nullptr, SW_SHOWNORMAL); }
+            else ClosePreview();
+            return 0;
+        }
         if (int d = PageArrowAt(pt)) { ChangePage(d); return 0; }
         g_dragging = true;
         g_dragFrom = g_downPt = pt;
@@ -1203,10 +1330,13 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_MOUSEMOVE: {
         POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         RECT gr = GearRect();
-        bool hotNow = PtInRect(&gr, p) != 0;
+        bool gearNow = PtInRect(&gr, p) != 0;
+        int barNow = g_dragging ? 0 : BarButtonAt(p);
+        RECT crc; GetClientRect(h, &crc);
+        bool hotNow = gearNow || barNow || (ClassicBars() && (p.y < 48 * g_ui || p.y > crc.bottom - 52 * g_ui)); // sem conta-gotas sobre as barras
         int arrow = g_dragging ? 0 : PageArrowAt(p);
-        if (hotNow != g_gearHot || arrow != g_arrowHot) {
-            g_gearHot = hotNow;
+        if (gearNow != g_gearHot || barNow != g_barHot || arrow != g_arrowHot) {
+            g_gearHot = gearNow; g_barHot = barNow;
             g_arrowHot = arrow;
             TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, h, 0};
             TrackMouseEvent(&tme);
@@ -1230,7 +1360,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         }
         return 0;
     }
-    case WM_MOUSELEAVE: if (g_gearHot || g_arrowHot || g_pickOn) { g_gearHot = false; g_arrowHot = 0; g_pickOn = false; InvalidateRect(h, nullptr, FALSE); } return 0;
+    case WM_MOUSELEAVE: if (g_gearHot || g_barHot || g_arrowHot || g_pickOn) { g_gearHot = false; g_barHot = 0; g_arrowHot = 0; g_pickOn = false; InvalidateRect(h, nullptr, FALSE); } return 0;
     case WM_LBUTTONUP: {
         POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         bool click = g_dragging && abs(p.x - g_downPt.x) < 4 && abs(p.y - g_downPt.y) < 4;
