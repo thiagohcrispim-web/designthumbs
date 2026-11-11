@@ -16,7 +16,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: vizu-smoke
-          path: Vizu-Setup.exe
+          path: |
+            Vizu-Setup.exe
+            build/Vizu.map
           if-no-files-found: error
   preview:
     needs: build
@@ -45,16 +47,37 @@ jobs:
           $log = Join-Path $env:LOCALAPPDATA 'DesignThumbs\crash.log'
           $exe = Join-Path $env:LOCALAPPDATA 'Programs\DesignThumbs\Vizu.exe'
           $failed = $false
+          # Traduz "+0x1234" em nome de função usando o mapa do build
+          $map = [regex]::Matches((Get-Content build\Vizu.map -Raw), '\.text\$(\S+)\s+0x([0-9a-f]{16})\s+0x([0-9a-f]+)') | ForEach-Object {
+            [pscustomobject]@{ Name = $_.Groups[1].Value; Start = [Convert]::ToUInt64($_.Groups[2].Value, 16); Size = [Convert]::ToUInt64($_.Groups[3].Value, 16) } }
+          function Resolve($text) {
+            [regex]::Matches($text, '\+0x([0-9a-fA-F]+)') | ForEach-Object {
+              $a = 0x140000000 + [Convert]::ToUInt64($_.Groups[1].Value, 16)
+              $hit = $map | Where-Object { $a -ge $_.Start -and $a -lt $_.Start + $_.Size } | Select-Object -First 1
+              if ($hit) { Write-Host ("  +0x{0:X} {1}" -f ($a - 0x140000000), $hit.Name) }
+            }
+          }
+          function Stacks($name) {
+            $cdb = 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe'
+            Get-Process | Where-Object MainWindowTitle | ForEach-Object { Write-Host "janela: $($_.ProcessName) - $($_.MainWindowTitle)" }
+            $p = Get-Process $name -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $p) { Write-Host "$name nao esta rodando"; return }
+            if (-not (Test-Path $cdb)) { Write-Host 'cdb nao encontrado'; return }
+            $out = & $cdb -pv -p $p.Id -c '~*kn 30;q' 2>&1 | Out-String
+            ($out -split "`n") | Where-Object { $_ -match '^\s*[0-9a-f]+ |Id: ' } | Select-Object -First 160 | ForEach-Object { Write-Host $_ }
+            Write-Host 'funcoes do Vizu nas pilhas:'; Resolve ($out -replace 'Vizu_Setup\+0x', '+0x' -replace 'Vizu\+0x', '+0x')
+          }
           function Check($step) {
-            if (Test-Path $log) { Write-Host "::error::$step - o Vizu fechou sozinho"; Get-Content $log; Remove-Item $log; $script:failed = $true }
+            if (Test-Path $log) { Write-Host "::error::$step - o Vizu fechou sozinho"; $c = Get-Content $log -Raw; Write-Host $c; Resolve $c; Remove-Item $log; $script:failed = $true }
             if (-not (Get-Process Vizu -ErrorAction SilentlyContinue)) {
               Write-Host "::error::$step - o Vizu nao esta mais aberto"; $script:failed = $true
-              Start-Process $exe; Start-Sleep 5
+              if (Test-Path $exe) { Start-Process $exe; Start-Sleep 5 }
             } else { Write-Host "ok: $step" }
           }
           # -Wait esperaria também o Vizu que o instalador abre no fim; espera só o instalador
           $setup = Start-Process .\Vizu-Setup.exe -ArgumentList '/S' -PassThru
-          $setup.WaitForExit(120000) | Out-Null
+          if (-not $setup.WaitForExit(60000)) { Write-Host '::error::instalador silencioso nao terminou em 60 s'; $failed = $true; Stacks 'Vizu-Setup'; Stop-Process -Id $setup.Id -Force }
+          Get-ChildItem (Split-Path $exe) -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "instalado: $($_.Name) $($_.Length)" }
           Start-Sleep 8
           Check 'instalar e iniciar'
           foreach ($f in 'foto1.png', 'foto2.jpg', 'desenho1.svg') {
