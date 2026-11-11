@@ -13,5 +13,5 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
       - shell: pwsh
         run: |
-          cl /nologo /c /O1 /FAs /Fa:probe.asm tests\probe\svg_vtable.cpp | Out-Null
+          cl /nologo /c /O1 /FA /Faprobe.asm tests\probe\svg_vtable.cpp
           Get-Content probe.asm | Select-String -Pattern '^\?P_\w+@@.* PROC|call\s+QWORD PTR \[|jmp\s+QWORD PTR \[|rex_jmp' | ForEach-Object { $_.Line.Trim() }
