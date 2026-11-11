@@ -193,7 +193,10 @@ inline bool Commit(const std::wstring& root, const std::wstring& staging, std::w
     if (hadOld && !MoveFileExW(target.c_str(), backup.c_str(), 0)) {
         error = T(L"O motor vetorial está em uso. Feche a conversão em andamento e tente novamente.", L"The vector engine is in use. Close the running conversion and try again.", L"El motor vectorial está en uso. Cierra la conversión en curso e inténtalo de nuevo."); return false;
     }
-    if (!MoveFileExW(staging.c_str(), target.c_str(), 0)) {
+    // O antivírus ou o próprio motor recém-testado podem segurar a pasta por instantes: tenta por até 5 s.
+    bool moved = false;
+    for (int attempt = 0; attempt < 10 && !(moved = MoveFileExW(staging.c_str(), target.c_str(), 0) != FALSE); ++attempt) Sleep(500);
+    if (!moved) {
         if (hadOld) MoveFileExW(backup.c_str(), target.c_str(), 0);
         error = T(L"Não foi possível concluir a instalação do motor vetorial.", L"Couldn't finish installing the vector engine.", L"No se pudo completar la instalación del motor vectorial."); return false;
     }
