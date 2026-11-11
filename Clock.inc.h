@@ -156,39 +156,179 @@ static void ToggleTheft() {
         fclose(f);
     }
 }
-static void ShowTheftHistory() {
+// Histórico do roubo de tempo (protótipo 4 · Relógio): cartão com o total de hoje, barras dos últimos dias,
+// as interrupções mais recentes e os botões Exportar CSV e Ver semana.
+struct TheftView {
+    HWND wnd = nullptr;
+    ui::Surface surf;
+    bool week = false;
+    int hot = 0; // 1 exportar, 2 ver semana
+    D2D1_RECT_F btn[3] = {};
+};
+static TheftView g_tv;
+static int DaySum(const std::vector<Theft>& all, const SYSTEMTIME& d, int* count = nullptr) {
+    int s = 0, n = 0;
+    for (auto& t : all) if (t.y == d.wYear && t.m == d.wMonth && t.d == d.wDay) { s += t.sec; ++n; }
+    if (count) *count = n;
+    return s;
+}
+static SYSTEMTIME DaysAgo(int k) {
     SYSTEMTIME now; GetLocalTime(&now);
-    auto all = LoadThefts();
-    int total = 0, n = 0;
-    std::wstring list;
-    for (auto it = all.rbegin(); it != all.rend(); ++it)
-        if (it->y == now.wYear && it->m == now.wMonth && it->d == now.wDay) {
-            total += it->sec; ++n;
-            if (n <= 12) { wchar_t b[64]; swprintf(b, 64, L"%02d:%02d   —   %ls\n", it->h, it->mi, Dur(it->sec).c_str()); list += b; }
-        }
-    if (n > 12) { wchar_t b[64]; swprintf(b, 64, T(L"+ %d mais\n", L"+ %d more\n", L"+ %d más\n"), n - 12); list += b; }
-    std::wstring week = T(L"\nÚltimos 7 dias:\n", L"\nLast 7 days:\n", L"\nÚltimos 7 días:\n");
     FILETIME ft; SystemTimeToFileTime(&now, &ft);
-    ULONGLONG u = (ULONGLONG)ft.dwHighDateTime << 32 | ft.dwLowDateTime;
-    for (int k = 6; k >= 0; --k) {
-        ULONGLONG v = u - (ULONGLONG)k * 864000000000ull;
-        FILETIME f2 = {(DWORD)v, (DWORD)(v >> 32)}; SYSTEMTIME d; FileTimeToSystemTime(&f2, &d);
-        int s = 0; for (auto& t : all) if (t.y == d.wYear && t.m == d.wMonth && t.d == d.wDay) s += t.sec;
-        wchar_t b[64]; swprintf(b, 64, L"%02d/%02d   %ls\n", d.wDay, d.wMonth, s ? Dur(s).c_str() : L"—"); week += b;
+    ULONGLONG v = ((ULONGLONG)ft.dwHighDateTime << 32 | ft.dwLowDateTime) - (ULONGLONG)k * 864000000000ull;
+    FILETIME f2 = {(DWORD)v, (DWORD)(v >> 32)}; SYSTEMTIME d; FileTimeToSystemTime(&f2, &d);
+    return d;
+}
+static std::wstring Clock2(int sec) { wchar_t b[24]; if (sec >= 3600) swprintf(b, 24, L"%d:%02d:%02d", sec / 3600, sec / 60 % 60, sec % 60); else swprintf(b, 24, L"%02d:%02d", sec / 60, sec % 60); return b; }
+static int TheftRows() {
+    if (g_tv.week) return 7;
+    SYSTEMTIME now; GetLocalTime(&now);
+    int n = 0; DaySum(LoadThefts(), now, &n);
+    return n == 0 ? 1 : n <= 4 ? n : 4;
+}
+static float TheftHeight() { return 106 + TheftRows() * 30 + 14 + 34 + 20; }
+static void TheftExport() {
+    std::wstring src = DataPath(L"roubo-de-tempo.csv");
+    if (GetFileAttributesW(src.c_str()) == INVALID_FILE_ATTRIBUTES) { MessageBoxW(g_tv.wnd, T(L"Ainda não há registros para exportar.", L"There are no records to export yet.", L"Todavía no hay registros para exportar."), L"Vizu", MB_ICONINFORMATION); return; }
+    wchar_t file[MAX_PATH] = L"roubo-de-tempo.csv";
+    OPENFILENAMEW of = {sizeof(of)};
+    of.hwndOwner = g_tv.wnd; of.lpstrFile = file; of.nMaxFile = MAX_PATH; of.lpstrDefExt = L"csv";
+    of.lpstrFilter = L"CSV (*.csv)\0*.csv\0";
+    of.Flags = OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
+    if (GetSaveFileNameW(&of) && !CopyFileW(src.c_str(), file, FALSE))
+        MessageBoxW(g_tv.wnd, T(L"Não foi possível salvar o arquivo.", L"Couldn't save the file.", L"No se pudo guardar el archivo."), L"Vizu", MB_ICONWARNING);
+}
+static void PaintTheft(HWND h) {
+    g_tv.surf.hwnd = h;
+    if (!g_tv.surf.Begin(g_d2d)) return;
+    float s = WndScale(h);
+    ID2D1RenderTarget* rt = g_tv.surf.rt;
+    D2D1_SIZE_F sz = rt->GetSize();
+    const ui::Theme& th = g_theme;
+    bool classic = th.classic;
+    D2D1_COLOR_F bg = classic ? ui::Rgba(0x4A4F57) : th.tint, ink = classic ? ui::Rgba(0xFFFFFF) : th.text, ink2 = classic ? ui::Rgba(0xCDD2DA) : th.text2,
+                 track = classic ? ui::Rgba(0x5C6472) : th.track, sep = classic ? ui::Rgba(0x5C6472) : th.stroke, red = ui::Rgba(0xFF3B5C);
+    rt->Clear(bg);
+    ui::Painter p(rt, g_dw, th, s);
+    if (!classic) p.Stroke(D2D1::RectF(0, 0, sz.width, sz.height), 12 * s, th.stroke);
+    auto R = [&](float x0, float y0, float x1, float y1) { return D2D1::RectF(x0 * s, y0 * s, x1 * s, y1 * s); };
+    float W = sz.width / s, L = 20, Rt = W - 20;
+    auto all = LoadThefts();
+    SYSTEMTIME today; GetLocalTime(&today);
+    int n = 0, total = DaySum(all, today, &n);
+    int weekTotal = 0; for (int k = 0; k < 7; ++k) weekTotal += DaySum(all, DaysAgo(k));
+    wchar_t head[96];
+    if (g_tv.week) swprintf(head, 96, T(L"Últimos 7 dias · total perdido", L"Last 7 days · total lost", L"Últimos 7 días · total perdido"));
+    else swprintf(head, 96, n == 1 ? T(L"Total perdido hoje · %d interrupção", L"Total lost today · %d interruption", L"Total perdido hoy · %d interrupción") : T(L"Total perdido hoje · %d interrupções", L"Total lost today · %d interruptions", L"Total perdido hoy · %d interrupciones"), n);
+    p.Text(head, R(L, 18, Rt - 110, 36), 12, ink2);
+    // total grande: número em 40 px, unidade em 18 px
+    int big = g_tv.week ? weekTotal : total;
+    std::wstring parts[4];
+    if (big >= 3600) { parts[0] = std::to_wstring(big / 3600); parts[1] = L" h "; wchar_t b[8]; swprintf(b, 8, L"%02d", big / 60 % 60); parts[2] = b; parts[3] = L" min"; }
+    else { parts[0] = std::to_wstring(big / 60); parts[1] = L" min "; parts[2] = std::to_wstring(big % 60); parts[3] = L" s"; }
+    float x = L;
+    for (int i = 0; i < 4; ++i) {
+        bool num = i % 2 == 0;
+        float sz2 = num ? 40.0f : 18.0f;
+        float w = p.Measure(parts[i], sz2, num ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL) / s;
+        p.Text(parts[i], R(x, num ? 36 : 52, x + w + 2, num ? 84 : 80), sz2, num ? ink : ink2, num ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL);
+        x += w;
     }
-    wchar_t head[128];
-    swprintf(head, 128, T(L"Hoje: %ls perdidos em %d interrupções", L"Today: %ls lost in %d interruptions", L"Hoy: %ls perdidos en %d interrupciones"), Dur(total).c_str(), n);
-    std::wstring content = (list.empty() ? std::wstring(T(L"Nenhum roubo de tempo hoje.\n", L"No time theft today.\n", L"Ningún robo de tiempo hoy.\n")) : list) + week;
-    TASKDIALOG_BUTTON b[] = {{100, T(L"Abrir planilha (CSV)", L"Open spreadsheet (CSV)", L"Abrir hoja (CSV)")}};
-    TASKDIALOGCONFIG tc = {sizeof(tc)};
-    tc.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION; tc.dwCommonButtons = TDCBF_CLOSE_BUTTON;
-    tc.pszWindowTitle = T(L"Roubo de tempo", L"Time theft", L"Robo de tiempo");
-    tc.pszMainInstruction = head; tc.pszContent = content.c_str(); tc.pButtons = b; tc.cButtons = 1;
-    int pressed = 0;
-    if (SUCCEEDED(TaskDialogIndirect(&tc, &pressed, nullptr, nullptr)) && pressed == 100) {
-        std::wstring p = DataPath(L"roubo-de-tempo.csv");
-        if (GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES) ShellExecuteW(nullptr, L"open", p.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    // barras dos últimos 5 dias (hoje à direita, em vermelho)
+    int days[5], mx = 1;
+    for (int k = 0; k < 5; ++k) { days[k] = DaySum(all, DaysAgo(4 - k)); mx = max(mx, days[k]); }
+    for (int k = 0; k < 5; ++k) {
+        float bx = Rt - (5 - k) * 20 + 6, hh = max(4.0f, 56.0f * days[k] / mx);
+        p.Fill(R(bx, 82 - hh, bx + 14, 82), 4 * s, k == 4 ? red : track);
     }
+    p.Fill(R(L, 96, Rt, 97), 0, sep);
+    // lista: interrupções de hoje (as 3 mais recentes + o resto somado) ou os 7 dias
+    float y = 104;
+    auto row = [&](const std::wstring& a, const std::wstring& b, bool muted) {
+        D2D1_COLOR_F c = muted ? ink2 : ink;
+        p.Text(a, R(L + 4, y, Rt, y + 30), 13, c);
+        if (!muted) p.Text(L"—", R(L, y, Rt, y + 30), 13, ink2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
+        p.Text(b, R(L, y, Rt - 4, y + 30), 13, c, muted ? DWRITE_FONT_WEIGHT_NORMAL : DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_TRAILING);
+        y += 30;
+    };
+    if (g_tv.week) {
+        static const wchar_t* wdPt[7] = {L"dom", L"seg", L"ter", L"qua", L"qui", L"sex", L"sáb"}, *wdEn[7] = {L"Sun", L"Mon", L"Tue", L"Wed", L"Thu", L"Fri", L"Sat"}, *wdEs[7] = {L"dom", L"lun", L"mar", L"mié", L"jue", L"vie", L"sáb"};
+        for (int k = 0; k < 7; ++k) {
+            SYSTEMTIME d = DaysAgo(k);
+            int sm = DaySum(all, d);
+            wchar_t a[32]; swprintf(a, 32, L"%ls %02d/%02d", k == 0 ? T(L"hoje", L"today", L"hoy") : T(wdPt[d.wDayOfWeek], wdEn[d.wDayOfWeek], wdEs[d.wDayOfWeek]), d.wDay, d.wMonth);
+            row(a, sm ? Clock2(sm) : L"—", sm == 0);
+        }
+    } else if (n == 0) row(T(L"Nenhum roubo de tempo hoje.", L"No time theft today.", L"Ningún robo de tiempo hoy."), L"", true);
+    else {
+        int shown = 0, rest = 0;
+        for (auto it = all.rbegin(); it != all.rend(); ++it) {
+            if (it->y != today.wYear || it->m != today.wMonth || it->d != today.wDay) continue;
+            if (shown < (n <= 4 ? 4 : 3)) { wchar_t a[16]; swprintf(a, 16, L"%02d:%02d", it->h, it->mi); row(a, Clock2(it->sec), false); ++shown; }
+            else rest += it->sec;
+        }
+        if (n > 4) { wchar_t a[32]; swprintf(a, 32, T(L"+ %d mais", L"+ %d more", L"+ %d más"), n - 3); row(a, Clock2(rest), true); }
+    }
+    // botões
+    y += 14;
+    float bw = (Rt - L - 8) / 2;
+    const wchar_t* labels[3] = {nullptr, T(L"Exportar CSV", L"Export CSV", L"Exportar CSV"), g_tv.week ? T(L"Ver hoje", L"Show today", L"Ver hoy") : T(L"Ver semana", L"Show week", L"Ver semana")};
+    for (int i = 1; i <= 2; ++i) {
+        float bx = L + (i - 1) * (bw + 8);
+        D2D1_RECT_F r = R(bx, y, bx + bw, y + 34);
+        g_tv.btn[i] = r;
+        if (g_tv.hot == i) p.Fill(r, 17 * s, classic ? ui::Rgba(0xFFFFFF, 0.10f) : th.panelHot);
+        p.Stroke(r, 17 * s, classic ? ui::Rgba(0x9AA1AD) : th.stroke);
+        p.Text(labels[i], r, 12.5f, ink, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+    }
+    g_tv.surf.End();
+}
+static void TheftResize() {
+    if (!g_tv.wnd) return;
+    float s = WndScale(g_tv.wnd);
+    RECT r; GetWindowRect(g_tv.wnd, &r);
+    SetWindowPos(g_tv.wnd, nullptr, 0, 0, r.right - r.left, (int)(TheftHeight() * s), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    InvalidateRect(g_tv.wnd, nullptr, FALSE);
+}
+static LRESULT CALLBACK TheftProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_PAINT: { PAINTSTRUCT ps; BeginPaint(h, &ps); PaintTheft(h); EndPaint(h, &ps); return 0; }
+    case WM_ERASEBKGND: return 1;
+    case WM_SIZE: g_tv.surf.Resize(LOWORD(lp), HIWORD(lp)); return 0;
+    case WM_NCHITTEST: { LRESULT r = DefWindowProcW(h, msg, wp, lp); if (r != HTCLIENT) return r; POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)}; ScreenToClient(h, &pt); return pt.y < 96 * WndScale(h) ? HTCAPTION : HTCLIENT; }
+    case WM_MOUSEMOVE: {
+        POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+        int hot = ui::Hit(g_tv.btn[1], pt) ? 1 : ui::Hit(g_tv.btn[2], pt) ? 2 : 0;
+        if (hot != g_tv.hot) { g_tv.hot = hot; TRACKMOUSEEVENT t = {sizeof(t), TME_LEAVE, h, 0}; TrackMouseEvent(&t); InvalidateRect(h, nullptr, FALSE); }
+        return 0;
+    }
+    case WM_MOUSELEAVE: g_tv.hot = 0; InvalidateRect(h, nullptr, FALSE); return 0;
+    case WM_SETCURSOR: if (LOWORD(lp) == HTCLIENT) { SetCursor(LoadCursor(nullptr, g_tv.hot ? IDC_HAND : IDC_ARROW)); return TRUE; } break;
+    case WM_LBUTTONUP:
+        if (g_tv.hot == 1) TheftExport();
+        else if (g_tv.hot == 2) { g_tv.week = !g_tv.week; TheftResize(); }
+        return 0;
+    case WM_KEYDOWN: if (wp == VK_ESCAPE) DestroyWindow(h); return 0;
+    case WM_ACTIVATE: if (LOWORD(wp) == WA_INACTIVE && !IsWindowEnabled(h)) return 0; if (LOWORD(wp) == WA_INACTIVE && (HWND)lp != nullptr && GetWindow((HWND)lp, GW_OWNER) != h) DestroyWindow(h); return 0;
+    case WM_DESTROY: g_tv.surf.Release(); g_tv.wnd = nullptr; g_tv.hot = 0; return 0;
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+static void ShowTheftHistory() {
+    if (g_tv.wnd) { SetForegroundWindow(g_tv.wnd); return; }
+    static bool reg = false;
+    if (!reg) { WNDCLASSW wc = {}; wc.lpfnWndProc = TheftProc; wc.hInstance = GetModuleHandleW(nullptr); wc.lpszClassName = L"VizuTheft"; wc.hCursor = LoadCursor(nullptr, IDC_ARROW); RegisterClassW(&wc); reg = true; }
+    g_tv.week = false;
+    float s = GetDpiForSystem() / 96.0f;
+    int w = (int)(380 * s), hgt = (int)(TheftHeight() * s);
+    RECT cr = {}; if (g_clock.wnd) GetWindowRect(g_clock.wnd, &cr);
+    MONITORINFO mi = {sizeof(mi)}; GetMonitorInfoW(MonitorFromWindow(g_clock.wnd ? g_clock.wnd : GetDesktopWindow(), MONITOR_DEFAULTTOPRIMARY), &mi);
+    int x = max((int)mi.rcWork.left + 8, min((int)mi.rcWork.right - w - 8, (int)cr.left));
+    int y = cr.top - hgt - 8 >= mi.rcWork.top ? cr.top - hgt - 8 : min((int)mi.rcWork.bottom - hgt - 8, (int)cr.bottom + 8);
+    g_tv.wnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"VizuTheft", T(L"Roubo de tempo", L"Time theft", L"Robo de tiempo"), WS_POPUP, x, y, w, hgt, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    if (!g_tv.wnd) return;
+    BOOL round = 2; DwmSetWindowAttribute(g_tv.wnd, 33, &round, sizeof(round));
+    ShowWindow(g_tv.wnd, SW_SHOW); SetForegroundWindow(g_tv.wnd); SetFocus(g_tv.wnd);
 }
 
 // ---------- Pomodoro ----------
@@ -271,7 +411,7 @@ static void ClockRender() {
     float rad = 22 * s;
     if (!docked) p.Shadow(card, rad);
     D2D1_COLOR_F base = docked ? ui::Rgba(0x000000, 0.006f) // quase invisível: a barra de tarefas aparece por trás (e o clique funciona)
-                       : th.neon ? ui::Rgba(0x0E0E10, 0.94f) : th.dark ? ui::Rgba(0x161618, 0.94f) : ui::Rgba(0xFAFAFC, 0.95f);
+                       : th.classic ? ui::Rgba(0x4A4F57) : th.neon ? ui::Rgba(0x0E0E10, 0.94f) : th.dark ? ui::Rgba(0x161618, 0.94f) : ui::Rgba(0xFAFAFC, 0.95f);
     p.Fill(card, rad, base);
     if (pomo) {
         p.Fill(card, rad, ui::Rgba(pc, 0.15f));
@@ -294,7 +434,8 @@ static void ClockRender() {
     } else if (!docked) p.Stroke(card, rad, th.neon ? ui::Rgba(ui::NeonColor(), 0.42f) : th.stroke, 1 * s);
 
     float x = card.left + 14 * s, cy = (card.top + card.bottom) / 2;
-    D2D1_COLOR_F hotBg = th.dark ? ui::Rgba(0xFFFFFF, 0.14f) : ui::Rgba(0x000000, 0.09f), chipBg = th.dark ? ui::Rgba(0xFFFFFF, 0.07f) : ui::Rgba(0x000000, 0.05f);
+    D2D1_COLOR_F hotBg = th.dark ? ui::Rgba(0xFFFFFF, 0.14f) : ui::Rgba(0x000000, 0.09f), chipBg = th.classic ? ui::Rgba(0x23272E) : th.dark ? ui::Rgba(0xFFFFFF, 0.07f) : ui::Rgba(0x000000, 0.05f);
+    if (th.classic) hotBg = ui::Rgba(0x5C6472);
     // 1) ícone da esquerda: agenda (triângulo) ou fase do Pomodoro
     g_clock.rTri = D2D1::RectF(0, 0, 0, 0);
     if (showTri) {
