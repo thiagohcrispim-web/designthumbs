@@ -694,7 +694,7 @@ static UINT g_toastDone, g_toastTotal;
 static std::vector<std::wstring> g_toastOutputs;
 static void ShowAltPopup();
 static void HideAltPopup();
-enum { WM_TRAY = WM_APP + 40, kTrayId = 1, kMenuSettings = 1, kMenuRestart, kMenuQuit };
+enum { WM_TRAY = WM_APP + 40, kTrayId = 1, kMenuSettings = 1, kMenuRestart, kMenuQuit, kMenuUpdates };
 static UINT g_taskbarCreated;
 static void UpdateTrayIcon();
 static void RemoveTrayIcon();
@@ -1238,7 +1238,7 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         else {
             std::wstring text = r->outputs.size() == 1 ? std::wstring(PathFindFileNameW(r->outputs[0].c_str()))
                                                        : std::to_wstring(r->outputs.size()) + T(L" arquivos gerados", L" files created", L" archivos generados");
-            if (r->failed) text += L"  ·  " + std::to_wstring(r->failed) + T(L" com erro", L" failed", L" con error");
+            if (r->failed) text += L" · " + std::to_wstring(r->failed) + T(L" com erro", L" failed", L" con error");
             g_toastAction = 0;
             ShowToast(T(L"Pronto · clique para ver na pasta", L"Done · click to show in folder", L"Listo · clic para ver en la carpeta"), text, 7000, 1);
         }
@@ -2426,8 +2426,26 @@ static LRESULT CALLBACK ToastProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             float s = WndScale(h);
             ID2D1RenderTarget* rt = g_toastSurf.rt;
             D2D1_SIZE_F sz = rt->GetSize();
-            rt->Clear(g_theme.tint);
             ui::Painter p(rt, g_dw, g_theme, s);
+            if (g_theme.classic) { // protótipo 3.3: cartão chapado com um ponto laranja (vermelho se deu erro)
+                rt->Clear(ui::Rgba(0x4A4F57));
+                float cy = g_toastState == 0 ? 33 * s : sz.height / 2;
+                p.Fill(D2D1::RectF(18 * s, cy - 5 * s, 28 * s, cy + 5 * s), 5 * s, g_toastState == 2 ? g_theme.danger : ui::Rgba(0xFF6633));
+                float x = 42 * s, ty = g_toastState == 0 ? 13 * s : sz.height / 2 - 22 * s;
+                p.Text(g_toastTitle, D2D1::RectF(x, ty, sz.width - 18 * s, ty + 22 * s), 15, ui::Rgba(0xFFFFFF), DWRITE_FONT_WEIGHT_SEMI_BOLD);
+                p.Text(g_toastText, D2D1::RectF(x, ty + 23 * s, sz.width - 18 * s, ty + 42 * s), 13, ui::Rgba(0xCDD2DA));
+                if (g_toastState == 0) {
+                    D2D1_RECT_F bar = D2D1::RectF(x, sz.height - 17 * s, sz.width - 18 * s, sz.height - 13 * s);
+                    p.Fill(bar, 2 * s, ui::Rgba(0x23272E));
+                    float f = g_toastTotal ? (float)g_toastDone / g_toastTotal : 0.05f;
+                    bar.right = bar.left + max(4 * s, (bar.right - bar.left) * f);
+                    p.Fill(bar, 2 * s, ui::Rgba(0xFF6633));
+                }
+                g_toastSurf.End();
+                EndPaint(h, &ps);
+                return 0;
+            }
+            rt->Clear(g_theme.tint);
             p.Stroke(D2D1::RectF(0, 0, sz.width, sz.height), 8 * s, g_theme.stroke);
             // ícone redondo: progresso, pronto ou erro
             D2D1_RECT_F ic = D2D1::RectF(16 * s, (sz.height - 40 * s) / 2, 56 * s, (sz.height + 40 * s) / 2);
@@ -3065,6 +3083,7 @@ static void ShowTrayMenu() {
     AppendMenuW(m, MF_STRING | MF_GRAYED, 0, title.c_str());
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, kMenuSettings, T(L"Configurações", L"Settings", L"Configuración"));
+    AppendMenuW(m, MF_STRING, kMenuUpdates, T(L"Atualizações", L"Updates", L"Actualizaciones"));
     AppendMenuW(m, MF_STRING, kMenuRestart, T(L"Reiniciar", L"Restart", L"Reiniciar"));
     AppendMenuW(m, MF_STRING, kMenuQuit, T(L"Encerrar", L"Quit", L"Salir"));
     POINT pt; GetCursorPos(&pt);
@@ -3072,6 +3091,7 @@ static void ShowTrayMenu() {
     int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, pt.x, pt.y, 0, g_wnd, nullptr);
     DestroyMenu(m);
     if (cmd == kMenuSettings) OpenSettings();
+    else if (cmd == kMenuUpdates) CheckForUpdates(true);
     else if (cmd == kMenuRestart) RestartSelf();
     else if (cmd == kMenuQuit) PostMessage(g_wnd, WM_CLOSE, 0, 0);
 }
