@@ -79,7 +79,7 @@ struct Window {
         };
         bool done = page == 2;
         ui::Brand(rt, body, L*s, (done ? 40 : 44)*s, (done ? 60 : 44)*s);
-        p.Text(L"9.8.6", rect(R-120, done ? 40 : 44, R, done ? 100 : 88), 13, text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
+        p.Text(L"9.8.7", rect(R-120, done ? 40 : 44, R, done ? 100 : 88), 13, text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
         if (page == 0) {
             ph.Text(installed ? T(L"Atualize ou troque a versão:",L"Update or switch edition:",L"Actualiza o cambia la versión:") : T(L"Escolha uma versão:",L"Choose an edition:",L"Elige una versión:"), rect(L,112,R,152), 32, text, DWRITE_FONT_WEIGHT_BOLD);
             p.Text(T(L"Para trocar depois, rode o instalador de novo.",L"To switch later, run the installer again.",L"Para cambiar después, ejecuta el instalador de nuevo."), rect(L,158,R,182), 15, text2);
