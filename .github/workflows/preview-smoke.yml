@@ -54,7 +54,7 @@ jobs:
             [regex]::Matches($text, '\+0x([0-9a-fA-F]+)') | ForEach-Object {
               $a = 0x140000000 + [Convert]::ToUInt64($_.Groups[1].Value, 16)
               $hit = $map | Where-Object { $a -ge $_.Start -and $a -lt $_.Start + $_.Size } | Select-Object -First 1
-              if ($hit) { Write-Host ("  +0x{0:X} {1}" -f ($a - 0x140000000), $hit.Name) }
+              if ($hit) { Write-Host ("  +0x{0:X} {1} (+0x{2:X} dentro da funcao)" -f ($a - 0x140000000), $hit.Name, ($a - $hit.Start)) }
             }
           }
           function Stacks($name) {
@@ -80,7 +80,7 @@ jobs:
           Get-ChildItem (Split-Path $exe) -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "instalado: $($_.Name) $($_.Length)" }
           Start-Sleep 8
           Check 'instalar e iniciar'
-          foreach ($f in 'foto1.png', 'foto2.jpg', 'desenho1.svg') {
+          foreach ($f in 'foto1.png', 'foto2.jpg', 'desenho1.svg', 'desenho3.svg', 'desenho4.svg') {
             Start-Process $exe -ArgumentList '/peek', "`"$(Join-Path $dir $f)`""
             Start-Sleep 20
             Check "previa de $f (linha de comando)"

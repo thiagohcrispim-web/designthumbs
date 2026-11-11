@@ -3554,7 +3554,12 @@ static void WriteCrashLog(const char* kind, DWORD code, void* address) {
     USHORT count = CaptureStackBackTrace(0, 48, frames, nullptr);
     for (USHORT i = 0; i < count; ++i) {
         ULONG_PTR a2 = (ULONG_PTR)frames[i];
-        len = a2 >= base && a2 - base < 0x4000000 ? wsprintfA(line, " +0x%IX", a2 - base) : wsprintfA(line, " ext");
+        HMODULE mod = nullptr; char name[MAX_PATH] = "?";
+        if (a2 >= base && a2 - base < 0x4000000) len = wsprintfA(line, " +0x%IX", a2 - base);
+        else if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)a2, &mod) && mod) {
+            GetModuleFileNameA(mod, name, MAX_PATH);
+            len = wsprintfA(line, " %s!0x%IX", PathFindFileNameA(name), a2 - (ULONG_PTR)mod); // DLL do Windows e posição dentro dela
+        } else len = wsprintfA(line, " ?0x%IX", a2);
         WriteFile(f, line, len, &w, nullptr);
     }
     WriteFile(f, "\r\n", 2, &w, nullptr);
