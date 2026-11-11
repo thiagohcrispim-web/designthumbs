@@ -2,6 +2,7 @@
 // O instalador continua pequeno; só quem escolhe o Ultra baixa o motor, uma única vez.
 #pragma once
 #include "VectorConvert.h"
+#include "I18n.h"
 #include <bcrypt.h>
 #include <winhttp.h>
 #include <atomic>
@@ -32,29 +33,17 @@ inline std::string FileSha256(const std::wstring& path) {
 // Progresso e cancelamento do download do motor.
 using Progress = std::function<void(unsigned long long got, unsigned long long total, double bytesPerSec)>;
 inline std::atomic<bool>& Cancel() { static std::atomic<bool> flag{false}; return flag; }
-// Texto do progresso: "42 MB de 99 MB · 3,1 MB/s · ~20 s".
-inline std::wstring Status(unsigned long long got, unsigned long long total, double bps) {
-    auto mb = [](unsigned long long bytes) { return std::to_wstring((bytes + 524288) / 1048576); };
-    unsigned long long tenths = (unsigned long long)(bps / 104857.6 + 0.5); // MB/s com uma casa decimal
-    std::wstring text = L"Baixando o motor vetorial · " + mb(got) + L" MB de " + mb(total) + L" MB · " +
-        std::to_wstring(tenths / 10) + L"," + std::to_wstring(tenths % 10) + L" MB/s";
-    if (total > got && bps > 1) {
-        unsigned long long s = (unsigned long long)((total - got) / bps);
-        text += s >= 90 ? L" · ~" + std::to_wstring(s / 60) + L" min" : L" · ~" + std::to_wstring(s) + L" s";
-    }
-    return text;
-}
 // Baixa com progresso real. Retoma de onde parou (HTTP Range) e tenta de novo em falhas de rede.
 inline bool Fetch(const std::wstring& url, const std::wstring& dest, const Progress& onProgress, std::wstring& error) {
     URL_COMPONENTS u = {sizeof(u)}; wchar_t host[256] = {}, path[2048] = {};
     u.lpszHostName = host; u.dwHostNameLength = ARRAYSIZE(host); u.lpszUrlPath = path; u.dwUrlPathLength = ARRAYSIZE(path);
-    if (!WinHttpCrackUrl(url.c_str(), (DWORD)url.size(), 0, &u)) { error = L"Endereço do motor inválido."; return false; }
+    if (!WinHttpCrackUrl(url.c_str(), (DWORD)url.size(), 0, &u)) { error = T(L"Endereço do motor inválido.", L"Invalid engine address.", L"Dirección del motor no válida."); return false; }
     HINTERNET session = WinHttpOpen(L"Vizu-Installer", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!session) { error = L"Não foi possível iniciar a conexão de rede."; return false; }
+    if (!session) { error = T(L"Não foi possível iniciar a conexão de rede.", L"Couldn't start the network connection.", L"No se pudo iniciar la conexión de red."); return false; }
     WinHttpSetTimeouts(session, 15000, 15000, 30000, 60000);
     HANDLE file = CreateFileW(dest.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     bool ok = false;
-    if (file == INVALID_HANDLE_VALUE) { WinHttpCloseHandle(session); error = L"Não foi possível gravar o motor vetorial."; return false; }
+    if (file == INVALID_HANDLE_VALUE) { WinHttpCloseHandle(session); error = T(L"Não foi possível gravar o motor vetorial.", L"Couldn't save the vector engine.", L"No se pudo guardar el motor vectorial."); return false; }
     for (int attempt = 0; attempt < 4 && !ok && !Cancel(); ++attempt) {
         if (attempt) Sleep(1500 * attempt);
         LARGE_INTEGER size = {}; GetFileSizeEx(file, &size);
@@ -97,8 +86,8 @@ inline bool Fetch(const std::wstring& url, const std::wstring& dest, const Progr
         if (conn) WinHttpCloseHandle(conn);
     }
     CloseHandle(file); WinHttpCloseHandle(session);
-    if (Cancel()) error = L"Instalação cancelada.";
-    else if (!ok) error = L"Não foi possível baixar o motor vetorial (inkscape.org). Verifique a internet e tente de novo, ou instale a edição Vizu.";
+    if (Cancel()) error = T(L"Instalação cancelada.", L"Installation cancelled.", L"Instalación cancelada.");
+    else if (!ok) error = T(L"Não foi possível baixar o motor vetorial (inkscape.org). Verifique a internet e tente de novo, ou instale a edição Vizu.", L"Couldn't download the vector engine (inkscape.org). Check your internet and try again, or install the Vizu edition.", L"No se pudo descargar el motor vectorial (inkscape.org). Revisa tu internet e inténtalo de nuevo, o instala la edición Vizu.");
     return ok;
 }
 
@@ -160,7 +149,7 @@ inline std::wstring Unique(const std::wstring& root, const wchar_t* prefix) {
 inline bool Prepare(const std::wstring& root, std::wstring& staging, std::wstring& error, const Progress& onProgress = nullptr) {
     staging = Unique(root, L"vector-engine-stage-");
     if (staging.empty() || !Owned(root, staging) || !CreateDirectoryW(staging.c_str(), nullptr)) {
-        error = L"Não foi possível preparar a pasta do motor vetorial."; return false;
+        error = T(L"Não foi possível preparar a pasta do motor vetorial.", L"Couldn't prepare the vector engine folder.", L"No se pudo preparar la carpeta del motor vectorial."); return false;
     }
     auto fail = [&]() { Remove(root, staging); staging.clear(); return false; };
     std::wstring archive = staging + L"\\engine.7z";
@@ -169,44 +158,44 @@ inline bool Prepare(const std::wstring& root, std::wstring& staging, std::wstrin
         if (!Fetch(kUrl, archive, onProgress, error)) return fail();
         if (FileSha256(archive) == kSha256) break;
         DeleteFileW(archive.c_str());
-        if (pass == 1) { error = L"O motor vetorial baixado não confere com a assinatura esperada (SHA-256). Instalação recusada."; return fail(); }
+        if (pass == 1) { error = T(L"O motor vetorial baixado não confere com a assinatura esperada (SHA-256). Instalação recusada.", L"The downloaded vector engine doesn't match the expected signature (SHA-256). Installation refused.", L"El motor vectorial descargado no coincide con la firma esperada (SHA-256). Instalación rechazada."); return fail(); }
     }
     wchar_t system[32768] = {}; GetSystemDirectoryW(system, ARRAYSIZE(system));
     std::wstring log;
     if (!vec::Run(std::wstring(system) + L"\\tar.exe", {L"-xf", archive, L"-C", staging}, staging + L"\\install.log", log, error, 300000)) {
-        error = L"Falha ao extrair o motor vetorial incluído.\n" + error + L"\n" + log; return fail();
+        error = std::wstring(T(L"Falha ao extrair o motor vetorial.", L"Failed to extract the vector engine.", L"Error al extraer el motor vectorial.")) + L"\n" + error + L"\n" + log; return fail();
     }
     DeleteFileW(archive.c_str());
     std::wstring engine = staging + L"\\inkscape\\bin\\inkscape.exe";
     if (!vec::Exists(engine) || !vec::Exists(staging + L"\\inkscape\\bin\\libcdr-0.1.dll") ||
         !vec::Exists(staging + L"\\inkscape\\share\\inkscape\\doc\\COPYING")) {
-        error = L"Pacote do motor incompleto."; return fail();
+        error = T(L"Pacote do motor incompleto.", L"The engine package is incomplete.", L"El paquete del motor está incompleto."); return fail();
     }
     log.clear();
     if (!vec::Run(engine, {L"--version"}, staging + L"\\install.log", log, error) || log.find(L"Inkscape 1.4.2") == std::wstring::npos) {
-        error = L"O motor instalado não passou na verificação de inicialização.\n" + error + L"\n" + log; return fail();
+        error = std::wstring(T(L"O motor instalado não passou na verificação de inicialização.", L"The installed engine failed its start-up check.", L"El motor instalado no pasó la verificación de inicio.")) + L"\n" + error + L"\n" + log; return fail();
     }
     DeleteFileW((staging + L"\\install.log").c_str());
     vec::WriteNew(staging + L"\\VIZU-BUNDLE.txt", std::wstring(kMarker) + L"\r\n"
-        L"Archive SHA256: 757e0358512630e65505a4cca89885369087f2908469439bc41b5a346604cbd4\r\n"
+        L"Archive SHA256: " + vec::Wide(kSha256) + L"\r\n"
         L"Original licenses: inkscape/share/inkscape/doc\r\n"
         L"Sources: https://inkscape.org/release/inkscape-1.4.2/source/\r\n");
     return true;
 }
 inline bool Commit(const std::wstring& root, const std::wstring& staging, std::wstring& error) {
-    if (!Owned(root, staging)) { error = L"Pasta temporária do motor inválida."; return false; }
+    if (!Owned(root, staging)) { error = T(L"Pasta temporária do motor inválida.", L"Invalid temporary engine folder.", L"Carpeta temporal del motor no válida."); return false; }
     std::wstring target = Full(root) + L"\\vector-engine", backup = Unique(root, L"vector-engine-old-");
     DWORD attr = GetFileAttributesW(target.c_str());
     bool hadOld = attr != INVALID_FILE_ATTRIBUTES;
     if (backup.empty() || (hadOld && (attr & FILE_ATTRIBUTE_REPARSE_POINT))) {
-        error = L"A pasta do motor contém um redirecionamento não permitido."; return false;
+        error = T(L"A pasta do motor contém um redirecionamento não permitido.", L"The engine folder contains a redirection that isn't allowed.", L"La carpeta del motor contiene una redirección no permitida."); return false;
     }
     if (hadOld && !MoveFileExW(target.c_str(), backup.c_str(), 0)) {
-        error = L"O motor vetorial está em uso. Feche a conversão em andamento e tente novamente."; return false;
+        error = T(L"O motor vetorial está em uso. Feche a conversão em andamento e tente novamente.", L"The vector engine is in use. Close the running conversion and try again.", L"El motor vectorial está en uso. Cierra la conversión en curso e inténtalo de nuevo."); return false;
     }
     if (!MoveFileExW(staging.c_str(), target.c_str(), 0)) {
         if (hadOld) MoveFileExW(backup.c_str(), target.c_str(), 0);
-        error = L"Não foi possível concluir a instalação do motor vetorial."; return false;
+        error = T(L"Não foi possível concluir a instalação do motor vetorial.", L"Couldn't finish installing the vector engine.", L"No se pudo completar la instalación del motor vectorial."); return false;
     }
     if (hadOld) Remove(root, backup); // Locked remnants are retried by Cleanup.
     return true;
@@ -224,7 +213,7 @@ inline bool Cleanup(const std::wstring& root, bool uninstall) {
 }
 inline bool Configure(const std::wstring& root, bool enabled, std::wstring& error, const Progress& onProgress = nullptr) {
     if (!enabled) {
-        if (!Cleanup(root, true)) { error = L"Não foi possível remover o conversor anterior. Feche os processos de conversão e tente novamente."; return false; }
+        if (!Cleanup(root, true)) { error = T(L"Não foi possível remover o conversor anterior. Feche os processos de conversão e tente novamente.", L"Couldn't remove the previous converter. Close the conversion processes and try again.", L"No se pudo quitar el conversor anterior. Cierra los procesos de conversión e inténtalo de nuevo."); return false; }
         return true;
     }
     if (Current(root)) { Cleanup(root, false); return true; }

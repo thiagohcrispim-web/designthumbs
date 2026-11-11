@@ -3,8 +3,7 @@
 <h3 align="center">Veja todos os seus arquivos de design no Windows,<br>mesmo sem os programas instalados.</h3>
 
 <p align="center">
-  <a href="https://github.com/thiagohcrispim-web/vizu/releases/latest/download/Vizu-Setup.exe"><b>⬇ Baixar o Vizu para Windows</b></a> &nbsp;·&nbsp;
-  <a href="https://github.com/thiagohcrispim-web/vizu/releases/latest/download/Vizu.zip">versão .zip</a> &nbsp;·&nbsp; grátis e de código aberto (MIT)
+  <a href="https://github.com/thiagohcrispim-web/vizu/releases/latest/download/Vizu-Setup.exe"><b>⬇ Baixar o Vizu para Windows</b></a> &nbsp;·&nbsp; grátis e de código aberto (MIT)
 </p>
 
 ---

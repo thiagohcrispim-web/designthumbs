@@ -8,12 +8,7 @@
 static const UINT WM_OCR_TRANSLATED = WM_APP + 60;
 
 // ---------- tradução ----------
-static std::string ToUtf8(const std::wstring& w) {
-    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-    std::string r(n, 0);
-    if (n) WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &r[0], n, nullptr, nullptr);
-    return r;
-}
+static std::string ToUtf8(const std::wstring& w) { return vec::Utf8(w); }
 static std::wstring FromUtf8(const std::string& s) {
     int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
     std::wstring r(n, 0);
@@ -250,7 +245,7 @@ static void CardRender() {
     SelectObject(mem, old); DeleteDC(mem); ReleaseDC(nullptr, screen); DeleteObject(bmp);
 }
 
-struct TransResult { std::wstring text, from, to; bool ok; };
+struct TransResult { std::wstring text, from, to; bool ok; bool partial; };
 
 static void CardTranslate(const wchar_t* to) {
     if (g_card.state == 1) return;
@@ -260,9 +255,10 @@ static void CardTranslate(const wchar_t* to) {
     std::wstring text = g_card.joined ? JoinLines(g_card.original) : g_card.original, lang = g_card.lang, tgt = to;
     HWND w = g_card.wnd;
     std::thread([text, lang, tgt, w] {
-        auto* r = new TransResult{L"", L"", tgt, false};
-        std::wstring t = text.size() > 4500 ? text.substr(0, 4500) : text;
-        r->ok = TranslateGoogle(t, tgt.c_str(), &r->text, &r->from) || TranslateMyMemory(t, lang, tgt.c_str(), &r->text);
+        auto* r = new TransResult{L"", L"", tgt, false, text.size() > 4500};
+        std::wstring t = r->partial ? text.substr(0, 4500) : text; // limite do endereço da consulta
+        r->ok = TranslateGoogle(t, tgt.c_str(), &r->text, &r->from);
+        if (!r->ok) { r->ok = TranslateMyMemory(t, lang, tgt.c_str(), &r->text); r->partial = r->partial || t.size() > 480; } // a reserva só aceita 480 caracteres
         if (!PostMessage(w, WM_OCR_TRANSLATED, 0, (LPARAM)r)) delete r;
     }).detach();
 }
@@ -318,7 +314,7 @@ static LRESULT CALLBACK CardProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             if (r->ok) {
                 g_card.state = 2; g_card.shown = r->text; CopyText(r->text);
                 std::wstring from = r->from.empty() ? g_card.lang : r->from;
-                g_card.status = std::wstring(T(L"Tradução copiada · ", L"Translation copied · ", L"Traducción copiada · ")) + LangName(from) + L" \u203A " + LangName(r->to);
+                g_card.status = std::wstring(r->partial ? T(L"Tradução parcial (texto longo) · ", L"Partial translation (long text) · ", L"Traducción parcial (texto largo) · ") : T(L"Tradução copiada · ", L"Translation copied · ", L"Traducción copiada · ")) + LangName(from) + L" \u203A " + LangName(r->to);
             } else {
                 g_card.state = 3;
                 g_card.status = T(L"Não deu para traduzir agora (sem internet?)", L"Couldn't translate now (offline?)", L"No se pudo traducir ahora (¿sin internet?)");

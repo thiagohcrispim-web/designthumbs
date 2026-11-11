@@ -3,6 +3,7 @@
 #pragma once
 #include <map>
 #include "Ops.h"
+#include "VectorConvert.h"
 
 namespace extras {
 using fmt::Bytes; using fmt::BE;
@@ -177,25 +178,21 @@ inline Bytes WriteAse(const std::vector<fmt::Swatch>& sw) {
 
 // Lista de cores em texto: HEX, RGB e variáveis CSS.
 inline std::string PaletteText(const std::vector<fmt::Swatch>& sw, const std::wstring& title) {
-    auto u8 = [](const std::wstring& w) {
-        int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-        std::string s(n, 0); WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr); return s;
-    };
-    std::string t = "\xEF\xBB\xBF/* " + u8(title) + " */\r\n\r\n";
+    std::string t = "\xEF\xBB\xBF/* " + vec::Utf8(title) + " */\r\n\r\n";
     char line[256];
     for (auto& s : sw) {
         std::wstring hex = fmt::Hex(s);
-        snprintf(line, sizeof(line), "%s  rgb(%d, %d, %d)  %s\r\n", u8(hex).c_str(), s.r, s.g, s.b, u8(s.name).c_str());
+        snprintf(line, sizeof(line), "%s  rgb(%d, %d, %d)  %s\r\n", vec::Utf8(hex).c_str(), s.r, s.g, s.b, vec::Utf8(s.name).c_str());
         t += line;
     }
     t += "\r\n:root {\r\n";
     for (size_t i = 0; i < sw.size(); ++i) {
         std::string var;
-        for (char c : u8(sw[i].name)) var += isalnum((BYTE)c) ? (char)tolower((BYTE)c) : (var.empty() || var.back() == '-' ? '\0' : '-');
+        for (char c : vec::Utf8(sw[i].name)) var += isalnum((BYTE)c) ? (char)tolower((BYTE)c) : (var.empty() || var.back() == '-' ? '\0' : '-');
         var.erase(std::remove(var.begin(), var.end(), '\0'), var.end());
         while (!var.empty() && var.back() == '-') var.pop_back();
         if (var.empty()) var = "cor-" + std::to_string(i + 1);
-        snprintf(line, sizeof(line), "  --%s: %s;\r\n", var.c_str(), u8(fmt::Hex(sw[i])).c_str());
+        snprintf(line, sizeof(line), "  --%s: %s;\r\n", var.c_str(), vec::Utf8(fmt::Hex(sw[i])).c_str());
         t += line;
     }
     t += "}\r\n";

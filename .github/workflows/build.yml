@@ -24,6 +24,13 @@ jobs:
       - name: Compilar
         run: ./build.sh
 
+      # Leitores de arquivo (PSD, ZIP) e comparação de versão: arquivo corrompido falha sem derrubar o programa.
+      - name: Testar leitores de arquivo
+        run: |
+          sudo apt-get install -y wine64
+          x86_64-w64-mingw32-g++ -O2 -DUNICODE -D_UNICODE -static -municode -Ithird_party/mingw-w64-headers -o build/format-tests.exe tests/format_tests.cpp -lshlwapi -lole32 -loleaut32 -luuid -lgdi32 -ld2d1 -ldwrite -lwindowscodecs -lruntimeobject -lshcore -lwinhttp -lurlmon -lbcrypt -lxmllite
+          WINEDEBUG=-all wine build/format-tests.exe
+
       - name: Publicar artefato
         id: upload
         uses: actions/upload-artifact@v4

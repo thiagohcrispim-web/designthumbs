@@ -133,12 +133,6 @@ static std::vector<Theft> LoadThefts() {
     fclose(f);
     return r;
 }
-static std::wstring Dur(int sec) {
-    wchar_t b[32];
-    if (sec >= 3600) swprintf(b, 32, L"%d h %02d min", sec / 3600, sec / 60 % 60);
-    else swprintf(b, 32, L"%d min %02d s", sec / 60, sec % 60);
-    return b;
-}
 static void ToggleTheft() {
     if (!g_clock.theft) {
         g_clock.theft = true; g_clock.theftStart = GetTickCount64(); GetLocalTime(&g_clock.theftWall);

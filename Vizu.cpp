@@ -726,7 +726,6 @@ static void ShowToast(const std::wstring& title, const std::wstring& text, DWORD
 
 // Procura versão nova (no máximo uma vez por dia, exceto quando pedido nas configurações).
 static void CheckForUpdates(bool manual) {
-    ULONGLONG now = GetTickCount64() / 1000 + 0;
     FILETIME ft; GetSystemTimeAsFileTime(&ft);
     ULONGLONG t = ((ULONGLONG)ft.dwHighDateTime << 32 | ft.dwLowDateTime) / 10000000ULL; // segundos
     DWORD sz = sizeof(ULONGLONG);
@@ -734,7 +733,6 @@ static void CheckForUpdates(bool manual) {
     RegGetValueW(HKEY_CURRENT_USER, kCfgKey, L"LastUpdateCheck", RRF_RT_REG_QWORD, nullptr, &last, &sz);
     if (!manual && t - last < 24 * 3600) return;
     RegSetKeyValueW(HKEY_CURRENT_USER, kCfgKey, L"LastUpdateCheck", REG_QWORD, &t, sizeof(t));
-    (void)now;
     HWND wnd = g_wnd;
     std::thread([manual, wnd] {
         upd::Release r;
@@ -925,6 +923,36 @@ static std::vector<std::wstring> InfoChips() {
     return parts;
 }
 
+// Faixa com as fontes do documento, logo acima de `bottom`; as que faltam no PC aparecem em vermelho.
+static void PaintFontStrip(ui::Painter& p, float width, float bottom, float padX, float maxW, bool flat, D2D1_COLOR_F ink, D2D1_COLOR_F ink2, D2D1_COLOR_F danger) {
+    if (g_info.fonts.empty()) return;
+    const wchar_t* label = T(L"Fontes", L"Fonts", L"Fuentes");
+    std::wstring l2 = std::wstring(label) + L"   ";
+    std::vector<DWRITE_TEXT_RANGE> missing;
+    for (size_t i = 0; i < g_info.fonts.size(); ++i) {
+        if (i) l2 += L"  \u00B7  ";
+        bool ok = FontInstalled(g_info.fontFamilies[i]);
+        if (!ok) missing.push_back({(UINT32)l2.size(), (UINT32)g_info.fonts[i].size() + 2});
+        l2 += g_info.fonts[i];
+        if (!ok) l2 += L" \u26A0";
+    }
+    float s = p.s, fh = 30 * s, fw = min(p.Measure(l2, 11.5f) * 1.15f + 2 * padX, maxW); // folga para os nomes em negrito
+    D2D1_RECT_F fr = D2D1::RectF((width - fw) / 2, bottom - fh, (width + fw) / 2, bottom);
+    if (flat) p.Fill(fr, 8 * s, ui::Rgba(0x2E333B)); else p.Glass(fr, fh / 2);
+    IDWriteTextFormat* f = p.Format(11.5f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
+    IDWriteTextLayout* lay = nullptr;
+    ID2D1SolidColorBrush *txt = nullptr, *red = nullptr, *lbl = nullptr;
+    g_rt->CreateSolidColorBrush(ink, &txt); g_rt->CreateSolidColorBrush(danger, &red); g_rt->CreateSolidColorBrush(ink2, &lbl);
+    if (f && txt && red && lbl && SUCCEEDED(g_dw->CreateTextLayout(l2.c_str(), (UINT32)l2.size(), f, fr.right - fr.left - 2 * padX, fh, &lay))) {
+        lay->SetDrawingEffect(lbl, {0, (UINT32)wcslen(label)});
+        for (auto& r : missing) { lay->SetDrawingEffect(red, r); lay->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, r); }
+        g_rt->DrawTextLayout(D2D1::Point2F(fr.left + padX, fr.top), lay, txt);
+        lay->Release();
+    }
+    SafeRelease(txt); SafeRelease(red); SafeRelease(lbl);
+    if (f) f->Release();
+}
+
 static std::wstring ZoomText() {
     wchar_t t[64];
     swprintf(t, 64, L"%.0f%%", g_scale * 100 * (g_nativeKnown ? 1.0f : g_nw / g_bw));
@@ -1000,33 +1028,7 @@ static void PaintClassicBars(ui::Painter& p, D2D1_SIZE_F size, float s) {
         if (tx + tw > limit) break; // o que não cabe fica de fora
         tx += tag(tx, cy, c) + 8 * s;
     }
-    // fontes do documento (faltando = vermelho), logo acima da barra de baixo
-    if (!g_info.fonts.empty()) {
-        std::wstring l2 = std::wstring(T(L"Fontes", L"Fonts", L"Fuentes")) + L"   ";
-        std::vector<DWRITE_TEXT_RANGE> missing;
-        for (size_t i = 0; i < g_info.fonts.size(); ++i) {
-            if (i) l2 += L"  ·  ";
-            bool ok = FontInstalled(g_info.fontFamilies[i]);
-            if (!ok) missing.push_back({(UINT32)l2.size(), (UINT32)g_info.fonts[i].size() + 2});
-            l2 += g_info.fonts[i];
-            if (!ok) l2 += L" ⚠";
-        }
-        float fh = 30 * s, fw = min(p.Measure(l2, 11.5f) * 1.15f + 32 * s, w - 32 * s);
-        D2D1_RECT_F fr = D2D1::RectF((w - fw) / 2, top - 8 * s - fh, (w + fw) / 2, top - 8 * s);
-        p.Fill(fr, 8 * s, bar);
-        IDWriteTextFormat* f = p.Format(11.5f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
-        IDWriteTextLayout* lay = nullptr;
-        ID2D1SolidColorBrush *txt = nullptr, *red = nullptr, *lbl = nullptr;
-        g_rt->CreateSolidColorBrush(ink, &txt); g_rt->CreateSolidColorBrush(ui::Rgba(0xFF6961), &red); g_rt->CreateSolidColorBrush(ink2, &lbl);
-        if (f && txt && red && lbl && SUCCEEDED(g_dw->CreateTextLayout(l2.c_str(), (UINT32)l2.size(), f, fr.right - fr.left - 32 * s, fh, &lay))) {
-            lay->SetDrawingEffect(lbl, {0, (UINT32)wcslen(T(L"Fontes", L"Fonts", L"Fuentes"))});
-            for (auto& r : missing) { lay->SetDrawingEffect(red, r); lay->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, r); }
-            g_rt->DrawTextLayout(D2D1::Point2F(fr.left + 16 * s, fr.top), lay, txt);
-            lay->Release();
-        }
-        SafeRelease(txt); SafeRelease(red); SafeRelease(lbl);
-        if (f) f->Release();
-    }
+    PaintFontStrip(p, w, top - 8 * s, 16 * s, w - 32 * s, true, ink, ink2, ui::Rgba(0xFF6961));
 }
 
 static float Ease(float t) { t = max(0.0f, min(1.0f, t)); return 1 - (1 - t) * (1 - t) * (1 - t); }
@@ -1160,33 +1162,7 @@ static void Paint() {
         cxp += widths[i];
     }
 
-    // fontes do documento (faltando = vermelho)
-    if (!g_info.fonts.empty()) {
-        std::wstring l2 = std::wstring(T(L"Fontes", L"Fonts", L"Fuentes")) + L"   ";
-        std::vector<DWRITE_TEXT_RANGE> missing;
-        for (size_t i = 0; i < g_info.fonts.size(); ++i) {
-            if (i) l2 += L"  ·  ";
-            bool ok = FontInstalled(g_info.fontFamilies[i]);
-            if (!ok) missing.push_back({(UINT32)l2.size(), (UINT32)g_info.fonts[i].size() + 2});
-            l2 += g_info.fonts[i];
-            if (!ok) l2 += L" ⚠";
-        }
-        float fw = min(p.Measure(l2, 11.5f) * 1.15f + 2 * padX, maxW), fh = 30 * s; // folga para os nomes em negrito
-        D2D1_RECT_F fr = D2D1::RectF((size.width - fw) / 2, orn.top - 8 * s - fh, (size.width + fw) / 2, orn.top - 8 * s);
-        p.Glass(fr, fh / 2);
-        IDWriteTextFormat* f = p.Format(11.5f, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
-        IDWriteTextLayout* lay = nullptr;
-        ID2D1SolidColorBrush *txt = nullptr, *red = nullptr, *lbl = nullptr;
-        g_rt->CreateSolidColorBrush(th.text, &txt); g_rt->CreateSolidColorBrush(th.danger, &red); g_rt->CreateSolidColorBrush(th.text2, &lbl);
-        if (f && txt && red && lbl && SUCCEEDED(g_dw->CreateTextLayout(l2.c_str(), (UINT32)l2.size(), f, fr.right - fr.left - 2 * padX, fh, &lay))) {
-            lay->SetDrawingEffect(lbl, {0, (UINT32)wcslen(T(L"Fontes", L"Fonts", L"Fuentes"))});
-            for (auto& r : missing) { lay->SetDrawingEffect(red, r); lay->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, r); }
-            g_rt->DrawTextLayout(D2D1::Point2F(fr.left + padX, fr.top), lay, txt);
-            lay->Release();
-        }
-        SafeRelease(txt); SafeRelease(red); SafeRelease(lbl);
-        if (f) f->Release();
-    }
+    PaintFontStrip(p, size.width, orn.top - 8 * s, padX, maxW, false, th.text, th.text2, th.danger);
     if (g_rt->EndDraw() == D2DERR_RECREATE_TARGET) DiscardDeviceResources();
 }
 
@@ -1460,7 +1436,6 @@ static bool WriteStoredZip(const std::wstring& out, const std::vector<std::wstri
     if (!table[1]) for (uint32_t i = 0; i < 256; ++i) { uint32_t c = i; for (int k = 0; k < 8; ++k) c = c & 1 ? 0xEDB88320u ^ (c >> 1) : c >> 1; table[i] = c; }
     auto put16 = [&](uint16_t v) { fwrite(&v, 2, 1, z); };
     auto put32 = [&](uint32_t v) { fwrite(&v, 4, 1, z); };
-    auto utf8 = [](const std::wstring& w) { int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr); std::string r(n > 0 ? n - 1 : 0, 0); if (n > 1) WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &r[0], n, nullptr, nullptr); return r; };
     bool ok = true;
     std::function<void(const std::wstring&, const std::wstring&)> add = [&](const std::wstring& path, const std::wstring& rel) {
         DWORD at = GetFileAttributesW(path.c_str());
@@ -1477,7 +1452,7 @@ static bool WriteStoredZip(const std::wstring& out, const std::vector<std::wstri
         if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa) || fa.nFileSizeHigh || fa.nFileSizeLow > 0xFFFFFFF0u) { ok = false; return; } // sem ZIP64
         FILE* f = _wfopen(path.c_str(), L"rb");
         if (!f) { ok = false; return; }
-        Entry e{utf8(rel), 0, 0, (uint32_t)ftell(z)};
+        Entry e{vec::Utf8(rel), 0, 0, (uint32_t)ftell(z)};
         put32(0x04034b50); put16(20); put16(0x0800); put16(0); put16(0); put16(0x21); put32(0); put32(0); put32(0);
         put16((uint16_t)e.name.size()); put16(0); fwrite(e.name.data(), 1, e.name.size(), z);
         static char buf[1 << 16]; size_t n;
@@ -1524,7 +1499,7 @@ static void StartZip(std::vector<std::wstring> files) {
         std::wstring out = dir + L"\\" + base + L".zip";
         for (int n = 2; GetFileAttributesW(out.c_str()) != INVALID_FILE_ATTRIBUTES; ++n) out = dir + L"\\" + base + L" (" + std::to_wstring(n) + L").zip";
         wchar_t sys[MAX_PATH]; GetSystemDirectoryW(sys, MAX_PATH);
-        std::wstring cmd = L"\"" + std::wstring(sys) + L"\\tar.exe\" -a -c -f \"" + out + L"\"";
+        std::wstring cmd = L"\"" + std::wstring(sys) + L"\\tar.exe\" -a -c -f \"" + out + L"\" --"; // "--": nomes começando com "-" não viram opção
         for (auto& f : files) {
             std::wstring name = conv::DirOf(f) == dir ? std::wstring(PathFindFileNameW(f.c_str())) : f;
             cmd += L" \"" + name + L"\"";
@@ -1544,9 +1519,6 @@ static void StartZip(std::vector<std::wstring> files) {
         if (!PostMessage(wnd, WM_CONV_DONE, 0, (LPARAM)res)) delete res;
     }).detach();
 }
-
-// ---------- predefinições (%LOCALAPPDATA%\DesignThumbs\predefinicoes.txt) ----------
-
 
 // ---------- tipos de arquivo da seleção ----------
 
@@ -2483,7 +2455,7 @@ static bool AutostartEnabled();
 
 enum { kTogSpace = 1, kTogAlt, kDelayMinus, kDelayPlus, kDpi72, kDpi300, kPdfSmall, kPdfRaw, kQualMinus, kQualPlus, kTogAuto, kBtnFolder, kBtnQuit, kBtnClose,
        kTogPicker, kBtnFolders, kLangPt, kLangEn, kLangEs, kTogUpdate, kBtnUpdate, kTheme0, kTheme1, kTheme2, kTheme3, kWebpMinus, kWebpPlus, kTogTray, kTogTempDel, kNeon0, kNeon1, kNeon2, kNeon3, kNeon4, kNeon5, kNeonRgb,
-       kClockOn, kClockFont, kPomoT0, kPomoT1, kPomoT2, kPomoC0, kPomoC1, kPomoC2, kPomoC3, kTheftHist, kUiFont, kOcrOn, kOcrKeep, kOcrJoin, kOcrLang, kClk100, kClk90, kClk70, kClockDock, kSte, kTheme4, kTheftOn, kFocoOn, kAgendaOn, kVecText, kVecCurves, kSysToggle, kGmailOff };
+       kClockOn, kClockFont, kPomoT0, kPomoT1, kPomoT2, kPomoC0, kPomoC1, kPomoC2, kPomoC3, kTheftHist, kUiFont, kOcrOn, kOcrKeep, kOcrJoin, kOcrLang, kClk100, kClk90, kClk70, kClockDock, kSte, kTheme4, kTheftOn, kFocoOn, kAgendaOn, kVecText, kVecCurves, kSysToggle };
 static const UINT kNeonPresets[6] = {0xFF6633, 0xFF2D95, 0x00E5FF, 0xB6FF3B, 0xA855F7, 0xFFD400};
 
 
@@ -2751,15 +2723,6 @@ static void PaintSettings(HWND h) {
         }
     }
     rows.push_back({RH, 0, [&](D2D1_RECT_F r) { rlabel(r, T(L"Ativar Agenda", L"Enable Agenda", L"Activar Agenda"), T(L"Seu dia e avisos antes dos eventos", L"Your day and reminders before events", L"Tu día y avisos antes de los eventos")); rtoggle(kAgendaOn, r, g_clock.agendaOn); }});
-    if (g_clock.agendaOn)
-        rows.push_back({SH, 1, [&](D2D1_RECT_F r) { // "Conta Google": desativado por enquanto, só mostra o que virá
-            rlabel(r, T(L"Conta Google", L"Google account", L"Cuenta de Google"), T(L"Conecte para ver seus eventos", L"Connect to see your events", L"Conecta para ver tus eventos"));
-            D2D1_RECT_F b = rbox(r, 190 * s);
-            float rad = (b.bottom - b.top) / 2;
-            p.Fill(b, rad, ui::Rgba(0x2E333B));
-            p.Stroke(b, rad, ui::Rgba(0x3F444C));
-            p.Text(T(L"Conectar Gmail", L"Connect Gmail", L"Conectar Gmail"), b, 12.5f, ui::Rgba(0x5E6570), DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
-        }});
     drawCard(rows);
 
     section(T(L"OUTROS", L"OTHER", L"OTROS"));
@@ -3208,14 +3171,16 @@ static void CreateFolderSet(const std::wstring& newItemPath) {
 
 // ---------- Limpar arquivos temporários ----------
 // Pega o que está na pasta TEMP do usuário e não foi mexido há mais de 24 h; o que estiver em uso fica.
-static void TempScan(const std::wstring& dir, ULONGLONG* bytes, size_t* files) {
+static void TempScan(const std::wstring& dir, ULONGLONG* bytes, size_t* files, ULONGLONG* newest = nullptr) {
     WIN32_FIND_DATAW fd;
     HANDLE h = FindFirstFileExW((dir + L"\\*").c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr, FIND_FIRST_EX_LARGE_FETCH);
     if (h == INVALID_HANDLE_VALUE) return;
     do {
         if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) continue;
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) TempScan(dir + L"\\" + fd.cFileName, bytes, files);
+        ULONGLONG w = (ULONGLONG)fd.ftLastWriteTime.dwHighDateTime << 32 | fd.ftLastWriteTime.dwLowDateTime;
+        if (newest && w > *newest) *newest = w;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) TempScan(dir + L"\\" + fd.cFileName, bytes, files, newest);
         else { *bytes += (ULONGLONG)fd.nFileSizeHigh << 32 | fd.nFileSizeLow; ++*files; }
     } while (FindNextFileW(h, &fd));
     FindClose(h);
@@ -3267,11 +3232,16 @@ static void CleanTemp() {
         do {
             if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
             ULONGLONG w = (ULONGLONG)fd.ftLastWriteTime.dwHighDateTime << 32 | fd.ftLastWriteTime.dwLowDateTime;
-            if (now - w < day) continue; // recente: pode estar em uso por algum programa
+            if (w + day > now) continue; // recente: pode estar em uso por algum programa
             std::wstring p = tmp + L"\\" + fd.cFileName;
             bool dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-            if (dir && !(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) TempScan(p, &bytes, &files);
-            else if (!dir) { bytes += (ULONGLONG)fd.nFileSizeHigh << 32 | fd.nFileSizeLow; ++files; }
+            if (dir && !(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+                // a data da pasta não muda quando um arquivo lá dentro é alterado: confere o mais novo de dentro
+                ULONGLONG b2 = 0, newest = 0; size_t f2 = 0;
+                TempScan(p, &b2, &f2, &newest);
+                if (newest + day > now) continue; // pasta ainda em uso por algum programa
+                bytes += b2; files += f2;
+            } else if (!dir) { bytes += (ULONGLONG)fd.nFileSizeHigh << 32 | fd.nFileSizeLow; ++files; }
             items.push_back({p, dir});
         } while (FindNextFileW(h, &fd));
         FindClose(h);
@@ -3454,16 +3424,16 @@ static bool InstallFiles(int edition, const installui::Progress& progress, std::
         error = T(L"Não foi possível criar a pasta do Vizu.",L"Could not create the Vizu folder.",L"No se pudo crear la carpeta de Vizu."); return false;
     }
     QuitRunning();
-    progress(10, vectors ? T(L"Preparando o motor vetorial…",L"Preparing the vector engine…",L"Preparando el motor vectorial…") : T(L"Preparando os arquivos do Vizu…",L"Preparing Vizu files…",L"Preparando los archivos de Vizu…"));
+    progress(10, vectors ? T(L"Preparando o motor vetorial…",L"Preparing the vector engine…",L"Preparando el motor vectorial…") : T(L"Preparando os arquivos do Vizu…",L"Preparing Vizu files…",L"Preparando los archivos de Vizu…"), {});
     vbundle::Cancel().store(false);
     bool engineReady = vbundle::Configure(dir, vectors, error, [&progress](unsigned long long got, unsigned long long total, double bps) {
-        int pct = total ? 10 + (int)(60.0 * got / total) : 10;
-        progress(pct, vbundle::Status(got, total, bps));
+        int pct = total ? 10 + (int)(55.0 * got / total) : 10; // 10 a 65: a etapa seguinte começa em 65
+        progress(pct, T(L"Baixando o motor vetorial…", L"Downloading the vector engine…", L"Descargando el motor vectorial…"), {got, total, bps});
     });
     if (!engineReady) return false;
     WriteDword(L"Edition", (DWORD)edition); // antes do /autostart (menu Novo depende da edição)
     WriteDword(L"VectorConverterInstalled", vectors ? 1 : 0);
-    progress(65, T(L"Instalando arquivos e miniaturas…",L"Installing files and thumbnails…",L"Instalando archivos y miniaturas…"));
+    progress(65, T(L"Instalando arquivos e miniaturas…",L"Installing files and thumbnails…",L"Instalando archivos y miniaturas…"), {});
     std::wstring exe = dir + L"\\Vizu.exe", dll = dir + L"\\DesignThumbs.dll";
     HRSRC r = FindResourceW(nullptr, MAKEINTRESOURCEW(2), RT_RCDATA);
     HGLOBAL g = r ? LoadResource(nullptr, r) : nullptr;
@@ -3475,7 +3445,7 @@ static bool InstallFiles(int edition, const installui::Progress& progress, std::
         error = T(L"Não foi possível instalar os arquivos do Vizu.", L"Could not install Vizu files.", L"No se pudieron instalar los archivos de Vizu.");
         return false;
     }
-    progress(85, T(L"Configurando atalhos e miniaturas…",L"Setting up shortcuts and thumbnails…",L"Configurando accesos y miniaturas…"));
+    progress(85, T(L"Configurando atalhos e miniaturas…",L"Setting up shortcuts and thumbnails…",L"Configurando accesos y miniaturas…"), {});
     // atalhos (Inicializar, menu Iniciar) e menu Novo, apontando para o EXE instalado
     STARTUPINFOW si = {sizeof(si)}; PROCESS_INFORMATION pi;
     std::wstring cmd = L"\"" + exe + L"\" /autostart";
@@ -3496,7 +3466,7 @@ static bool InstallFiles(int edition, const installui::Progress& progress, std::
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"NoRepair", REG_DWORD, &one, 4);
     RegSetKeyValueW(HKEY_CURRENT_USER, kUninstKey, L"EstimatedSize", REG_DWORD, &size, 4);
 
-    progress(100, T(L"Instalação concluída.",L"Installation complete.",L"Instalación completada."));
+    progress(100, T(L"Instalação concluída.",L"Installation complete.",L"Instalación completada."), {});
     return true;
 }
 
@@ -3515,7 +3485,7 @@ static int Install(bool silent) {
     LoadConfig();
     if(silent) {
         std::wstring error;
-        bool ok=InstallFiles((int)vec::Edition(), [](int,const std::wstring&){}, error);
+        bool ok=InstallFiles((int)vec::Edition(), [](int,const std::wstring&,const installui::Download&){}, error);
         if(ok) StartInstalledApp(false);
         return ok?0:1;
     }
@@ -3580,7 +3550,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         installui::Window ui; ui.preview=true; ui.theme=ui::ClassicTheme();
         if(args.find(L"/installer-preview-progress")!=std::wstring::npos){ui.page=1;ui.percent=65;ui.phase=T(L"Instalando arquivos e miniaturas…",L"Installing files and thumbnails…",L"Instalando archivos y miniaturas…");}
-        if(args.find(L"/installer-preview-download")!=std::wstring::npos){ui.page=1;ui.edition=2;ui.percent=42;ui.phase=vbundle::Status(42ull<<20,99ull<<20,3.1*1048576);}
+        if(args.find(L"/installer-preview-download")!=std::wstring::npos){ui.page=1;ui.edition=2;ui.percent=42;ui.dl={42ull<<20,99ull<<20,3.1*1048576};}
         if(args.find(L"/installer-preview-done")!=std::wstring::npos){ui.page=2;ui.success=true;ui.focus=2;}
         ui.Show(g_inst); CoUninitialize(); return 0;
     }
@@ -3706,10 +3676,6 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmd, int) {
     }
     if (args.find(L"/theft-history") != std::wstring::npos) ShowTheftHistory(); // abre o histórico do roubo de tempo
     if (args.find(L"/agenda") != std::wstring::npos) OpenAgendaWindow();
-    if (args.find(L"/ocr-card-preview") != std::wstring::npos) { // cartão de resultado do OCR com um texto de exemplo
-        POINT pt = {400, 300};
-        ShowCard(L"Join us for five days of talks, workshops and open studios. Free entry for students with a valid ID.", L"en", pt);
-    }
     MSG m;
     while (GetMessageW(&m, nullptr, 0, 0) > 0) {
         if (g_dlgEdit && m.hwnd == g_dlgEdit && m.message == WM_KEYDOWN && (m.wParam == VK_RETURN || m.wParam == VK_ESCAPE)) {

@@ -8,7 +8,9 @@
 #include <thread>
 
 namespace installui {
-using Progress = std::function<void(int, const std::wstring&)>;
+// Download em andamento (Ultra): bytes recebidos, total e velocidade. total == 0 fora do download.
+struct Download { unsigned long long got = 0, total = 0; double bps = 0; };
+using Progress = std::function<void(int, const std::wstring&, const Download&)>;
 using Work = std::function<bool(int, const Progress&, std::wstring&)>;
 struct Window {
     HWND hwnd = nullptr;
@@ -24,17 +26,12 @@ struct Window {
     bool installed = false, success = false, preview = false;
     int page = 0, hot = 0, focus = 2, result = 0, percent = 0;
     std::wstring phase, error;
+    Download dl;
     std::vector<std::pair<int, D2D1_RECT_F>> hits;
     static constexpr UINT Changed = WM_APP + 180, Finished = WM_APP + 181;
     float Scale() const { return GetDpiForWindow(hwnd) / 96.0f; }
     // Cores do protótipo aprovado do instalador (docs/design/prototipo/Inst-*-copia).
     static D2D1_COLOR_F C(UINT rgb, float a = 1) { return ui::Rgba(rgb, a); }
-    // Separa "Baixando o motor vetorial · 42 MB de 99 MB · 3,1 MB/s · ~18 s".
-    static std::vector<std::wstring> Parts(const std::wstring& text) {
-        std::vector<std::wstring> out; size_t start = 0;
-        for (;;) { size_t at = text.find(L" · ", start); out.push_back(text.substr(start, at - start)); if (at == std::wstring::npos) break; start = at + 3; }
-        return out;
-    }
     void Paint() {
         surface.hwnd = hwnd;
         if (!surface.Begin(factory)) return;
@@ -127,22 +124,27 @@ struct Window {
             float bw = p.Measure(go, 15, DWRITE_FONT_WEIGHT_BOLD) / s + 68;
             primary(rect(R-bw, 548, R, 596), go, 2);
         } else if (page == 1) {
-            int value; std::wstring phaseText;
-            { std::lock_guard<std::mutex> lock(mutex); value = percent; phaseText = phase; }
-            auto parts = Parts(phaseText);
-            bool ultra = edition == 2, downloading = ultra && parts.size() > 1;
+            int value; std::wstring phaseText; Download d;
+            { std::lock_guard<std::mutex> lock(mutex); value = percent; phaseText = phase; d = dl; }
+            bool ultra = edition == 2, downloading = d.total > 0;
+            auto mb = [](unsigned long long bytes) { return std::to_wstring((bytes + 524288) / 1048576); };
             ph.Text(downloading ? T(L"Baixando o motor vetorial",L"Downloading the vector engine",L"Descargando el motor vectorial") : T(L"Instalando o Vizu",L"Installing Vizu",L"Instalando Vizu"), rect(L,112,R,152), 32, text, DWRITE_FONT_WEIGHT_BOLD);
             p.Text(downloading ? T(L"Acontece só na primeira vez. As atualizações reaproveitam o motor.",L"This only happens once. Updates reuse the engine.",L"Solo ocurre la primera vez. Las actualizaciones reutilizan el motor.") : T(L"Estamos preparando tudo para você.",L"We're getting everything ready for you.",L"Estamos preparando todo para ti."), rect(L,158,R,182), 15, text2);
             auto card = rect(L, 208, R, 352);
             p.Fill(card, 14*s, C(0xFFFFFF, 0.05f)); p.Stroke(card, 14*s, C(0xFFFFFF, 0.10f));
             ph.Text(std::to_wstring(value) + L"%", rect(L+22, 226, R-22, 276), 40, text, DWRITE_FONT_WEIGHT_BOLD);
-            if (downloading) p.Text(parts[1], rect(L+22, 240, R-22, 270), 14, text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
+            if (downloading) p.Text(mb(d.got) + T(L" MB de ", L" MB of ", L" MB de ") + mb(d.total) + L" MB", rect(L+22, 240, R-22, 270), 14, text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
             auto bar = rect(L+22, 290, R-22, 300);
             p.Fill(bar, 5*s, C(0xFFFFFF, 0.10f));
             if (value > 0) { auto f = rect(L+22, 290, L+22+(R-L-44)*value/100.0f, 300); p.Glow(f, 5*s); p.Fill(f, 5*s, accent); }
             if (downloading) {
-                if (parts.size() > 2) p.Text(parts[2], rect(L+22, 314, R-22, 334), 14, text2);
-                if (parts.size() > 3) p.Text(parts[3] + T(L" restantes",L" left",L" restantes"), rect(L+22, 314, R-22, 334), 14, text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
+                unsigned long long tenths = (unsigned long long)(d.bps / 104857.6 + 0.5); // MB/s com uma casa decimal
+                p.Text(std::to_wstring(tenths / 10) + T(L",", L".", L",") + std::to_wstring(tenths % 10) + L" MB/s", rect(L+22, 314, R-22, 334), 14, text2);
+                if (d.total > d.got && d.bps > 1) {
+                    unsigned long long sec = (unsigned long long)((d.total - d.got) / d.bps);
+                    std::wstring left = sec >= 90 ? std::to_wstring(sec / 60) + L" min" : std::to_wstring(sec) + L" s";
+                    p.Text(T(L"cerca de ", L"about ", L"unos ") + left + T(L" restantes", L" left", L" restantes"), rect(L+22, 314, R-22, 334), 14, text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
+                }
             } else p.Text(phaseText, rect(L+22, 314, R-22, 334), 14, text2);
             const wchar_t* stepsU[4] = {T(L"Preparando a instalação",L"Preparing installation",L"Preparando la instalación"), T(L"Baixando o motor vetorial",L"Downloading the vector engine",L"Descargando el motor vectorial"), T(L"Conferindo a integridade",L"Checking integrity",L"Verificando la integridad"), T(L"Instalando arquivos e miniaturas",L"Installing files and thumbnails",L"Instalando archivos y miniaturas")};
             const wchar_t* stepsV[3] = {T(L"Preparando a instalação",L"Preparing installation",L"Preparando la instalación"), T(L"Instalando arquivos e miniaturas",L"Installing files and thumbnails",L"Instalando archivos y miniaturas"), T(L"Configurando atalhos",L"Setting up shortcuts",L"Configurando accesos")};
@@ -207,8 +209,8 @@ struct Window {
             worker=std::thread([this] {
                 CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
                 try {
-                    success=work(edition,[this](int value,const std::wstring& text) {
-                        {std::lock_guard<std::mutex> lock(mutex);percent=value;phase=text;}
+                    success=work(edition,[this](int value,const std::wstring& text,const Download& d) {
+                        {std::lock_guard<std::mutex> lock(mutex);percent=value;phase=text;dl=d;}
                         PostMessageW(hwnd,Changed,0,0);
                     },error);
                 } catch(...) {success=false;error=T(L"A instalação foi interrompida. Tente novamente.",L"Installation interrupted. Please try again.",L"Instalación interrumpida. Inténtalo de nuevo.");}

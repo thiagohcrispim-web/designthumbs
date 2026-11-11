@@ -100,6 +100,8 @@ inline void Log(const char* step, HRESULT hr) {
     wcscat_s(path, L"\\DesignThumbs");
     CreateDirectoryW(path, nullptr);
     wcscat_s(path, L"\\pdf.log");
+    WIN32_FILE_ATTRIBUTE_DATA fa;
+    if (GetFileAttributesExW(path, GetFileExInfoStandard, &fa) && (fa.nFileSizeHigh || fa.nFileSizeLow > (1u << 20))) DeleteFileW(path); // passou de 1 MB: recomeça
     HANDLE f = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (f == INVALID_HANDLE_VALUE) return;
     SYSTEMTIME t; GetLocalTime(&t);

@@ -9,9 +9,8 @@
 namespace upd {
 
 static const wchar_t* kVersion = L"9.8.7";
-static const wchar_t* kRepoApi = L"/repos/thiagohcrispim-web/designthumbs/releases/latest";
-// Alternativa às Releases: arquivo no próprio repositório com a versão e o link do instalador.
-static const wchar_t* kLatestJson = L"/thiagohcrispim-web/designthumbs/main/latest.json";
+// Arquivo no próprio repositório com a versão, o link do instalador e o SHA-256 dele.
+static const wchar_t* kLatestJson = L"/thiagohcrispim-web/vizu/main/latest.json";
 
 // "v8.1.2" -> {8,1,2}; compara versões.
 inline int Compare(const std::wstring& a, const std::wstring& b) {
@@ -62,41 +61,25 @@ inline std::string JsonString(const std::string& j, const char* key, size_t from
 
 struct Release { std::wstring tag, url; std::string sha256; };
 
-// Última versão publicada e o link do instalador: latest.json do repositório (ou a última Release).
+// Última versão publicada: latest.json do repositório. Sem SHA-256 não há atualização (nada é instalado sem conferir).
 inline bool Latest(Release* out) {
     std::string lj = HttpsGet(L"raw.githubusercontent.com", kLatestJson);
     std::string ver = JsonString(lj, "version"), link = JsonString(lj, "url");
-    if (!ver.empty() && !link.empty()) {
-        out->tag.assign(ver.begin(), ver.end());
-        out->url.assign(link.begin(), link.end());
-        out->sha256 = JsonString(lj, "sha256");
-        return true;
-    }
-    std::string j = HttpsGet(L"api.github.com", kRepoApi);
-    if (j.empty()) return false;
-    std::string tag = JsonString(j, "tag_name");
-    size_t pos = 0;
-    for (;;) {
-        std::string url = JsonString(j, "browser_download_url", pos, &pos);
-        if (url.empty()) break;
-        if (url.size() > 9 && url.compare(url.size() - 9, 9, "Setup.exe") == 0) {
-            out->tag.assign(tag.begin(), tag.end());
-            out->url.assign(url.begin(), url.end());
-            return !tag.empty();
-        }
-    }
-    return false;
+    out->tag.assign(ver.begin(), ver.end());
+    out->url.assign(link.begin(), link.end());
+    out->sha256 = JsonString(lj, "sha256");
+    return !ver.empty() && !link.empty() && out->sha256.size() == 64;
 }
 
 // Baixa o instalador para a pasta temporária.
-inline bool Download(const std::wstring& url, std::wstring* path, const std::string& sha256 = "") {
+inline bool Download(const std::wstring& url, std::wstring* path, const std::string& sha256) {
     wchar_t tmp[MAX_PATH];
     if (!GetTempPathW(MAX_PATH, tmp)) return false;
     *path = std::wstring(tmp) + L"Vizu-Setup.exe";
     DeleteFileW(path->c_str());
     if (FAILED(URLDownloadToFileW(nullptr, url.c_str(), path->c_str(), 0, nullptr))) return false;
     std::string want = sha256; for (auto& c : want) c = (char)tolower((unsigned char)c);
-    if (!want.empty() && vbundle::FileSha256(*path) != want) { DeleteFileW(path->c_str()); return false; } // download corrompido ou adulterado
+    if (want.size() != 64 || vbundle::FileSha256(*path) != want) { DeleteFileW(path->c_str()); return false; } // download corrompido ou adulterado
     return true;
 }
 

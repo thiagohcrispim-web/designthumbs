@@ -1,4 +1,4 @@
-// Extra.h - paletas de cor (.ase, .aco) e fontes (.ttf, .otf, .ttc): desenhadas em bitmap com Direct2D/DirectWrite.
+// PaletteFont.h - paletas de cor (.ase, .aco) e fontes (.ttf, .otf, .ttc): desenhadas em bitmap com Direct2D/DirectWrite.
 // Incluído por Formats.h (depende de CreateDib, Bytes e BE de lá).
 #pragma once
 #include <dwrite_3.h>

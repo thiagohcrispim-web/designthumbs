@@ -4,7 +4,7 @@ A publicação é feita pelo workflow `.github/workflows/release.yml`.
 
 Quando o usuário pedir uma nova versão:
 
-1. Atualize a versão nos fontes e recursos, gere `dist/Vizu-Setup.exe` e atualize `dist/Vizu.zip`.
+1. Atualize a versão nos fontes e recursos e gere `dist/Vizu-Setup.exe`.
 2. Atualize `latest.json`, incluindo o SHA-256 exato de `dist/Vizu-Setup.exe`, e o histórico no README.
 3. Execute `python3 .github/scripts/release.py check` antes de enviar.
 4. Envie o código pela branch de trabalho e integre à `main` conforme a autorização do usuário.

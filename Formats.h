@@ -458,7 +458,7 @@ inline bool ZipPreview(IStream* s, Bytes& img) {
         if (score < 0 || (method != 0 && method != 8) || raw > (256u << 20)) continue;
         if (score > best.score || (score == best.score && raw > best.raw)) { best.off = local; best.comp = comp; best.raw = raw; best.method = method; best.score = score; }
     }
-    if (best.score < 0) return false;
+    if (best.score < 0 || best.comp > size) return false;
     BYTE lh[30];
     if (!ReadAt(s, best.off, lh, 30) || memcmp(lh, "PK\3\4", 4) != 0) return false;
     UINT64 data = best.off + 30 + LE(lh + 26, 2) + LE(lh + 28, 2);
@@ -586,6 +586,7 @@ inline HRESULT PsdComposite(IStream* s, UINT cx, HBITMAP* out) {
     if (!ReadPsdHeader(s, &ph)) return E_FAIL;
     UINT channels = ph.channels, h = ph.h, w = ph.w, depth = ph.depth, mode = ph.mode;
     if ((depth != 8 && depth != 16 && depth != 32) || w == 0 || h == 0) return E_FAIL;
+    if (w > 300000 || h > 300000 || channels > 56) return E_FAIL; // limites do formato (PSB); arquivo corrompido não pede memória absurda
     if (mode != 1 && mode != 3 && mode != 4) return E_FAIL; // Gray, RGB, CMYK
     UINT64 pos = 26, len;
     for (int section = 0; section < 3; ++section) {          // color mode, resources, layers
@@ -635,6 +636,7 @@ inline HRESULT PsdComposite(IStream* s, UINT cx, HBITMAP* out) {
         for (UINT c = 0; c < use; ++c) {
             size_t idx = (size_t)c * h + sy;
             size_t n = rowLen[idx];
+            if (n > rowBytes * 2 + 1024) { DeleteObject(bmp); return E_FAIL; } // PackBits nunca passa disso
             src.resize(n);
             if (n && !ReadAt(s, rowOff[idx], src.data(), n)) { DeleteObject(bmp); return E_FAIL; }
             const BYTE* rowData = src.data();
@@ -890,7 +892,7 @@ inline HRESULT PdfRender(IStream* s, UINT cx, int page, HBITMAP* out, int* pages
 }
 
 } // namespace fmt
-#include "Extra.h"
+#include "PaletteFont.h"
 namespace fmt {
 
 inline bool ReadPalette(IStream* s, const std::wstring& ext, std::vector<Swatch>& sw) {
@@ -904,7 +906,7 @@ inline bool ReadPalette(IStream* s, const std::wstring& ext, std::vector<Swatch>
 // Gera a imagem de um arquivo. ext: extensão com ponto (pode ser vazia); cx: lado máximo;
 // page: página (INDD com várias páginas); pages recebe o total de páginas.
 // hq: preview/painel/conversão (PDF e .ai renderizados página a página); sem hq: miniatura rápida.
-inline HRESULT Render(IStream* s, const std::wstring& ext, UINT cx, int page, HBITMAP* out, bool* alpha, int* pages = nullptr, bool hq = false) {
+inline HRESULT RenderUnchecked(IStream* s, const std::wstring& ext, UINT cx, int page, HBITMAP* out, bool* alpha, int* pages, bool hq) {
     *alpha = false;
     if (pages) *pages = 1;
     BYTE magic[16] = {};
@@ -956,6 +958,10 @@ inline HRESULT Render(IStream* s, const std::wstring& ext, UINT cx, int page, HB
     if (LooksLikeSvg(b) && SUCCEEDED(SvgRender(b, cx, out))) { *alpha = true; return S_OK; }
     return E_FAIL;
 }
+// Arquivo corrompido nunca derruba o Vizu nem o Explorer: qualquer falha de memória vira "não deu para ler".
+inline HRESULT Render(IStream* s, const std::wstring& ext, UINT cx, int page, HBITMAP* out, bool* alpha, int* pages = nullptr, bool hq = false) {
+    try { return RenderUnchecked(s, ext, cx, page, out, alpha, pages, hq); } catch (...) { return E_FAIL; }
+}
 
 // ---------- informações para o Vizu ----------
 
@@ -1006,7 +1012,7 @@ inline void WicInfo(const BYTE* data, size_t size, Info* in) {
     if (fr) fr->Release(); if (dec) dec->Release(); if (s) s->Release(); f->Release();
 }
 
-inline void GetInfo(IStream* s, const std::wstring& ext, Info* in) {
+inline void GetInfoUnchecked(IStream* s, const std::wstring& ext, Info* in) {
     BYTE magic[16] = {};
     ReadAt(s, 0, magic, sizeof(magic));
     PsdHeader ph;
@@ -1091,6 +1097,9 @@ inline void GetInfo(IStream* s, const std::wstring& ext, Info* in) {
         in->pageWmm = w / 96 * 25.4; in->pageHmm = h / 96 * 25.4; // unidades do SVG = px a 96 dpi
         in->note = T(L"vetor", L"vector", L"vector");
     }
+}
+inline void GetInfo(IStream* s, const std::wstring& ext, Info* in) {
+    try { GetInfoUnchecked(s, ext, in); } catch (...) {}
 }
 
 } // namespace fmt

@@ -51,7 +51,7 @@ vector_tests.exe "C:\Program Files\Inkscape\bin\inkscape.exe" "C:\amostras\vetor
 
 O último comando é opcional e testa o motor real, gera `.svg`/`.eps` e verifica que não podem ser sobrescritos. Use uma base de saída inexistente e um SVG sem efeitos incompatíveis com EPS. O CDR pode ser usado no lugar do SVG, mas o resultado depende do conteúdo e do motor.
 
-`Extra.h` também renomeia uma variável local chamada `small`, para evitar colisão com a macro do Windows SDK ao compilar com MSVC; o comportamento da prévia de fontes é o mesmo.
+`PaletteFont.h` também renomeia uma variável local chamada `small`, para evitar colisão com a macro do Windows SDK ao compilar com MSVC; o comportamento da prévia de fontes é o mesmo.
 
 ## Limites de fidelidade
 
