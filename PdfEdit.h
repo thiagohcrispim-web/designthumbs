@@ -28,7 +28,7 @@ inline size_t SkipSpecial(const std::string& s, size_t i) {
     }
     if (s[i] == '<' && i + 1 < s.size() && s[i + 1] != '<') { size_t e = s.find('>', i); return e == std::string::npos ? s.size() : e + 1; }
     if (s[i] == '%') { while (i < s.size() && s[i] != '\n' && s[i] != '\r') ++i; return i; }
-    return i;
+    return i + 1; // sempre avança: um '<' solto no fim do objeto não pode travar o laço
 }
 
 // Valor de uma chave num dicionário (texto), como texto bruto: número, nome, "N G R", [...] ou <<...>>.
@@ -375,7 +375,9 @@ private:
         std::string ix = Get(o.dict, "/Index");
         if (ix.empty()) idx = {0, size};
         else { const char* q = ix.c_str() + 1; int v, used; while (sscanf(q, "%d%n", &v, &used) == 1) { idx.push_back(v); q += used; } }
+        if (w[0] < 0 || w[1] < 0 || w[2] < 0 || w[0] > 8 || w[1] > 8 || w[2] > 8) return false; // /W inválido: não lê fora do buffer
         size_t rec = w[0] + w[1] + w[2], pos = 0;
+        if (rec == 0) return false;
         auto field = [&](size_t at, int n) { UINT64 v = 0; for (int i = 0; i < n; ++i) v = v << 8 | d[at + i]; return v; };
         for (size_t s = 0; s + 1 < idx.size(); s += 2)
             for (int i = 0; i < idx[s + 1] && pos + rec <= d.size(); ++i, pos += rec) {
@@ -479,7 +481,7 @@ inline bool Assemble(const std::vector<Part>& parts, const std::wstring& outPath
             } else out += body;
             out += "\nendobj\n";
         }
-        for (int pi : part.pages) if (pi >= 0 && pi < (int)pages.size()) pageNums.push_back(map[pages[pi].num]);
+        for (int pi : part.pages) if (pi >= 0 && pi < (int)pages.size()) { int np = map[pages[pi].num]; if (np > 0) pageNums.push_back(np); } // página que não carregou fica de fora, sem "0 0 R"
     }
     if (pageNums.empty()) return false;
     offs[0] = out.size();
@@ -491,7 +493,7 @@ inline bool Assemble(const std::vector<Part>& parts, const std::wstring& outPath
     size_t xr = out.size();
     out += "xref\n0 " + std::to_string(offs.size() + 1) + "\n0000000000 65535 f \n";
     char line[32];
-    for (size_t o : offs) { snprintf(line, sizeof(line), "%010zu 00000 n \n", o); out += line; }
+    for (size_t o : offs) { if (o) snprintf(line, sizeof(line), "%010zu 00000 n \n", o); else snprintf(line, sizeof(line), "0000000000 65535 f \n"); out += line; } // 0 = objeto não gravado: livre
     out += "trailer\n<< /Size " + std::to_string(offs.size() + 1) + " /Root 1 0 R >>\nstartxref\n" + std::to_string(xr) + "\n%%EOF\n";
     HANDLE h = CreateFileW(outPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) return false;

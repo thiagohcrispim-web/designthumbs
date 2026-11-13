@@ -332,7 +332,9 @@ static void WorkerLoop() {
             if (L->hasInfo && in.w && in.h && in.note.empty()) cx = min(cx, max(in.w, in.h));
         }
         L->cx = j.cx ? j.cx : 0;
-        if (!conv::RenderFile(j.path, cx, j.page, &L->bmp, &L->alpha, &L->pages)) { L->bmp = conv::IconImage(j.path); L->alpha = true; }
+        bool drawn = false;
+        try { drawn = conv::RenderFile(j.path, cx, j.page, &L->bmp, &L->alpha, &L->pages); } catch (...) { drawn = false; } // arquivo ruim não derruba o app
+        if (!drawn) { L->bmp = conv::IconImage(j.path); L->alpha = true; }
         if (!PostMessage(g_wnd, WM_LOADED, 0, (LPARAM)L)) { if (L->bmp) DeleteObject(L->bmp); delete L; }
     }
 }
@@ -738,7 +740,8 @@ static void CheckForUpdates(bool manual) {
     HWND wnd = g_wnd;
     std::thread([manual, wnd] {
         upd::Release r;
-        bool ok = upd::Latest(&r);
+        bool ok = false;
+        try { ok = upd::Latest(&r); } catch (...) { ok = false; }
         if (ok && upd::Compare(upd::kVersion, r.tag) < 0) {
             auto* p = new upd::Release(r);
             if (!PostMessage(wnd, WM_UPDATE_FOUND, 0, (LPARAM)p)) delete p;
@@ -1414,13 +1417,15 @@ static void StartBatches(std::vector<Batch> batches, const std::wstring& label) 
         CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
         auto* all = new jobs::Result;
         size_t base = 0;
-        for (auto& b : batches) {
-            jobs::Result r = jobs::Run(b.files, b.job, [wnd, base, total](size_t d, size_t) { PostMessage(wnd, WM_CONV_PROGRESS, base + d, total); });
-            all->outputs.insert(all->outputs.end(), r.outputs.begin(), r.outputs.end());
-            all->failed += r.failed;
-            all->errors.insert(all->errors.end(), r.errors.begin(), r.errors.end());
-            base += b.files.size();
-        }
+        try { // erro inesperado num lote não pode fechar o app: os demais arquivos continuam sendo tratados
+            for (auto& b : batches) {
+                jobs::Result r = jobs::Run(b.files, b.job, [wnd, base, total](size_t d, size_t) { PostMessage(wnd, WM_CONV_PROGRESS, base + d, total); });
+                all->outputs.insert(all->outputs.end(), r.outputs.begin(), r.outputs.end());
+                all->failed += r.failed;
+                all->errors.insert(all->errors.end(), r.errors.begin(), r.errors.end());
+                base += b.files.size();
+            }
+        } catch (...) { all->errors.push_back(L"Erro inesperado durante a conversão."); all->failed += (int)(total > base ? total - base : 0); }
         if (!PostMessage(wnd, WM_CONV_DONE, 0, (LPARAM)all)) delete all;
         CoUninitialize();
     }).detach();
@@ -2384,7 +2389,9 @@ static LRESULT CALLBACK ToastProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             HWND wnd = g_wnd;
             std::thread([url, sha, wnd] {
                 std::wstring path;
-                auto* p = new std::wstring(upd::Download(url, &path, sha) ? path : L"");
+                bool got = false;
+                try { got = upd::Download(url, &path, sha); } catch (...) { got = false; }
+                auto* p = new std::wstring(got ? path : L"");
                 if (!PostMessage(wnd, WM_UPDATE_READY, 0, (LPARAM)p)) delete p;
             }).detach();
         } else if (g_toastAction == 0) RevealOutputs();
@@ -3363,18 +3370,29 @@ static bool RunningInstalled() { return !_wcsicmp(conv::DirOf(SelfPath()).c_str(
 
 // Escreve `data` em `path`; se o arquivo estiver em uso (DLL no Explorer), renomeia o antigo antes.
 static bool ReplaceFile(const std::wstring& path, const void* data, DWORD size, const std::wstring& copyFrom = L"") {
-    auto write = [&]() -> bool {
-        if (!copyFrom.empty()) return CopyFileW(copyFrom.c_str(), path.c_str(), FALSE) != 0;
-        HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (h == INVALID_HANDLE_VALUE) return false;
-        DWORD w = 0;
-        bool ok = WriteFile(h, data, size, &w, nullptr) && w == size;
-        CloseHandle(h);
-        return ok;
-    };
-    if (write()) return true;
+    // Escreve numa cópia ao lado e só depois troca: uma falha no meio nunca deixa o arquivo bom truncado.
+    std::wstring fresh = path + L".new";
+    DeleteFileW(fresh.c_str());
+    bool written = false;
+    if (!copyFrom.empty()) written = CopyFileW(copyFrom.c_str(), fresh.c_str(), FALSE) != 0;
+    else {
+        HANDLE h = CreateFileW(fresh.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h != INVALID_HANDLE_VALUE) {
+            DWORD w = 0;
+            written = WriteFile(h, data, size, &w, nullptr) && w == size;
+            written = FlushFileBuffers(h) && written;
+            CloseHandle(h);
+        }
+    }
+    if (!written) { DeleteFileW(fresh.c_str()); return false; }
+    if (MoveFileExW(fresh.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) return true; // arquivo livre: troca direta
+    // em uso (DLL no Explorer): aposenta o antigo e coloca o novo no lugar
     std::wstring old = path + L"." + std::to_wstring(GetTickCount()) + L".old";
-    return MoveFileExW(path.c_str(), old.c_str(), MOVEFILE_REPLACE_EXISTING) && write();
+    if (!MoveFileExW(path.c_str(), old.c_str(), MOVEFILE_REPLACE_EXISTING)) { DeleteFileW(fresh.c_str()); return false; }
+    if (MoveFileExW(fresh.c_str(), path.c_str(), 0)) return true;
+    MoveFileExW(old.c_str(), path.c_str(), 0); // restaura o antigo se não deu para colocar o novo
+    DeleteFileW(fresh.c_str());
+    return false;
 }
 
 static void CleanupOld(const std::wstring& dir) {

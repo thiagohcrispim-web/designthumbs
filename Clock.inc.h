@@ -64,8 +64,8 @@ static std::vector<AgendaItem> LoadAgenda() {
     std::vector<AgendaItem> r;
     FILE* f = _wfopen(DataPath(L"agenda.txt").c_str(), L"rt, ccs=UTF-8");
     if (!f) return r;
-    wchar_t line[512];
-    while (fgetws(line, 512, f)) {
+    wchar_t line[4096]; // linha cabe o título inteiro (antes cortava em 511 caracteres)
+    while (fgetws(line, ARRAYSIZE(line), f)) {
         AgendaItem a;
         a.when = {};
         int y, mo, d, h, mi, n = 0;
@@ -89,18 +89,21 @@ static std::vector<AgendaItem> LoadAgenda() {
     fclose(f);
     return r;
 }
-static void SaveAgenda(const std::vector<AgendaItem>& v) {
-    FILE* f = _wfopen(DataPath(L"agenda.txt").c_str(), L"wt, ccs=UTF-8");
-    if (!f) return;
+// Grava num arquivo temporário e troca no fim: uma falha no meio não apaga a agenda antiga. false = não gravou.
+static bool SaveAgenda(const std::vector<AgendaItem>& v) {
+    std::wstring target = DataPath(L"agenda.txt"), temp = target + L".tmp";
+    FILE* f = _wfopen(temp.c_str(), L"wt, ccs=UTF-8");
+    if (!f) return false;
     for (auto& a : v) {
         std::wstring al;
         if (a.alerts & kAlert10) al += L"10";
         if (a.alerts & kAlert5) al += std::wstring(al.empty() ? L"" : L",") + L"5";
         if (a.alerts & kAlert0) al += std::wstring(al.empty() ? L"" : L",") + L"0";
         if (al.empty()) al = L"n"; // sem avisos
-        fwprintf(f, L"%04d-%02d-%02d %02d:%02d d%d a%ls %ls\n", a.when.wYear, a.when.wMonth, a.when.wDay, a.when.wHour, a.when.wMinute, a.dur, al.c_str(), a.title.c_str());
+        if (fwprintf(f, L"%04d-%02d-%02d %02d:%02d d%d a%ls %ls\n", a.when.wYear, a.when.wMonth, a.when.wDay, a.when.wHour, a.when.wMinute, a.dur, al.c_str(), a.title.c_str()) < 0) { fclose(f); DeleteFileW(temp.c_str()); return false; }
     }
-    fclose(f);
+    if (fclose(f) != 0) { DeleteFileW(temp.c_str()); return false; }
+    return MoveFileExW(temp.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
 }
 static LONGLONG Minutes(const SYSTEMTIME& t) { FILETIME f; SystemTimeToFileTime(&t, &f); return (LONGLONG)(((ULONGLONG)f.dwHighDateTime << 32 | f.dwLowDateTime) / 600000000ull); }
 static bool AgendaSoon(std::wstring* next) { // evento na próxima hora?

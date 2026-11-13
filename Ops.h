@@ -186,8 +186,8 @@ inline bool SaveWebp(HBITMAP b, const std::wstring& path, float quality) {
     bool ok = EncodeWebp(rgba, w, h, forceLossless, quality, &best);
     if (ok && graphic && !forceLossless && EncodeWebp(rgba, w, h, true, quality, &alt)) {
         if (alt.size < best.size) std::swap(best, alt);
-        WebPMemoryWriterClear(&alt);
     }
+    WebPMemoryWriterClear(&alt); // sempre: também quando a tentativa sem perdas falha
     ok = ok && best.size && WriteFileBytes(path, best.mem, best.size);
     WebPMemoryWriterClear(&best);
     return ok;
@@ -260,11 +260,12 @@ inline bool EncodedBytes(HBITMAP b, Format f, float quality, std::vector<BYTE>& 
     DeleteFileW(file);
     bool ok = SaveWic({b}, file, f, quality, 0);
     if (ok) {
-        HANDLE h = CreateFileW(file, GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
-        DWORD size = GetFileSize(h, nullptr), got = 0;
-        out.resize(size);
-        ok = h != INVALID_HANDLE_VALUE && ReadFile(h, out.data(), size, &got, nullptr) && got == size;
-        CloseHandle(h);
+        // antivírus ou indexador podem ter o arquivo aberto: compartilha a leitura e confere o tamanho antes de alocar
+        HANDLE h = CreateFileW(file, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
+        DWORD size = h != INVALID_HANDLE_VALUE ? GetFileSize(h, nullptr) : INVALID_FILE_SIZE, got = 0;
+        ok = h != INVALID_HANDLE_VALUE && size != INVALID_FILE_SIZE && size <= (64u << 20);
+        if (ok) { out.resize(size); ok = ReadFile(h, out.data(), size, &got, nullptr) && got == size; }
+        if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
     }
     DeleteFileW(file);
     return ok;

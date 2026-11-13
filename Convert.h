@@ -233,14 +233,6 @@ inline bool Encode(HBITMAP bmp, const GUID& container, float quality, IStream* o
     return ok;
 }
 
-inline bool SaveImage(HBITMAP bmp, const std::wstring& path, bool jpeg, float quality, double dpi) {
-    IStream* s = nullptr;
-    if (FAILED(SHCreateStreamOnFileEx(path.c_str(), STGM_WRITE | STGM_CREATE | STGM_SHARE_DENY_WRITE, FILE_ATTRIBUTE_NORMAL, TRUE, nullptr, &s))) return false;
-    bool ok = Encode(bmp, jpeg ? GUID_ContainerFormatJpeg : GUID_ContainerFormatPng, quality, s, dpi);
-    s->Release();
-    if (!ok) DeleteFileW(path.c_str());
-    return ok;
-}
 
 // "pasta\nome.png" sem sobrescrever: "nome (2).png", "nome (3).png"...
 inline std::wstring UniquePath(const std::wstring& dir, const std::wstring& base, const wchar_t* ext) {

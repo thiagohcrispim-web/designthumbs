@@ -257,8 +257,10 @@ static void CardTranslate(const wchar_t* to) {
     std::thread([text, lang, tgt, w] {
         auto* r = new TransResult{L"", L"", tgt, false, text.size() > 4500};
         std::wstring t = r->partial ? text.substr(0, 4500) : text; // limite do endereço da consulta
-        r->ok = TranslateGoogle(t, tgt.c_str(), &r->text, &r->from);
-        if (!r->ok) { r->ok = TranslateMyMemory(t, lang, tgt.c_str(), &r->text); r->partial = r->partial || t.size() > 480; } // a reserva só aceita 480 caracteres
+        try {
+            r->ok = TranslateGoogle(t, tgt.c_str(), &r->text, &r->from);
+            if (!r->ok) { r->ok = TranslateMyMemory(t, lang, tgt.c_str(), &r->text); r->partial = r->partial || t.size() > 480; }
+        } catch (...) { r->ok = false; } // a reserva só aceita 480 caracteres
         if (!PostMessage(w, WM_OCR_TRANSLATED, 0, (LPARAM)r)) delete r;
     }).detach();
 }

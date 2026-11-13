@@ -180,7 +180,9 @@ inline bool Recognize(const BYTE* bgra, int w, int h, int stride, bool keepLines
                             std::wstring t = Str(hs);
                             if (!text->empty()) {
                                 // juntando: hífen no fim da linha une a palavra; senão, espaço
-                                if (!keepLines && text->back() == L'-') text->pop_back();
+                                // hífen de quebra só une quando a palavra continua em minúscula ("infor-" + "mação")
+                                bool joinWord = !keepLines && text->size() >= 2 && text->back() == L'-' && iswalpha((*text)[text->size() - 2]) && !t.empty() && iswlower(t[0]);
+                                if (joinWord) text->pop_back();
                                 else *text += keepLines ? L"\r\n" : L" ";
                             }
                             *text += t;

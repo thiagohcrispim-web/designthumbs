@@ -63,6 +63,7 @@ inline bool PsdLayers(IStream* s, std::vector<Layer>& layers) {
     UINT64 lmLen, liLen;
     int lb = ph.psb ? 8 : 4;
     if (!fmt::ReadBE(s, pos, lb, &lmLen) || !lmLen || !fmt::ReadBE(s, pos + lb, lb, &liLen) || !liLen || liLen > (1ull << 31)) return false;
+    if (liLen > fmt::StreamSize(s)) return false; // não aloca mais do que o próprio arquivo
     Bytes b((size_t)liLen);
     if (!fmt::ReadAt(s, pos + 2 * lb, b.data(), b.size())) return false;
     size_t p = 0;
@@ -80,7 +81,7 @@ inline bool PsdLayers(IStream* s, std::vector<Layer>& layers) {
         BYTE flags = (BYTE)rd(1);
         rd(1);
         r.l.hidden = (flags & 2) != 0;
-        size_t extra = (size_t)rd(4), end = p + extra;
+        size_t extra = (size_t)rd(4), end = min<size_t>(p + extra, b.size()); // nunca além do buffer
         size_t ml = (size_t)rd(4); p += ml;                       // máscara
         size_t br = (size_t)rd(4); p += br;                       // blending ranges
         BYTE nl = p < b.size() ? b[p] : 0;                        // nome (Pascal, alinhado a 4)
@@ -92,13 +93,13 @@ inline bool PsdLayers(IStream* s, std::vector<Layer>& layers) {
             std::string key((const char*)&b[p + 4], 4);
             p += 8;
             size_t bl = (size_t)rd(4);
-            if (key == "luni" && bl >= 4) {
+            if (key == "luni" && bl >= 4 && p + 4 <= b.size()) {
                 UINT32 nc = (UINT32)BE(&b[p], 4);
                 std::wstring w;
                 for (UINT32 k = 0; k < nc && p + 4 + k * 2 + 1 < b.size(); ++k) { wchar_t c = (wchar_t)BE(&b[p + 4 + k * 2], 2); if (c) w += c; }
                 if (!w.empty()) r.l.name = w;
             }
-            if ((key == "lsct" || key == "lsdk") && bl >= 4) { UINT t = (UINT)BE(&b[p], 4); if (t >= 1 && t <= 3) r.skip = true; }
+            if ((key == "lsct" || key == "lsdk") && bl >= 4 && p + 4 <= b.size()) { UINT t = (UINT)BE(&b[p], 4); if (t >= 1 && t <= 3) r.skip = true; }
             p += (bl + 1) & ~(size_t)1;
         }
         p = end;
@@ -109,7 +110,7 @@ inline bool PsdLayers(IStream* s, std::vector<Layer>& layers) {
         UINT w = (UINT)max(0, r.l.right - r.l.left), h = (UINT)max(0, r.l.bottom - r.l.top);
         std::map<short, Bytes> planes;
         for (auto& c : r.ch) {
-            if (p + c.second > b.size()) return !layers.empty();
+            if (p > b.size() || c.second > b.size() - p) return !layers.empty(); // tamanho do canal sem estourar a conta
             if (!r.skip && w && h && w <= 30000 && h <= 30000 && (c.first >= -1 && c.first <= 2)) {
                 Bytes plane;
                 if (LayerChannel(&b[p], (size_t)c.second, w, h, ph.depth, ph.psb, plane)) planes[c.first] = std::move(plane);

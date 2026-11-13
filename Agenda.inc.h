@@ -288,7 +288,7 @@ static void AgSave() {
     a.title = t; a.dur = g_ag.dur; a.alerts = g_ag.alerts;
     auto items = LoadAgenda();
     if (g_ag.editIdx >= 0 && g_ag.editIdx < (int)items.size()) items[g_ag.editIdx] = a; else items.push_back(a);
-    SaveAgenda(items);
+    if (!SaveAgenda(items)) { g_ag.msg = T(L"Não foi possível salvar a agenda. Verifique o disco e tente de novo.", L"Couldn't save the agenda. Check the disk and try again.", L"No se pudo guardar la agenda. Revisa el disco e inténtalo de nuevo."); return; } // o evento não some da tela
     g_ag.day = a.when;
     AgResetForm();
     ClockRender();

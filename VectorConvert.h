@@ -1,5 +1,6 @@
 // Original document -> Inkscape -> audited SVG -> SVG/EPS. Never uses a preview bitmap.
 #pragma once
+#include "I18n.h"
 #include <windows.h>
 #include <shlwapi.h>
 #include <shlobj.h>
@@ -134,7 +135,7 @@ inline bool Run(const std::wstring& engine, const std::vector<std::wstring>& arg
     if (output == INVALID_HANDLE_VALUE || input == INVALID_HANDLE_VALUE) {
         if (output != INVALID_HANDLE_VALUE) CloseHandle(output);
         if (input != INVALID_HANDLE_VALUE) CloseHandle(input);
-        error = L"Não foi possível criar o log do motor."; return false;
+        error = T(L"Não foi possível criar o log do motor.", L"Couldn't create the engine log.", L"No se pudo crear el registro del motor."); return false;
     }
     SIZE_T size = 0; InitializeProcThreadAttributeList(nullptr, 1, 0, &size);
     std::vector<BYTE> attr(size);
@@ -156,18 +157,18 @@ inline bool Run(const std::wstring& engine, const std::vector<std::wstring>& arg
     DWORD last = GetLastError(), code = 1;
     if (started) {
         if (!AssignProcessToJobObject(job, pi.hProcess) || ResumeThread(pi.hThread) == (DWORD)-1) {
-            TerminateProcess(pi.hProcess, 1); error = L"Falha ao isolar o processo de conversão.";
+            TerminateProcess(pi.hProcess, 1); error = T(L"Falha ao isolar o processo de conversão.", L"Couldn't isolate the conversion process.", L"No se pudo aislar el proceso de conversión.");
         } else if (WaitForSingleObject(pi.hProcess, timeout) != WAIT_OBJECT_0) {
-            TerminateJobObject(job, 1); error = L"Tempo limite no processo (" + std::to_wstring(timeout / 1000) + L" s).";
+            TerminateJobObject(job, 1); error = T(L"Tempo limite no processo (", L"Conversion timed out (", L"Tiempo límite en el proceso (") + std::to_wstring(timeout / 1000) + L" s).";
         } else GetExitCodeProcess(pi.hProcess, &code);
         WaitForSingleObject(pi.hProcess, 5000);
         CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
-    } else error = L"Não foi possível iniciar o Inkscape (Windows " + std::to_wstring(last) + L").";
+    } else error = T(L"Não foi possível iniciar o Inkscape (Windows ", L"Couldn't start Inkscape (Windows ", L"No se pudo iniciar Inkscape (Windows ") + std::to_wstring(last) + L").";
     if (job) CloseHandle(job);
     if (initialized) DeleteProcThreadAttributeList(list);
     CloseHandle(input); CloseHandle(output);
     std::string bytes; if (Read(logPath, bytes, 4u << 20)) log += Wide(bytes) + L"\n";
-    if (started && code && error.empty()) error = L"O Inkscape recusou o documento (código " + std::to_wstring(code) + L").";
+    if (started && code && error.empty()) error = T(L"O Inkscape recusou o documento (código ", L"Inkscape rejected the document (code ", L"Inkscape rechazó el documento (código ") + std::to_wstring(code) + L").";
     return started && code == 0 && error.empty();
 }
 
@@ -204,7 +205,7 @@ inline bool AuditSvg(const std::wstring& path, Audit& a, std::wstring& error) {
         std::wstring tag = name ? name : L"";
         if (!root) {
             root = true;
-            if (tag != L"svg" || !ns || std::wstring(ns) != svgNs) { error = L"Documento SVG inválido."; break; }
+            if (tag != L"svg" || !ns || std::wstring(ns) != svgNs) { error = T(L"Documento SVG inválido.", L"Invalid SVG document.", L"Documento SVG no válido."); break; }
         }
         bool svg = ns && std::wstring(ns) == svgNs;
         if (svg && definitionDepth == ~0u && !reader->IsEmptyElement())
@@ -213,7 +214,7 @@ inline bool AuditSvg(const std::wstring& path, Audit& a, std::wstring& error) {
         if (svg && tag == L"image") ++a.images;
         if (svg && (tag == L"feImage" || tag == L"foreignObject" || tag == L"script" ||
                     tag == L"style" || tag == L"animate" || tag == L"animateTransform" || tag == L"set")) {
-            error = L"SVG recusado: elemento " + tag + L" (bitmap, conteúdo ativo ou estilo não auditável)."; break;
+            error = T(L"SVG recusado: elemento ", L"SVG rejected: element ", L"SVG rechazado: elemento ") + tag + T(L" (bitmap, conteúdo ativo ou estilo não auditável).", L" (bitmap, active content or style that can't be checked).", L" (mapa de bits, contenido activo o estilo no verificable)."); break;
         }
         if (svg) {
             if (tag == L"path") ++a.paths;
@@ -235,22 +236,22 @@ inline bool AuditSvg(const std::wstring& path, Audit& a, std::wstring& error) {
             reader->MoveToElement();
         }
         if (tag == L"svg" && a.width.empty()) { a.width = attrs[L"width"]; a.height = attrs[L"height"]; a.viewBox = attrs[L"viewBox"]; }
-        if (attrs.count(L"id") && !ids.insert(attrs[L"id"]).second) { error = L"IDs duplicados no SVG."; break; }
+        if (attrs.count(L"id") && !ids.insert(attrs[L"id"]).second) { error = T(L"IDs duplicados no SVG.", L"Duplicate IDs in the SVG.", L"IDs duplicados en el SVG."); break; }
         for (const auto& p : attrs) {
             std::wstring key = Lower(p.first), val = Trim(p.second), low = Lower(val);
-            if (key.size() > 2 && key.substr(0, 2) == L"on") { error = L"Evento ativo no SVG."; break; }
+            if (key.size() > 2 && key.substr(0, 2) == L"on") { error = T(L"Evento ativo no SVG.", L"Active event in the SVG.", L"Evento activo en el SVG."); break; }
             if (key == L"href") {
                 bool embedded = tag == L"image" && low.compare(0, 11, L"data:image/") == 0 &&
                     (low.compare(11, 4, L"png;") == 0 || low.compare(11, 5, L"jpeg;") == 0 || low.compare(11, 4, L"jpg;") == 0);
                 if (embedded) continue; // bitmap embutido no próprio documento (comum em CDR)
-                if (val.empty() || val[0] != L'#') { error = L"Referência externa no SVG."; break; }
+                if (val.empty() || val[0] != L'#') { error = T(L"Referência externa no SVG.", L"External reference in the SVG.", L"Referencia externa en el SVG."); break; }
                 refs.insert(val.substr(1));
             }
             size_t pos = 0;
             while ((pos = low.find(L"url(", pos)) != std::wstring::npos) {
                 size_t end = low.find(L')', pos + 4);
                 std::wstring ref = Trim(val.substr(pos + 4, end - (pos + 4)));
-                if (end == std::wstring::npos || ref.empty() || ref[0] != L'#') { error = L"Recurso externo no SVG."; break; }
+                if (end == std::wstring::npos || ref.empty() || ref[0] != L'#') { error = T(L"Recurso externo no SVG.", L"External resource in the SVG.", L"Recurso externo en el SVG."); break; }
                 refs.insert(ref.substr(1)); pos = end + 1;
             }
             if (!error.empty()) break;
@@ -277,16 +278,16 @@ inline bool AuditSvg(const std::wstring& path, Audit& a, std::wstring& error) {
         }
     }
     if (reader) reader->Release(); if (stream) stream->Release();
-    if (error.empty() && (FAILED(hr) || !root)) error = L"XML inválido ou DTD proibido no SVG.";
-    if (error.empty() && !renderable) error = L"O importador não produziu objetos vetoriais desenháveis; saída vazia recusada.";
-    if (error.empty()) for (const auto& ref : refs) if (!ids.count(ref)) { error = L"Referência interna quebrada no SVG."; break; }
+    if (error.empty() && (FAILED(hr) || !root)) error = T(L"XML inválido ou DTD proibido no SVG.", L"Invalid XML or forbidden DTD in the SVG.", L"XML no válido o DTD prohibido en el SVG.");
+    if (error.empty() && !renderable) error = T(L"O importador não produziu objetos vetoriais desenháveis; saída vazia recusada.", L"The importer produced no drawable vector objects; empty output refused.", L"El importador no produjo objetos vectoriales dibujables; salida vacía rechazada.");
+    if (error.empty()) for (const auto& ref : refs) if (!ids.count(ref)) { error = T(L"Referência interna quebrada no SVG.", L"Broken internal reference in the SVG.", L"Referencia interna rota en el SVG."); break; }
     if (a.pages > 1) a.epsBlocks.insert(L"múltiplas páginas");
     return error.empty();
 }
 inline bool AuditEps(const std::wstring& path, bool allowImages, std::wstring& error) {
     std::string s;
     if (!Read(path, s) || s.find("%!PS-Adobe-") != 0 || s.substr(0, 100).find("EPSF-") == std::string::npos || s.find("%%BoundingBox:") == std::string::npos) {
-        error = L"Cabeçalho EPS inválido."; return false;
+        error = T(L"Cabeçalho EPS inválido.", L"Invalid EPS header.", L"Cabecera EPS no válida."); return false;
     }
     auto a = s.find("%%BeginProlog"), b = s.find("%%EndProlog");
     if (allowImages) return true; // bitmaps do original: o operador image é legítimo
@@ -301,7 +302,7 @@ inline bool AuditEps(const std::wstring& path, bool allowImages, std::wstring& e
         if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_') token += (char)c;
         else {
             if (token == "image" || token == "colorimage" || token == "imagemask" || token == "cairo_image" || token == "cairo_imagemask") {
-                error = L"EPS contém operador de imagem; exportação vetorial recusada."; return false;
+                error = T(L"EPS contém operador de imagem; exportação vetorial recusada.", L"EPS contains an image operator; vector export refused.", L"El EPS contiene un operador de imagen; exportación vectorial rechazada."); return false;
             }
             token.clear();
         }
@@ -311,15 +312,15 @@ inline bool AuditEps(const std::wstring& path, bool allowImages, std::wstring& e
 struct Result { bool ok = false; std::wstring error, report; };
 inline Result Convert(const std::wstring& source, const std::wstring& destination, bool eps, bool curves) {
     Result r; Temp tmp;
-    if (!Selected()) { r.error = L"O conversor vetorial não foi selecionado na instalação do Vizu."; return r; }
-    if (!IsInput(source)) { r.error = L"Conversão vetorial aceita CDR ou SVG. Uma thumbnail não contém os vetores originais."; return r; }
-    if (tmp.dir.empty()) { r.error = L"Não foi possível criar a pasta temporária."; return r; }
+    if (!Selected()) { r.error = T(L"O conversor vetorial não foi selecionado na instalação do Vizu.", L"The vector converter wasn't selected in the Vizu installation.", L"El conversor vectorial no se seleccionó en la instalación de Vizu."); return r; }
+    if (!IsInput(source)) { r.error = T(L"Conversão vetorial aceita CDR ou SVG. Uma thumbnail não contém os vetores originais.", L"Vector conversion accepts CDR or SVG. A thumbnail doesn't contain the original vectors.", L"La conversión vectorial acepta CDR o SVG. Una miniatura no contiene los vectores originales."); return r; }
+    if (tmp.dir.empty()) { r.error = T(L"Não foi possível criar a pasta temporária.", L"Couldn't create the temporary folder.", L"No se pudo crear la carpeta temporal."); return r; }
     std::wstring engine = Engine();
     if (engine.empty()) {
-        r.error = L"O motor vetorial incluído não foi encontrado. Execute o instalador completo do Vizu para reparar a instalação."; return r;
+        r.error = T(L"O motor vetorial incluído não foi encontrado. Execute o instalador completo do Vizu para reparar a instalação.", L"The bundled vector engine wasn't found. Run the full Vizu installer to repair the installation.", L"No se encontró el motor vectorial incluido. Ejecuta el instalador completo de Vizu para reparar la instalación."); return r;
     }
     std::string input;
-    if (!Read(source, input)) { r.error = L"Arquivo ausente, vazio ou maior que 100 MiB."; return r; }
+    if (!Read(source, input)) { r.error = T(L"Arquivo ausente, vazio ou maior que 100 MiB.", L"File missing, empty or larger than 100 MiB.", L"Archivo ausente, vacío o mayor de 100 MiB."); return r; }
     bool isSvg = Lower(PathFindExtensionW(source.c_str())) == L".svg";
     std::wstring snapshot = tmp.At(isSvg ? L"source.svg" : L"source.cdr");
     // CREATE_NEW snapshot of the bytes inspected; all subsequent steps use it.
@@ -327,7 +328,7 @@ inline Result Convert(const std::wstring& source, const std::wstring& destinatio
     DWORD written = 0;
     bool copied = snap != INVALID_HANDLE_VALUE && WriteFile(snap, input.data(), (DWORD)input.size(), &written, nullptr) && written == input.size();
     if (snap != INVALID_HANDLE_VALUE) CloseHandle(snap);
-    if (!copied) { r.error = L"Falha ao criar cópia de trabalho do documento."; return r; }
+    if (!copied) { r.error = T(L"Falha ao criar cópia de trabalho do documento.", L"Couldn't create a working copy of the document.", L"No se pudo crear una copia de trabajo del documento."); return r; }
     input.clear();
     if (isSvg) { Audit before; if (!AuditSvg(snapshot, before, r.error)) return r; }
     std::wstring logs, svg = tmp.At(L"document.svg"), output = svg;
@@ -336,11 +337,11 @@ inline Result Convert(const std::wstring& source, const std::wstring& destinatio
     if (!Run(engine, args, tmp.At(L"engine.log"), logs, r.error)) { r.error += L"\n" + logs; return r; }
     Audit audit;
     if (!AuditSvg(svg, audit, r.error)) { r.error += L"\n" + logs; return r; }
-    if (curves && audit.texts) { r.error = L"O motor não converteu todos os textos em curvas."; return r; }
+    if (curves && audit.texts) { r.error = T(L"O motor não converteu todos os textos em curvas.", L"The engine didn't convert all text to curves.", L"El motor no convirtió todos los textos en curvas."); return r; }
     if (eps && !audit.epsBlocks.empty()) {
-        r.error = L"EPS bloqueado para evitar rasterização ou perda de efeitos: ";
+        r.error = T(L"EPS bloqueado para evitar rasterização ou perda de efeitos: ", L"EPS blocked to avoid rasterization or loss of effects: ", L"EPS bloqueado para evitar la rasterización o la pérdida de efectos: ");
         for (const auto& reason : audit.epsBlocks) r.error += reason + L"; ";
-        r.error += L"use SVG para este documento."; return r;
+        r.error += T(L"use SVG para este documento.", L"use SVG for this document.", L"usa SVG para este documento."); return r;
     }
     if (eps) {
         output = tmp.At(L"output.eps");
@@ -349,7 +350,7 @@ inline Result Convert(const std::wstring& source, const std::wstring& destinatio
         if (!Run(engine, args, tmp.At(L"engine.log"), logs, r.error) || !AuditEps(output, audit.images > 0, r.error)) { r.error += L"\n" + logs; return r; }
     }
     // Destination chosen with UniquePath, but CREATE_NEW semantics still prevent races/overwrites.
-    if (!CopyFileW(output.c_str(), destination.c_str(), TRUE)) { r.error = L"Não foi possível salvar a saída; o destino pode já existir."; return r; }
+    if (!CopyFileW(output.c_str(), destination.c_str(), TRUE)) { r.error = T(L"Não foi possível salvar a saída; o destino pode já existir.", L"Couldn't save the output; the destination may already exist.", L"No se pudo guardar la salida; el destino puede existir ya."); return r; }
     r.ok = true;
     std::wstring report = L"Vizu — conversão vetorial\r\nOrigem: " + source + L"\r\nMotor: " + engine +
         L"\r\nObjetos: " + std::to_wstring(audit.objects) + L"; caminhos: " + std::to_wstring(audit.paths) +

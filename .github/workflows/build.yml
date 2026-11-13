@@ -29,7 +29,7 @@ jobs:
         run: |
           sudo apt-get install -y wine64
           x86_64-w64-mingw32-g++ -O2 -DUNICODE -D_UNICODE -static -municode -Ithird_party/mingw-w64-headers -o build/format-tests.exe tests/format_tests.cpp -lshlwapi -lole32 -loleaut32 -luuid -lgdi32 -ld2d1 -ldwrite -lwindowscodecs -lruntimeobject -lshcore -lwinhttp -lurlmon -lbcrypt -lxmllite
-          WINEDEBUG=-all wine build/format-tests.exe
+          WINEDEBUG=-all timeout 120 wine build/format-tests.exe # timeout: um laço travado falha em vez de prender o job
 
       - name: Publicar artefato
         id: upload

@@ -10,6 +10,7 @@
 #include <d2d1_3.h>
 #include "../Formats.h"
 #include "../Update.h"
+#include "../PdfEdit.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -73,6 +74,10 @@ int wmain() {
         Check(upd::Compare(L"9.8.9", L"9.8.10") < 0, "9.8.10 is newer than 9.8.9");
         Check(upd::Compare(L"v9.8.7", L"9.8.7") == 0, "leading v is ignored");
         Check(upd::Compare(L"10.0.0", L"9.9.9") > 0, "major version wins");
+        // PDF: um '<' solto no fim do objeto não pode travar o leitor (antes ficava em laço infinito)
+        Check(pdfedit::Refs("<< /A <").empty(), "lone '<' at end returns");
+        Check(pdfedit::Renumber("5 0 R <", {}).size() > 0, "Renumber finishes with a lone '<'");
+        Check(pdfedit::Refs("<</Kids [3 0 R 4 0 R]>>").size() == 2, "references are still found");
         std::wcout << L"format tests passed: " << checks << L" checks\n";
     } catch (const std::exception& e) {
         std::cerr << "FAILED: " << e.what() << "\n";

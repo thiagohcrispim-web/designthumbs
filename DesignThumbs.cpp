@@ -144,13 +144,17 @@ class Preview : public IPreviewHandler, public IInitializeWithStream, public IOb
         return 0;
     }
     void GoPage(int p) {
+        if (busy_) return; // clique durante a leitura de uma página: ignora (a leitura chama o laço de mensagens)
         p = max(0, min(pages_ - 1, p));
         if (p == page_) return;
         page_ = p;
         if (bmp_) { DeleteObject(bmp_); bmp_ = nullptr; }
+        busy_ = true;
         Render();
+        busy_ = false;
         InvalidateRect(wnd_, nullptr, FALSE);
     }
+    bool busy_ = false;
 
     void Render() {
         UINT want = (UINT)max(256L, max(rect_.right - rect_.left, rect_.bottom - rect_.top));
@@ -182,6 +186,7 @@ class Preview : public IPreviewHandler, public IInitializeWithStream, public IOb
         ID2D1SolidColorBrush *fill = nullptr, *white = nullptr;
         rt->CreateSolidColorBrush(D2D1::ColorF(0x6E6E73, 0.55f), &fill);
         rt->CreateSolidColorBrush(D2D1::ColorF(0xFFFFFF, 1), &white);
+        if (!fill || !white) { if (fill) fill->Release(); if (white) white->Release(); rt->Release(); return; } // sem pincel: não desenha setas
         ID2D1StrokeStyle* round = nullptr;
         d2d_->CreateStrokeStyle(D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND, D2D1_LINE_JOIN_ROUND), nullptr, 0, &round);
         for (int d : {-1, 1}) {
