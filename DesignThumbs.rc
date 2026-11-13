@@ -1,7 +1,7 @@
 #include <winver.h>
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION 9,8,9,0
-PRODUCTVERSION 9,8,9,0
+FILEVERSION 9,8,10,0
+PRODUCTVERSION 9,8,10,0
 FILEOS VOS_NT_WINDOWS32
 FILETYPE VFT_DLL
 BEGIN
@@ -11,12 +11,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "Thiago Crispim"
       VALUE "FileDescription", "Vizu - miniaturas e painel de visualização"
-      VALUE "FileVersion", "9.8.9"
+      VALUE "FileVersion", "9.8.10"
       VALUE "InternalName", "DesignThumbs"
       VALUE "LegalCopyright", "MIT License - Thiago Crispim"
       VALUE "OriginalFilename", "DesignThumbs.dll"
       VALUE "ProductName", "Vizu"
-      VALUE "ProductVersion", "9.8.9"
+      VALUE "ProductVersion", "9.8.10"
     END
   END
   BLOCK "VarFileInfo"
