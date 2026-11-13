@@ -245,3 +245,4 @@ https://docs.github.com/site-policy/privacy-policies/github-general-privacy-stat
 ---
 
 <p align="center">Vizu · by CrispyPixel · <a href="LICENSE">licença MIT</a></p>
+<p align="center"><sub>O Vizu é gratuito. Você pode usar, copiar, modificar e redistribuir o programa, inclusive em trabalhos comerciais, desde que mantenha o aviso de copyright e a licença MIT (<a href="LICENSE">LICENSE</a>). Não há cobrança nem cadastro.</sub></p>
