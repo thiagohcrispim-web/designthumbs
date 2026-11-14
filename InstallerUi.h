@@ -70,9 +70,12 @@ struct Window {
             p.Text(label, r, 14, hov ? accent : text, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
         };
         auto keycap = [&](D2D1_RECT_F r, const wchar_t* label) {
-            p.Fill(D2D1::RectF(r.left, r.bottom - 5*s, r.right, r.bottom), 4*s, C(0xFF6633, 0.18f));
-            p.Stroke(r, 9*s, accent, 2*s);
-            ph.TextSpaced(label, r, 15, accent, DWRITE_FONT_WEIGHT_BOLD, 0.1f);
+            // tecla do protótipo: moldura externa com brilho e uma moldura interna mais fina
+            p.Stroke(D2D1::RectF(r.left-3*s, r.top-3*s, r.right+3*s, r.bottom+3*s), 13*s, C(0xFF6633, 0.18f), 3*s);
+            p.Stroke(r, 10*s, accent, 1.5f*s);
+            D2D1_RECT_F in = D2D1::RectF(r.left+4*s, r.top+3*s, r.right-4*s, r.bottom-9*s);
+            p.Stroke(in, 7*s, accent, 1.5f*s);
+            ph.TextSpaced(label, in, 14, accent, DWRITE_FONT_WEIGHT_BOLD, 0.1f);
         };
         bool done = page == 2;
         ui::Brand(rt, body, L*s, (done ? 40 : 44)*s, (done ? 60 : 44)*s);
@@ -113,8 +116,10 @@ struct Window {
             p.Text(edition==0?T(L"O Lite não tem menu circular, conversões, OCR nem relógio.",L"Lite has no radial menu, conversions, OCR or clock.",L"Lite no tiene menú circular, conversiones, OCR ni reloj."):
                    T(L"O Ultra baixa o motor vetorial uma única vez e confere a integridade antes de instalar.",L"Ultra downloads the vector engine once and checks its integrity before installing.",L"Ultra descarga el motor vectorial una sola vez y verifica su integridad antes de instalar."),
                    rect(L, top+3*row+22, R, top+3*row+44), 13, text2);
-            auto cancel = rect(L-4, 548, L+80, 596);
+            auto cancel = rect(L, 548, L+112, 596);
             bool hc = hit(3, cancel);
+            if (hc) p.Fill(cancel, 12*s, C(0xFFFFFF, 0.08f));
+            p.Stroke(cancel, 12*s, C(0x7A808A), 2*s); // contorno do protótipo
             p.Text(T(L"Cancelar",L"Cancel",L"Cancelar"), cancel, 15, hc ? text : text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_CENTER);
             if (installed) {
                 auto un = rect(L+96, 548, L+200, 596);
@@ -158,8 +163,8 @@ struct Window {
                 else if (i == current) { p.Stroke(ic, 8*s, accent, 1.5f*s); p.Fill(rect(L+6.5f, y+10.5f, L+9.5f, y+13.5f), 1.5f*s, accent); p.Text(label, rect(L+28, y, R, y+24), 15, C(0xFF8A5C), DWRITE_FONT_WEIGHT_SEMI_BOLD); }
                 else { p.Stroke(ic, 8*s, dim, 1.5f*s); p.Text(label, rect(L+28, y, R, y+24), 15, dim); }
             }
-            if (ultra) p.Text(T(L"Se a conexão cair, o download continua de onde parou.",L"If the connection drops, the download resumes where it stopped.",L"Si se cae la conexión, la descarga continúa donde se detuvo."), rect(L, 552, R-130, 592), 13, text2);
-            outline(rect(R-110, 552, R, 592), T(L"Cancelar",L"Cancel",L"Cancelar"), 3);
+            if (ultra) p.Text(T(L"Se a conexão cair, o download continua de onde parou.",L"If the connection drops, the download resumes where it stopped.",L"Si se cae la conexión, la descarga continúa donde se detuvo."), rect(L+128, 552, R, 592), 13, text2, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_TRAILING);
+            outline(rect(L, 552, L+112, 592), T(L"Cancelar",L"Cancel",L"Cancelar"), 3); // botão à esquerda, como no protótipo
         } else {
             if (success) {
                 auto ring = rect(L, 168, L+64, 232);
@@ -180,7 +185,7 @@ struct Window {
                     p.Fill(card, 14*s, C(0xFFFFFF, 0.05f)); p.Stroke(card, 14*s, C(0xFFFFFF, 0.10f));
                     float kx = L+20;
                     if (tips[i].lead) { p.Text(tips[i].lead, rect(kx, y+34, kx+110, y+76), 14, accent); kx += 199 - tips[i].cap; }
-                    keycap(rect(kx, y+34, kx+tips[i].cap, y+76), tips[i].key);
+                    keycap(rect(kx+3*s, y+30, kx+tips[i].cap-3*s, y+78), tips[i].key);
                     float tx = L+20+199+18;
                     ph.Text(tips[i].title, rect(tx, y+12, R-20, y+36), 18, text, DWRITE_FONT_WEIGHT_BOLD);
                     p.Paragraph(tips[i].body, tx*s, (y+38)*s, (R-20-tx)*s, 14, C(0xE3E6EB));
